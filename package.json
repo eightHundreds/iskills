@@ -1,0 +1,36 @@
+{
+  "name": "iskills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/src/cli.d.ts",
+  "bin": {
+    "iskills": "./bin/iskills.js"
+  },
+  "files": [
+    "bin",
+    "dist/src",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean --silent && tsc",
+    "start": "npm run build --silent && node ./bin/iskills.js",
+    "test": "npm run build --silent && node --test ./dist/test/cli.test.js",
+    "type-check": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "ink": "^6.5.1",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.0"
+  }
+}
