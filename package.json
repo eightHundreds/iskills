@@ -1,7 +1,16 @@
 {
   "name": "iskills",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Personal Skill library CLI for AI coding agents",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eightHundreds/iskills.git"
+  },
+  "homepage": "https://github.com/eightHundreds/iskills#readme",
+  "bugs": "https://github.com/eightHundreds/iskills/issues",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "types": "./dist/src/cli.d.ts",
   "bin": {
