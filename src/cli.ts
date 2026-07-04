@@ -14,8 +14,17 @@ import { finalizeResolvedConflicts } from './git.js';
 import { closePrompts } from './prompts.js';
 
 async function run(argv: string[]): Promise<void> {
-  await ensureCollection();
   const [command, ...rest] = argv;
+  if (command === 'help' || command === '--help' || command === '-h') {
+    return printHelp(rest[0]);
+  }
+  if (rest.includes('--help') || rest.includes('-h')) return printHelp(command);
+  if (command === '--version' || command === '-v') {
+    console.log('0.0.0');
+    return;
+  }
+
+  await ensureCollection();
   if (command === 'init') return commandInit(rest);
   await finalizeResolvedConflicts();
   await commitCollection('capture external skill edits');
@@ -29,11 +38,6 @@ async function run(argv: string[]): Promise<void> {
   if (command === 'remove') return commandRemove(rest);
   if (command === 'sync') return commandSync(rest);
   if (command === 'update') return commandUpdate(rest);
-  if (command === 'help' || command === '--help' || command === '-h') return printHelp();
-  if (command === '--version' || command === '-v') {
-    console.log('0.0.0');
-    return;
-  }
   throw new Error(`未知命令：${command}`);
 }
 

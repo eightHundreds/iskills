@@ -425,6 +425,7 @@ test('initializes the collection Git repository with a local fallback identity',
     await run(context, ['import', source, '--all', '--yes']);
     const result = await run(context, ['init']);
     assert.match(result.stdout, /已初始化收藏夹 Git/);
+    assert.equal(result.stderr, '');
 
     const branch = await exec('git', ['branch', '--show-current'], { cwd: context.collection });
     assert.equal(branch.stdout.trim(), 'main');
@@ -444,6 +445,23 @@ test('initializes the collection Git repository with a local fallback identity',
     assert.match(repeated.stdout, /收藏夹 Git 已初始化/);
     const commits = await exec('git', ['rev-list', '--count', 'HEAD'], { cwd: context.collection });
     assert.equal(commits.stdout.trim(), '1');
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('prints import help instead of parsing it as an import option', async () => {
+  const context = await makeContext();
+  try {
+    for (const args of [
+      ['import', '--help'],
+      ['help', 'import'],
+    ]) {
+      const result = await run(context, args);
+      assert.match(result.stdout, /iskills import \[路径或 Git URL\]/);
+      assert.match(result.stdout, /--replace/);
+      assert.equal(result.stderr, '');
+    }
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
