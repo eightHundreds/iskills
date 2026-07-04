@@ -96,7 +96,21 @@ export async function mainMenu(): Promise<void> {
   if (action === 'init') return commandInit([]);
 }
 
-export function printHelp(): void {
+export function printHelp(command?: string): void {
+  if (command === 'import') {
+    console.log(`用法：
+  iskills import [路径或 Git URL] [选项]
+
+选项：
+  -g, --global       扫描 Agent 全局 Skill 目录
+  --agent <名称>     限定 Agent，可重复使用
+  --all              导入发现的全部技能
+  --replace          替换收藏夹中的同名技能
+  -y, --yes          跳过确认
+  -h, --help         显示帮助
+`);
+    return;
+  }
   console.log(`Skill 收藏夹
 
 用法：

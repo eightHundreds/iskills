@@ -44,7 +44,7 @@ export async function initCollectionGit(): Promise<boolean> {
   try {
     if (created) git(['-C', root, 'init', '--quiet', '-b', 'main']);
     try {
-      git(['-C', root, 'rev-parse', '--verify', 'HEAD']);
+      git(['-C', root, 'rev-parse', '--verify', '--quiet', 'HEAD']);
       return false;
     } catch {}
 
