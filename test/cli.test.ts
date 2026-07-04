@@ -962,6 +962,7 @@ test('TTY import cancellation exits without an error', async (t) => {
     const result = await runInteractive(context, ['import', root], [
       { wait: '发现以下技能', send: '\u001b', enter: false },
     ]);
+    assert.match(result.stdout, /→ 详情/);
     assert.doesNotMatch(result.stdout, /错误：|没有选择技能/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
