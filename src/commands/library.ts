@@ -168,11 +168,10 @@ export async function commandImport(argv: string[]): Promise<void> {
     let selected = skills;
     if (!values.all && skills.length > 1) {
       if (!process.stdin.isTTY) throw new Error('找到多个技能，请使用 --all 或交互选择');
-      if (globalGroups && globalGroups.length > 1) {
-        selected = await chooseSkillMany(globalGroups, '扫描全局 Skill 目录');
-      } else {
-        selected = await chooseMany(skills, '发现以下技能：');
-      }
+      selected = await chooseSkillMany(
+        globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }],
+        globalGroups ? '扫描全局 Skill 目录' : '发现以下技能'
+      );
     }
     if (!selected.length) return;
 
