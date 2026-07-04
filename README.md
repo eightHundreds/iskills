@@ -25,8 +25,11 @@ iskills add <技能> --copy        # 复制并脱离收藏夹
 iskills remove <技能>            # 从当前项目移除
 iskills remove <技能> -g         # 从收藏夹移除或还回原始位置
 iskills update [技能]            # 主动更新 Git 来源
+iskills init                     # 初始化收藏夹 Git 并创建首次提交
 iskills sync                    # 阻塞式同步收藏夹 Git
 ```
+
+`iskills init` 只初始化本地仓库；如需同步，请自行配置 `origin` 后运行 `iskills sync`。
 
 冲突不会写入正在使用的 Skill。来源冲突保留在 `.local/conflicts`，由用户使用编辑器和 Git 手动解决；后续运行 CLI 时自动应用已提交的合并结果。
 

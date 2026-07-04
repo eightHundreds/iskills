@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
-import { errorMessage, listCollection, readState } from '../core.js';
-import { syncCollection, updateGitSkill } from '../git.js';
+import { join } from 'node:path';
+import { collectionPaths, errorMessage, exists, listCollection, readState } from '../core.js';
+import { initCollectionGit, syncCollection, updateGitSkill } from '../git.js';
 import { chooseMany, chooseOne } from '../prompts.js';
 import type { CollectedSkill, UpdateStatus } from '../types.js';
 import { commandList, interactiveList } from './browser.js';
@@ -65,27 +66,34 @@ export async function commandSync(argv: string[] = []): Promise<void> {
   await syncCollection(values.background ?? false);
 }
 
+export async function commandInit(argv: string[] = []): Promise<void> {
+  parseArgs({ args: argv });
+  const initialized = await initCollectionGit();
+  console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
+}
+
 export async function mainMenu(): Promise<void> {
   if (!process.stdin.isTTY) {
     printHelp();
     return;
   }
-  const action = await chooseOne(
-    [
+  const actions = [
       { label: '从收藏夹添加到当前目录', value: 'add' },
       { label: '导入当前目录中的技能', value: 'import' },
       { label: '扫描全局 Skill 目录', value: 'import-global' },
       { label: '浏览收藏夹', value: 'list' },
       { label: '更新远程来源技能', value: 'update' },
-    ],
-    '你想做什么？',
-    true
-  );
+  ];
+  if (!(await exists(join(collectionPaths().root, '.git')))) {
+    actions.push({ label: '初始化收藏夹 Git', value: 'init' });
+  }
+  const action = await chooseOne(actions, '你想做什么？', true);
   if (action === 'add') return commandAdd([]);
   if (action === 'import') return commandImport([]);
   if (action === 'import-global') return commandImport(['-g']);
   if (action === 'list') return interactiveList();
   if (action === 'update') return commandUpdate([]);
+  if (action === 'init') return commandInit([]);
 }
 
 export function printHelp(): void {
@@ -100,6 +108,7 @@ export function printHelp(): void {
   iskills remove <技能>    从当前项目移除
   iskills remove <技能> -g 从收藏夹移除
   iskills update           更新远程来源技能
+  iskills init             初始化收藏夹 Git
   iskills sync             同步收藏夹 Git
 `);
 }

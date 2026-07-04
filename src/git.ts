@@ -10,6 +10,7 @@ import {
   commitCollection,
   copyDirectoryContents,
   errorMessage,
+  ensureCollection,
   exists,
   parseGitSource,
   readMetadata,
@@ -33,6 +34,37 @@ import type {
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
+}
+
+export async function initCollectionGit(): Promise<boolean> {
+  const { root } = await ensureCollection();
+  const gitDir = join(root, '.git');
+  const created = !(await exists(gitDir));
+
+  try {
+    if (created) git(['-C', root, 'init', '--quiet', '-b', 'main']);
+    try {
+      git(['-C', root, 'rev-parse', '--verify', 'HEAD']);
+      return false;
+    } catch {}
+
+    for (const [key, fallback] of [
+      ['user.name', 'Skill Collection'],
+      ['user.email', 'iskills@localhost'],
+    ] as const) {
+      let value = '';
+      try {
+        value = git(['-C', root, 'config', '--get', key]);
+      } catch {}
+      if (!value) git(['-C', root, 'config', key, fallback]);
+    }
+    git(['-C', root, 'add', '-A', '--', 'skills', 'metadata', '.gitignore']);
+    git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
+    return true;
+  } catch (error) {
+    if (created) await rm(gitDir, { recursive: true, force: true });
+    throw new Error(`无法初始化收藏夹 Git：${errorMessage(error)}`);
+  }
 }
 
 export async function cloneGitSource(input: string): Promise<GitImportContext> {
