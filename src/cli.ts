@@ -1,6 +1,7 @@
 import {
   commandAdd,
   commandImport,
+  commandInit,
   commandList,
   commandRemove,
   commandSync,
@@ -14,12 +15,13 @@ import { closePrompts } from './prompts.js';
 
 async function run(argv: string[]): Promise<void> {
   await ensureCollection();
+  const [command, ...rest] = argv;
+  if (command === 'init') return commandInit(rest);
   await finalizeResolvedConflicts();
   await commitCollection('capture external skill edits');
   const pending = (await readState()).conflicts;
   if (pending.length) console.error(`警告：存在 ${pending.length} 个待处理冲突。`);
 
-  const [command, ...rest] = argv;
   if (!command) return mainMenu();
   if (command === 'add') return commandAdd(rest);
   if (command === 'import') return commandImport(rest);

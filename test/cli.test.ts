@@ -414,6 +414,41 @@ test('recovers provenance from skills-lock.json and uses the imported files as u
   }
 });
 
+test('initializes the collection Git repository with a local fallback identity', async () => {
+  const context = await makeContext();
+  context.env.GIT_CONFIG_NOSYSTEM = '1';
+  context.env.GIT_CONFIG_GLOBAL = join(context.root, 'missing-gitconfig');
+  const source = join(context.project, 'init-skill');
+  await makeSkill(source, 'init-skill');
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await run(context, ['init']);
+    assert.match(result.stdout, /已初始化收藏夹 Git/);
+
+    const branch = await exec('git', ['branch', '--show-current'], { cwd: context.collection });
+    assert.equal(branch.stdout.trim(), 'main');
+    const tracked = await exec('git', ['ls-files'], { cwd: context.collection });
+    assert.match(tracked.stdout, /^\.gitignore$/m);
+    assert.match(tracked.stdout, /^metadata\/init-skill\.json$/m);
+    assert.match(tracked.stdout, /^skills\/init-skill\/SKILL\.md$/m);
+    assert.doesNotMatch(tracked.stdout, /^\.local\//m);
+    const name = await exec('git', ['config', '--get', 'user.name'], { cwd: context.collection });
+    const email = await exec('git', ['config', '--get', 'user.email'], {
+      cwd: context.collection,
+    });
+    assert.equal(name.stdout.trim(), 'Skill Collection');
+    assert.equal(email.stdout.trim(), 'iskills@localhost');
+
+    const repeated = await run(context, ['init']);
+    assert.match(repeated.stdout, /收藏夹 Git 已初始化/);
+    const commits = await exec('git', ['rev-list', '--count', 'HEAD'], { cwd: context.collection });
+    assert.equal(commits.stdout.trim(), '1');
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('background collection sync merges clean remote changes without blocking the active tree', async () => {
   const context = await makeContext();
   context.env.SK_NO_BACKGROUND_SYNC = '1';
@@ -426,7 +461,7 @@ test('background collection sync merges clean remote changes without blocking th
     await exec('git', ['init', '-b', 'main'], { cwd: collection });
     await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
     await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', remote]);
+    await exec('git', ['init', '--bare', '-b', 'main', remote]);
     await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
 
     const first = join(context.project, 'first-local');
@@ -628,7 +663,7 @@ test('background collection sync records divergence without writing conflict mar
     await exec('git', ['init', '-b', 'main'], { cwd: collection });
     await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
     await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', remote]);
+    await exec('git', ['init', '--bare', '-b', 'main', remote]);
     await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
     await run(context, ['import', source, '--all', '--yes']);
     await exec('git', ['push', '-u', 'origin', 'main'], { cwd: collection });
@@ -858,9 +893,35 @@ test('TTY main menu shows numbered actions and accepts a number shortcut', async
     ]);
     assert.match(result.stdout, /1\. 从收藏夹添加到当前目录/);
     assert.match(result.stdout, /5\. 更新远程来源技能/);
+    assert.match(result.stdout, /6\. 初始化收藏夹 Git/);
     assert.doesNotMatch(result.stdout, /同步收藏夹 Git/);
     assert.match(result.stdout, /entry-skill/);
     assert.doesNotMatch(result.stdout, /错误：/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY main menu initializes Git and then hides the action', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  try {
+    const initialized = await runInteractive(context, [], [
+      { wait: '初始化收藏夹 Git', send: '6', enter: false },
+    ]);
+    assert.match(initialized.stdout, /已初始化收藏夹 Git/);
+    assert.equal((await lstat(join(context.collection, '.git'))).isDirectory(), true);
+
+    const reopened = await runInteractive(context, [], [
+      { wait: '你想做什么？', send: '\u001b', enter: false },
+    ]);
+    assert.doesNotMatch(reopened.stdout, /初始化收藏夹 Git/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -1033,7 +1094,7 @@ test('collection browser sync establishes the first upstream and excludes machin
     await exec('git', ['init', '-b', 'main'], { cwd: collection });
     await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
     await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', remote]);
+    await exec('git', ['init', '--bare', '-b', 'main', remote]);
     await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
     await run(context, ['import', source, '--all', '--yes']);
 
@@ -1068,7 +1129,7 @@ test('a mutating command returns while its detached Git sync pushes in the backg
     await exec('git', ['init', '-b', 'main'], { cwd: collection });
     await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
     await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', remote]);
+    await exec('git', ['init', '--bare', '-b', 'main', remote]);
     await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
     await exec('git', ['add', '.gitignore'], { cwd: collection });
     await exec('git', ['commit', '-m', 'initial'], { cwd: collection });
