@@ -11,7 +11,15 @@ export type BrowserResult =
   | { type: 'sync'; tab: BrowserTab; query: string }
   | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string };
 
-function SkillPane({ skills, cursor }: { skills: Skill[]; cursor: number }) {
+function SkillPane({
+  skills,
+  cursor,
+  preferNote = false,
+}: {
+  skills: Skill[];
+  cursor: number;
+  preferNote?: boolean;
+}) {
   const { stdout } = useStdout();
   const height = Math.max(3, stdout.rows - 8);
   const active = Math.max(0, Math.min(cursor, skills.length - 1));
@@ -22,6 +30,7 @@ function SkillPane({ skills, cursor }: { skills: Skill[]; cursor: number }) {
       {skills.length ? (
         visible.map((skill, visibleIndex) => {
           const index = offset + visibleIndex;
+          const summary = (preferNote && skill.note) || skill.description;
           return (
           <Box key={skill.path} gap={1} width="100%">
             <Text {...(index === active ? { color: termcnColors.primary } : {})}>
@@ -29,8 +38,8 @@ function SkillPane({ skills, cursor }: { skills: Skill[]; cursor: number }) {
             </Text>
             <Text wrap="truncate-end">
               <Text bold={index === active}>{skill.name}</Text>
-              {skill.description && (
-                <Text color={termcnColors.muted}> — {skill.description}</Text>
+              {summary && (
+                <Text color={termcnColors.muted}> — {summary}</Text>
               )}
             </Text>
           </Box>
@@ -112,7 +121,11 @@ function Browser({
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
-        <SkillPane skills={collection.filter((skill) => matches(skill, query))} cursor={cursor} />
+        <SkillPane
+          skills={collection.filter((skill) => matches(skill, query))}
+          cursor={cursor}
+          preferNote
+        />
       ),
     },
   ];
