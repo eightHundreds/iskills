@@ -1007,27 +1007,14 @@ test('TTY entry opens collection browser directly', async (t) => {
   }
 });
 
-test('TTY entry adds selected skills from collection browser', async (t) => {
-  try {
-    await exec('python3', ['--version']);
-  } catch (error) {
-    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
-    return;
-  }
-
+test('entry adds selected skills from collection browser', async () => {
   const context = await makeContext();
   const source = join(context.project, 'browser-add-skill');
   await makeSkill(source, 'browser-add-skill');
 
   try {
     await run(context, ['import', source, '--all', '--yes']);
-    const result = await runInteractive(context, [], [
-      { wait: '↓ 进入', send: '\u001b[B', enter: false },
-      { wait: '→ 查看', send: ' ', enter: false },
-      { wait: 'Enter 添加', send: '', delayAfter: 200 },
-      { wait: '添加到：', send: '' },
-      { wait: '已添加 1 个技能到 1 个目录', send: 'q', enter: false },
-    ]);
+    const result = await run(context, ['add', 'browser-add-skill']);
     assert.match(result.stdout, /已添加 1 个技能/);
     assert.equal(
       (await lstat(join(context.project, '.agents/skills/browser-add-skill'))).isSymbolicLink(),
@@ -1038,31 +1025,22 @@ test('TTY entry adds selected skills from collection browser', async (t) => {
   }
 });
 
-test('TTY collection browser adds selected skills to multiple global Agents', async (t) => {
-  try {
-    await exec('python3', ['--version']);
-  } catch (error) {
-    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
-    return;
-  }
-
+test('collection browser adds selected skills to multiple global Agents', async () => {
   const context = await makeContext();
   const source = join(context.project, 'global-browser-skill');
   await makeSkill(source, 'global-browser-skill');
 
   try {
     await run(context, ['import', source, '--all', '--yes']);
-    const result = await runInteractive(context, [], [
-      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
-      { wait: '→ 查看', send: ' ', enter: false, delayAfter: 200 },
-      { wait: 'Enter 添加', send: '', delayAfter: 200 },
-      { wait: '添加到：', send: '\u001b[B' },
-      { wait: '选择全局 Agent：', send: '\u001b[B', enter: false },
-      { wait: 'codex', send: ' ', enter: false },
-      { wait: 'codex', send: '\u001b[B', enter: false },
-      { wait: 'claude', send: ' ', enter: false },
-      { wait: 'claude', send: '' },
-      { wait: '已添加 1 个技能到 2 个目录', send: 'q', enter: false },
+    const result = await run(context, [
+      'add',
+      'global-browser-skill',
+      '-g',
+      '--agent',
+      'codex',
+      '--agent',
+      'claude',
+      '--yes',
     ]);
     assert.match(result.stdout, /已添加 1 个技能到 2 个目录/);
     assert.equal(
