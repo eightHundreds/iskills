@@ -847,7 +847,7 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
         { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
         { wait: '搜索技能', send: 'missing', enter: false, delayAfter: 100 },
         { wait: '没有匹配的技能', send: '\u001b', enter: false, delayAfter: 100 },
-        { wait: 'interactive-skill', send: 'q', enter: false, delayAfter: 100 },
+        { wait: '— written from tty', send: 'q', enter: false, delayAfter: 100 },
       ]
     );
     assert.match(result.stdout, /当前项目 0\s+│\s+收藏夹 1/);
