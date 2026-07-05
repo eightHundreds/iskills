@@ -11,46 +11,96 @@ export type BrowserResult =
   | { type: 'sync'; tab: BrowserTab; query: string }
   | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string };
 
+type SkillRow =
+  | { type: 'group'; name: string; skills: Skill[] }
+  | { type: 'skill'; group: string; skill: Skill };
+
+function groupedRows(skills: Skill[], query: string): SkillRow[] {
+  const groups = new Map<string, Skill[]>();
+  for (const skill of skills) {
+    for (const tag of new Set(skill.tags?.length ? skill.tags : ['未分组'])) {
+      const group = groups.get(tag) ?? [];
+      group.push(skill);
+      groups.set(tag, group);
+    }
+  }
+  const sorted = [...groups].sort(([left], [right]) => {
+    if (left === right) return 0;
+    return left === '未分组' ? 1 : right === '未分组' ? -1 : left.localeCompare(right);
+  });
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matchingGroups = new Set(
+    sorted
+      .filter(([name]) => words.length && words.every((word) => name.toLowerCase().includes(word)))
+      .map(([name]) => name)
+  );
+  const rows: SkillRow[] = [];
+  for (const [name, group] of sorted) {
+    if (matchingGroups.size && !matchingGroups.has(name)) continue;
+    const visible = matchingGroups.size ? group : group.filter((skill) => matches(skill, query));
+    if (!visible.length) continue;
+    rows.push({ type: 'group', name, skills: visible });
+    rows.push(...visible.map((skill) => ({ type: 'skill' as const, group: name, skill })));
+  }
+  return rows;
+}
+
 function SkillPane({
-  skills,
+  rows,
   cursor,
+  selected,
   preferNote = false,
 }: {
-  skills: Skill[];
+  rows: SkillRow[];
   cursor: number;
+  selected: Set<string>;
   preferNote?: boolean;
 }) {
   const { stdout } = useStdout();
   const height = Math.max(3, stdout.rows - 8);
-  const active = Math.max(0, Math.min(cursor, skills.length - 1));
-  const offset = Math.max(0, Math.min(active - Math.floor(height / 2), skills.length - height));
-  const visible = skills.slice(offset, offset + height);
+  const active = Math.max(0, Math.min(cursor, rows.length - 1));
+  const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
+  const visible = rows.slice(offset, offset + height);
   return (
     <Box flexDirection="column" minHeight={3}>
-      {skills.length ? (
-        visible.map((skill, visibleIndex) => {
+      {rows.length ? (
+        visible.map((row, visibleIndex) => {
           const index = offset + visibleIndex;
+          if (row.type === 'group') {
+            const count = row.skills.filter((skill) => selected.has(skill.path)).length;
+            const marker = count === 0 ? '○' : count === row.skills.length ? '●' : '◐';
+            return (
+              <Text
+                key={`group:${row.name}`}
+                bold
+                {...(index === active ? { color: termcnColors.primary } : {})}
+              >
+                {`${index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`}
+              </Text>
+            );
+          }
+          const skill = row.skill;
           const summary = (preferNote && skill.note) || skill.description;
           return (
-          <Box key={skill.path} gap={1} width="100%">
-            <Text {...(index === active ? { color: termcnColors.primary } : {})}>
-              {index === active ? '›' : ' '}
-            </Text>
-            <Text wrap="truncate-end">
+            <Text
+              key={`${row.group}:${skill.path}`}
+              wrap="truncate-end"
+              {...(index === active ? { color: termcnColors.primary } : {})}
+            >
+              {`  ${index === active ? '›' : ' '} ${selected.has(skill.path) ? '●' : '○'} `}
               <Text bold={index === active}>{skill.name}</Text>
               {summary && (
                 <Text color={termcnColors.muted}> — {summary}</Text>
               )}
             </Text>
-          </Box>
           );
         })
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
       )}
-      {skills.length > height && (
+      {rows.length > height && (
         <Text color={termcnColors.muted}>
-          {offset + 1}–{Math.min(offset + height, skills.length)} / {skills.length}
+          {offset + 1}–{Math.min(offset + height, rows.length)} / {rows.length}
         </Text>
       )}
     </Box>
@@ -80,10 +130,10 @@ function Browser({
   const [searching, setSearching] = useState(false);
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const skills = useMemo(
-    () => (tab === 'project' ? project : collection).filter((skill) => matches(skill, query)),
-    [collection, project, query, tab]
-  );
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const projectRows = useMemo(() => groupedRows(project, query), [project, query]);
+  const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
+  const rows = tab === 'project' ? projectRows : collectionRows;
 
   useEffect(() => setCursor(0), [tab]);
   useInput(
@@ -101,11 +151,21 @@ function Browser({
       }
       if (key.upArrow) return setCursor((index) => Math.max(0, index - 1));
       if (key.downArrow) {
-        return setCursor((index) => Math.min(Math.max(0, skills.length - 1), index + 1));
+        return setCursor((index) => Math.min(Math.max(0, rows.length - 1), index + 1));
       }
-      const selected = skills[cursor];
-      if (key.return && selected) {
-        finish({ type: 'open', skill: selected, collection: tab === 'collection', tab, query });
+      const row = rows[cursor];
+      if (input === ' ' && row) {
+        const paths = row.type === 'group' ? row.skills.map((skill) => skill.path) : [row.skill.path];
+        return setSelected((previous) => {
+          const next = new Set(previous);
+          const allSelected = paths.every((path) => previous.has(path));
+          for (const path of paths) allSelected ? next.delete(path) : next.add(path);
+          return next;
+        });
+      }
+      const skill = row?.type === 'skill' ? row.skill : row?.skills[0];
+      if (key.return && skill) {
+        finish({ type: 'open', skill, collection: tab === 'collection', tab, query });
       }
     },
     { isActive: !searching }
@@ -115,15 +175,16 @@ function Browser({
     {
       key: 'project',
       label: `当前项目 ${project.length}`,
-      content: <SkillPane skills={project.filter((skill) => matches(skill, query))} cursor={cursor} />,
+      content: <SkillPane rows={projectRows} cursor={cursor} selected={selected} />,
     },
     {
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
         <SkillPane
-          skills={collection.filter((skill) => matches(skill, query))}
+          rows={collectionRows}
           cursor={cursor}
+          selected={selected}
           preferNote
         />
       ),
@@ -158,7 +219,8 @@ function Browser({
         />
       ) : (
         <Text color={termcnColors.muted}>
-          ←/→ 或 Tab 切换 · ↑/↓ 选择 · Enter 查看 · / 搜索 · q 退出
+          ←/→ 或 Tab 切换 · ↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出
+          {selected.size ? ` · 已选 ${selected.size}` : ''}
           {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
           {status ? ` · ${status}` : ''}
           {query ? ` · 搜索：${query}` : ''}
