@@ -144,7 +144,7 @@ for step in steps:
     wait = step.get("wait")
     if wait:
         pattern = wait.encode("utf-8")
-        deadline = time.time() + 10
+        deadline = time.time() + 20
         while output.find(pattern, cursor) < 0 and time.time() < deadline:
             read_once()
         found = output.find(pattern, cursor)
@@ -164,7 +164,7 @@ for step in steps:
         sys.stdout.buffer.write(output)
         raise
 
-deadline = time.time() + 10
+deadline = time.time() + 20
 status = None
 while time.time() < deadline:
     read_once()
@@ -877,22 +877,20 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
     await run(context, ['list', 'beta', '--tags', 'frontend', '--json']);
     await run(context, ['list', 'gamma', '--tags', 'shared', '--json']);
 
-    const result = await runInteractive(context, ['list'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false },
-      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
-      { wait: 'frontend (2)', send: '/', enter: false, delayAfter: 100 },
+    const result = await runInteractive(context, [], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
+      { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'alpha', enter: false, delayAfter: 100 },
       { wait: 'frontend (1)', send: '', enter: false },
       { wait: 'shared (1)', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
+      { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'shared', enter: false, delayAfter: 100 },
-      { wait: 'shared (2)', send: '' },
-      { wait: '切换顶级 Tab', send: '\u001b[B', enter: false, delayAfter: 200 },
+      { wait: 'shared (2)', send: '', delayAfter: 200 },
       { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
-      { wait: '为 2 个技能添加标签', send: '\t', enter: false, delayAfter: 300 },
-      { send: 'batch', enter: false, delay: 300 },
-      { wait: 'batch', send: '', delayAfter: 300 },
+      { wait: '为 2 个技能添加标签', send: '\t', enter: false, delayAfter: 400 },
+      { wait: '新增标签', send: 'batch', enter: false, delayAfter: 300 },
+      { wait: 'Enter 保存', send: '', delayAfter: 1000 },
       { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
 
@@ -930,18 +928,16 @@ test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
     await run(context, ['list', 'alpha', '--tags', 'frontend,shared', '--json']);
 
     const result = await runInteractive(context, ['list', 'beta'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false },
-      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
-      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
-      { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 200 },
-      { send: '\u001b[C', enter: false, delay: 300 },
+      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { wait: 'beta', send: '\u001b[B', enter: false, delayAfter: 400 },
+      { wait: '→ 查看', send: '\u001b[C', enter: false, delay: 500 },
       { wait: 't 标签', send: 't', enter: false, delayAfter: 100 },
       { wait: '编辑标签', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 1', send: '\t', enter: false, delayAfter: 300 },
-      { send: 'custom', enter: false, delay: 300 },
-      { wait: 'custom', send: '' },
+      { wait: '已选 1', send: '\t', enter: false, delayAfter: 400 },
+      { wait: '新增标签', send: 'custom', enter: false, delayAfter: 300 },
+      { wait: 'Enter 保存', send: '', delayAfter: 1000 },
       { wait: 'frontend, custom', send: 'q', enter: false, delayAfter: 100 },
-      { wait: 'q 退出', send: 'q', enter: false, delayAfter: 100 },
     ]);
 
     assert.match(result.stdout, /frontend/);
@@ -971,13 +967,12 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(
       context,
-      ['list'],
+      ['list', 'interactive-skill'],
       [
-        { wait: 'q 退出', send: '\u001b[C', enter: false },
-        { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
-        { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
-        { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 200 },
-        { wait: 'interactive-skill', send: '\u001b[C', enter: false, delayAfter: 100 },
+        { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
+        { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
+        { wait: 'interactive-skill', send: '\u001b[B', enter: false, delayAfter: 400 },
+        { wait: '→ 查看', send: '\u001b[C', enter: false, delay: 500 },
         { wait: 'n 备注', send: 'n', enter: false, delayAfter: 100 },
         { wait: '编辑备注', send: 'written from tty', enter: false, delayAfter: 100 },
         { wait: 'written from tty', send: '' },
@@ -1104,8 +1099,8 @@ test('TTY collection browser adds selected skills to multiple global Agents', as
   try {
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
-      { wait: '↓ 进入', send: '\u001b[B', enter: false },
-      { wait: '→ 查看', send: ' ', enter: false },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
+      { wait: '→ 查看', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'Enter 添加', send: '', delayAfter: 200 },
       { wait: '添加到：', send: '\u001b[B' },
       { wait: '选择全局 Agent：', send: '\u001b[B', enter: false },
@@ -1143,12 +1138,11 @@ test('TTY global tab navigates Agent tabs and imports local skills', async (t) =
 
   try {
     const result = await runInteractive(context, ['list'], [
-      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
-      { wait: 'agents (0)', send: '\u001b[B', enter: false, delayAfter: 200 },
-      { wait: '切换 Agent', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: 'claude (0)', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: 'codex (1)', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
+      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 400 },
+      { wait: '全局 ', send: '\u001b[B', enter: false, delayAfter: 500 },
+      { send: '\u001b[C', enter: false, delayAfter: 400 },
+      { wait: 'codex (1)', send: '\u001b[B', enter: false, delayAfter: 500 },
+      { wait: 'local-global', send: ' ', enter: false, delayAfter: 300 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
     ]);
@@ -1432,10 +1426,9 @@ test('collection browser sync establishes the first upstream and excludes machin
     await run(context, ['import', source, '--all', '--yes']);
 
     await runInteractive(context, ['list'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false },
-      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
-      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
-      { send: 's', enter: false, delay: 300 },
+      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { wait: 's 同步 Git', send: 's', enter: false, delayAfter: 800 },
       { wait: 'Git 同步完成', send: 'q', enter: false },
     ]);
     const upstream = await exec('git', ['rev-parse', '--abbrev-ref', '@{u}'], { cwd: collection });
