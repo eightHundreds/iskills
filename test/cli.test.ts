@@ -451,17 +451,53 @@ test('initializes the collection Git repository with a local fallback identity',
   }
 });
 
-test('prints import help instead of parsing it as an import option', async () => {
+test('subcommand --help and -h print command-specific help', async () => {
   const context = await makeContext();
   try {
-    for (const args of [
-      ['import', '--help'],
-      ['help', 'import'],
-    ]) {
-      const result = await run(context, args);
-      assert.match(result.stdout, /iskills import \[路径或 Git URL\]/);
-      assert.match(result.stdout, /--replace/);
-      assert.equal(result.stderr, '');
+    const cases: Array<{ command: string; patterns: RegExp[] }> = [
+      {
+        command: 'add',
+        patterns: [/iskills add \[技能/, /--copy/, /--to <目录>/],
+      },
+      {
+        command: 'import',
+        patterns: [/iskills import \[路径或 Git URL\]/, /--replace/, /--all/],
+      },
+      {
+        command: 'list',
+        patterns: [/iskills list \[关键词\]/, /--json/, /--note <文本>/],
+      },
+      {
+        command: 'remove',
+        patterns: [/iskills remove <技能>/, /--from <目录>/, /-g, --global/],
+      },
+      {
+        command: 'update',
+        patterns: [/iskills update \[技能/, /--all/, /-y, --yes/],
+      },
+      {
+        command: 'sync',
+        patterns: [/iskills sync/, /--background/],
+      },
+      {
+        command: 'init',
+        patterns: [/iskills init/, /初始化收藏夹 Git/, /--remote <Git URL>/],
+      },
+    ];
+    for (const { command, patterns } of cases) {
+      for (const args of [
+        [command, '--help'],
+        [command, '-h'],
+        ['help', command],
+        ['--help', command],
+        ['-h', command],
+      ]) {
+        const result = await run(context, args);
+        for (const pattern of patterns) {
+          assert.match(result.stdout, pattern, `${args.join(' ')} should match ${pattern}`);
+        }
+        assert.equal(result.stderr, '', `${args.join(' ')} should not write stderr`);
+      }
     }
   } finally {
     await rm(context.root, { recursive: true, force: true });
@@ -843,6 +879,7 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
 
     const result = await runInteractive(context, ['list'], [
       { wait: 'q 退出', send: '\u001b[C', enter: false },
+      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
       { wait: 'frontend (2)', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'alpha', enter: false, delayAfter: 100 },
       { wait: 'frontend (1)', send: '', enter: false },
@@ -850,10 +887,11 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'shared', enter: false, delayAfter: 100 },
       { wait: 'shared (2)', send: '' },
-      { wait: '搜索：shared', send: ' ', enter: false, delayAfter: 100 },
+      { wait: '切换顶级 Tab', send: '\u001b[B', enter: false, delayAfter: 200 },
+      { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
       { wait: '为 2 个技能添加标签', send: '\t', enter: false, delayAfter: 300 },
-      { wait: '新增标签（逗号分隔）', send: 'batch', enter: false, delayAfter: 100 },
+      { send: 'batch', enter: false, delay: 300 },
       { wait: 'batch', send: '', delayAfter: 300 },
       { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
@@ -893,12 +931,14 @@ test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
 
     const result = await runInteractive(context, ['list', 'beta'], [
       { wait: 'q 退出', send: '\u001b[C', enter: false },
+      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
       { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 200 },
-      { wait: '› ○ beta', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { send: '\u001b[C', enter: false, delay: 300 },
       { wait: 't 标签', send: 't', enter: false, delayAfter: 100 },
       { wait: '编辑标签', send: ' ', enter: false, delayAfter: 100 },
       { wait: '已选 1', send: '\t', enter: false, delayAfter: 300 },
-      { wait: '新增标签（逗号分隔）', send: 'custom', enter: false, delayAfter: 100 },
+      { send: 'custom', enter: false, delay: 300 },
       { wait: 'custom', send: '' },
       { wait: 'frontend, custom', send: 'q', enter: false, delayAfter: 100 },
       { wait: 'q 退出', send: 'q', enter: false, delayAfter: 100 },
@@ -934,7 +974,9 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
       ['list'],
       [
         { wait: 'q 退出', send: '\u001b[C', enter: false },
-        { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
+        { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
+        { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
+        { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 200 },
         { wait: 'interactive-skill', send: '\u001b[C', enter: false, delayAfter: 100 },
         { wait: 'n 备注', send: 'n', enter: false, delayAfter: 100 },
         { wait: '编辑备注', send: 'written from tty', enter: false, delayAfter: 100 },
@@ -1031,13 +1073,91 @@ test('TTY entry adds selected skills from collection browser', async (t) => {
   try {
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
       { wait: '→ 查看', send: ' ', enter: false },
-      { wait: 'Enter 添加', send: '' },
-      { wait: '已添加 1 个技能', send: 'q', enter: false },
+      { wait: 'Enter 添加', send: '', delayAfter: 200 },
+      { wait: '添加到：', send: '' },
+      { wait: '已添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /已添加 1 个技能/);
     assert.equal(
       (await lstat(join(context.project, '.agents/skills/browser-add-skill'))).isSymbolicLink(),
+      true
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY collection browser adds selected skills to multiple global Agents', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'global-browser-skill');
+  await makeSkill(source, 'global-browser-skill');
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '→ 查看', send: ' ', enter: false },
+      { wait: 'Enter 添加', send: '', delayAfter: 200 },
+      { wait: '添加到：', send: '\u001b[B' },
+      { wait: '选择全局 Agent：', send: '\u001b[B', enter: false },
+      { wait: 'codex', send: ' ', enter: false },
+      { wait: 'codex', send: '\u001b[B', enter: false },
+      { wait: 'claude', send: ' ', enter: false },
+      { wait: 'claude', send: '' },
+      { wait: '已添加 1 个技能到 2 个目录', send: 'q', enter: false },
+    ]);
+    assert.match(result.stdout, /已添加 1 个技能到 2 个目录/);
+    assert.equal(
+      (await lstat(join(context.home, '.codex/skills/global-browser-skill'))).isSymbolicLink(),
+      true
+    );
+    assert.equal(
+      (await lstat(join(context.home, '.claude/skills/global-browser-skill'))).isSymbolicLink(),
+      true
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY global tab navigates Agent tabs and imports local skills', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const skill = join(context.home, '.codex/skills/local-global');
+  await makeSkill(skill, 'local-global');
+
+  try {
+    const result = await runInteractive(context, ['list'], [
+      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
+      { wait: 'agents (0)', send: '\u001b[B', enter: false, delayAfter: 200 },
+      { wait: '切换 Agent', send: '\u001b[C', enter: false, delayAfter: 100 },
+      { wait: 'claude (0)', send: '\u001b[C', enter: false, delayAfter: 100 },
+      { wait: 'codex (1)', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
+      { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
+      { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
+    ]);
+    assert.match(result.stdout, /本地 · local-global/);
+    assert.match(result.stdout, /当前项目 0[\s\S]*全局 1[\s\S]*收藏夹 0/);
+    assert.doesNotMatch(result.stdout, /未分组/);
+    assert.equal((await lstat(skill)).isSymbolicLink(), true);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/local-global/SKILL.md'), 'utf8').then(Boolean),
       true
     );
   } finally {
@@ -1071,12 +1191,15 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     assert.equal(linkedSkill?.fromCollection, true);
 
     const result = await runInteractive(context, ['list'], [
-      { wait: 'Enter 查看', send: ' ', enter: false },
-      { wait: 'i 加入收藏夹', send: 'i', enter: false },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
+      { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /本地 · local-only/);
     assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
+    assert.match(result.stdout, /○ 本地 · local-only/);
+    assert.doesNotMatch(result.stdout, /[○●] collected-skill/);
     assert.equal(
       await readFile(join(context.collection, 'skills/local-only/SKILL.md'), 'utf8').then(Boolean),
       true
@@ -1096,6 +1219,41 @@ test('iskills init initializes Git', async (t) => {
 
     const repeated = await run(context, ['init']);
     assert.match(repeated.stdout, /收藏夹 Git 已初始化/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('iskills init offers origin setup and --remote configures it later', async () => {
+  const context = await makeContext();
+  const remote = join(context.root, 'collection.git');
+  try {
+    const interactive = await runInteractive(context, ['init'], [
+      { wait: '是否配置远程仓库？', send: 'n', enter: false },
+    ]);
+    assert.match(interactive.stdout, /是否配置远程仓库/);
+    await assert.rejects(exec('git', ['remote', 'get-url', 'origin'], { cwd: context.collection }));
+
+    await run(context, ['init', '--remote', remote]);
+    const origin = await exec('git', ['remote', 'get-url', 'origin'], { cwd: context.collection });
+    assert.equal(origin.stdout.trim(), remote);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('iskills init configures origin from its first-run prompt', async () => {
+  const context = await makeContext();
+  const remote = join(context.root, 'collection.git');
+  try {
+    const result = await runInteractive(context, ['init'], [
+      { wait: '是否配置远程仓库？', send: 'y', enter: false },
+      { wait: '远程仓库地址：', send: remote, enter: false },
+      { wait: 'collection.git', send: '' },
+    ]);
+    assert.match(result.stdout, /已配置远程仓库 origin/);
+    const origin = await exec('git', ['remote', 'get-url', 'origin'], { cwd: context.collection });
+    assert.equal(origin.stdout.trim(), remote);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -1275,8 +1433,10 @@ test('collection browser sync establishes the first upstream and excludes machin
 
     await runInteractive(context, ['list'], [
       { wait: 'q 退出', send: '\u001b[C', enter: false },
-      { wait: 's 同步 Git', send: 's', enter: false },
-      { wait: 'q 退出', send: 'q', enter: false },
+      { wait: '切换顶级 Tab', send: '\u001b[C', enter: false },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 200 },
+      { send: 's', enter: false, delay: 300 },
+      { wait: 'Git 同步完成', send: 'q', enter: false },
     ]);
     const upstream = await exec('git', ['rev-parse', '--abbrev-ref', '@{u}'], { cwd: collection });
     assert.equal(upstream.stdout.trim(), 'origin/main');

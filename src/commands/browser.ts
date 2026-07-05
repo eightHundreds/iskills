@@ -2,6 +2,7 @@ import { cp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  AGENTS,
   assertRelativePath,
   baselinePath,
   collectionPaths,
@@ -18,11 +19,20 @@ import {
   writeMetadata,
 } from '../core.js';
 import { syncCollection } from '../git.js';
-import { editInput, editTags } from '../prompts.js';
+import { chooseOne, chooseOptionsMany, editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
-import { browseSkillDetail, browseSkills, type BrowserTab } from '../ui/browser.js';
+import {
+  browseSkillDetail,
+  browseSkills,
+  type BrowserFocus,
+  type BrowserTab,
+} from '../ui/browser.js';
 import { InkSession } from '../ui/session.js';
-import { addSkillsToProject, importSkillsToCollection } from './library.js';
+import {
+  addSkillsToProject,
+  globalSkillGroups,
+  importSkillsToCollection,
+} from './library.js';
 
 const CLEAR_SCREEN = '\u001B[2J\u001B[H';
 const ENTER_ALTERNATE_SCREEN = '\u001B[?1049h';
@@ -124,27 +134,40 @@ export async function interactiveList(
   let tab: BrowserTab = initialTab;
   let cursor = 0;
   let selected: string[] = [];
+  let agent = '';
+  let focus: BrowserFocus = 'tabs';
   let status = '';
   const session = new InkSession();
   process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
   try {
     while (true) {
-      const [project, collection] = await Promise.all([listProject(), listCollection()]);
+      const [project, collection, globals] = await Promise.all([
+        listProject(),
+        listCollection(),
+        globalSkillGroups(),
+      ]);
       const canSync = await exists(join(collectionPaths().root, '.git'));
       const result = await browseSkills(
         project,
         collection,
+        globals,
         session,
         query,
         tab,
         canSync,
         status,
         cursor,
-        selected
+        selected,
+        agent,
+        focus
       );
       if (result.type === 'quit') return;
       query = result.query;
       tab = result.tab;
+      cursor = result.cursor;
+      selected = result.selected;
+      agent = result.agent;
+      focus = result.focus;
       if (result.type === 'sync') {
         await syncCollection(false);
         status = 'Git 同步完成';
@@ -171,9 +194,31 @@ export async function interactiveList(
         continue;
       }
       if (result.type === 'add') {
+        const destination = await chooseOne(
+          [
+            { label: '当前项目', value: 'project' },
+            { label: '全局', value: 'global' },
+          ],
+          '添加到：',
+          false,
+          session
+        );
+        if (!destination) continue;
+        const agents = destination === 'global'
+          ? await chooseOptionsMany(
+              Object.keys(AGENTS).map((name) => ({ label: name, value: name })),
+              '选择全局 Agent：',
+              session
+            )
+          : [];
+        if (destination === 'global' && !agents.length) continue;
         try {
-          const { count } = await addSkillsToProject(result.skills, { quiet: true });
-          status = `已添加 ${count} 个技能`;
+          const { count, targetCount } = await addSkillsToProject(result.skills, {
+            quiet: true,
+            ...(destination === 'global' ? { global: true, agent: agents } : {}),
+          });
+          status = `已添加 ${count} 个技能到 ${targetCount} 个目录`;
+          selected = [];
         } catch (error) {
           status = errorMessage(error);
         }
@@ -187,7 +232,6 @@ export async function interactiveList(
         } catch (error) {
           status = errorMessage(error);
         }
-        cursor = result.cursor;
         selected = [];
         process.stdout.write(CLEAR_SCREEN);
         continue;

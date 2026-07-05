@@ -117,20 +117,22 @@ export async function chooseSkillMany<T extends Skill>(
 export function chooseOne<T extends string>(
   options: Choice<T>[],
   title: string,
-  numbered = false
+  numbered = false,
+  session?: InkSession
 ): Promise<T | undefined> {
   return runPrompt<T | undefined>(undefined, (finish) => (
     <Select<T> label={title} options={options} onSubmit={finish} numbered={numbered} />
-  ));
+  ), session);
 }
 
 export function chooseOptionsMany<T extends string>(
   options: Choice<T>[],
-  title: string
+  title: string,
+  session?: InkSession
 ): Promise<T[]> {
   return runPrompt<T[]>([], (finish) => (
     <MultiSelect<T> label={title} options={options} onSubmit={finish} />
-  ));
+  ), session);
 }
 
 export function editTags(
