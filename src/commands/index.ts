@@ -1,7 +1,12 @@
 import { parseArgs } from 'node:util';
 import { errorMessage, listCollection, readState } from '../core.js';
-import { initCollectionGit, syncCollection, updateGitSkill } from '../git.js';
-import { chooseMany } from '../prompts.js';
+import {
+  configureCollectionRemote,
+  initCollectionGit,
+  syncCollection,
+  updateGitSkill,
+} from '../git.js';
+import { chooseMany, confirm, input } from '../prompts.js';
 import type { CollectedSkill, UpdateStatus } from '../types.js';
 import { commandList, interactiveList } from './browser.js';
 import { commandAdd, commandImport, commandRemove } from './library.js';
@@ -66,15 +71,41 @@ export async function commandSync(argv: string[] = []): Promise<void> {
 }
 
 export async function commandInit(argv: string[] = []): Promise<void> {
-  parseArgs({ args: argv });
+  const { values } = parseArgs({
+    args: argv,
+    options: { remote: { type: 'string' } },
+  });
   const initialized = await initCollectionGit();
   console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
+  let remote = values.remote;
+  if (!remote && initialized && process.stdin.isTTY && await confirm('是否配置远程仓库？')) {
+    remote = await input('远程仓库地址：');
+  }
+  if (remote) {
+    await configureCollectionRemote(remote);
+    console.log('已配置远程仓库 origin。');
+  }
 }
 
-export function printHelp(command?: string): void {
-  if (command === 'import') {
-    console.log(`用法：
+const COMMAND_HELP: Record<string, string> = {
+  add: `用法：
+  iskills add [技能...] [选项]
+
+从收藏夹添加技能到当前项目或 Agent 全局目录。
+
+选项：
+  --agent <名称>     限定 Agent，可重复使用
+  -g, --global       添加到 Agent 全局 Skill 目录
+  --to <目录>        指定目标目录
+  --copy             复制而非创建软链
+  --replace          替换已存在的技能
+  -y, --yes          跳过确认
+  -h, --help         显示帮助
+`,
+  import: `用法：
   iskills import [路径或 Git URL] [选项]
+
+导入本地路径或 Git 来源到收藏夹。
 
 选项：
   -g, --global       扫描 Agent 全局 Skill 目录
@@ -83,21 +114,86 @@ export function printHelp(command?: string): void {
   --replace          替换收藏夹中的同名技能
   -y, --yes          跳过确认
   -h, --help         显示帮助
-`);
+`,
+  list: `用法：
+  iskills list [关键词] [选项]
+
+交互浏览当前项目、收藏夹和 Agent 全局技能；JSON 输出项目与收藏夹。
+
+选项：
+  --json             以 JSON 格式输出
+  --note <文本>      编辑收藏夹技能的备注（需指定技能名）
+  --tags <标签>      编辑收藏夹技能的标签，逗号分隔（需指定技能名）
+  --source <类型>    绑定来源类型（需指定技能名和 --source-path）
+  --ref <引用>       绑定来源引用
+  --source-path <路径>  绑定来源路径
+  -h, --help         显示帮助
+`,
+  remove: `用法：
+  iskills remove <技能> [选项]
+
+从当前项目或收藏夹移除技能。
+
+选项：
+  -g, --global       从收藏夹移除（还回原始位置）
+  --from <目录>      限定移除范围
+  -y, --yes          跳过确认
+  -h, --help         显示帮助
+`,
+  update: `用法：
+  iskills update [技能...] [选项]
+
+更新 Git 来源的技能。
+
+选项：
+  --all              更新全部可更新的技能
+  -y, --yes          自动接受远端变更
+  -h, --help         显示帮助
+`,
+  sync: `用法：
+  iskills sync [选项]
+
+同步收藏夹 Git 仓库。
+
+选项：
+  --background       后台异步同步
+  -h, --help         显示帮助
+`,
+  init: `用法：
+  iskills init [选项]
+
+初始化收藏夹 Git 仓库并创建首次提交。
+
+选项：
+  --remote <Git URL>  配置或更新 origin
+  -h, --help         显示帮助
+`,
+};
+
+export function printHelp(command?: string): void {
+  const help = command ? COMMAND_HELP[command] : undefined;
+  if (help) {
+    console.log(help);
     return;
   }
   console.log(`Skill 收藏夹
 
 用法：
-  iskills                 打开主界面
-  iskills add [技能...]    从收藏夹添加到当前项目（--copy 复制，-g 添加到 Agent 全局目录）
-  iskills import [来源]    导入本地路径或 Git 来源
-  iskills import -g        扫描全局 Skill 目录
-  iskills list [关键词]    浏览当前项目和收藏夹
-  iskills remove <技能>    从当前项目移除
-  iskills remove <技能> -g 从收藏夹移除
-  iskills update           更新远程来源技能
-  iskills init             初始化收藏夹 Git
-  iskills sync             同步收藏夹 Git
+  iskills [命令] [选项]
+
+命令：
+  add [技能...]      从收藏夹添加到当前项目
+  import [来源]      导入本地路径或 Git 来源
+  list [关键词]      浏览当前项目、收藏夹和全局技能
+  remove <技能>      从当前项目或收藏夹移除
+  update [技能...]   更新 Git 来源技能
+  init               初始化收藏夹 Git
+  sync               同步收藏夹 Git
+
+选项：
+  -h, --help         显示帮助（可用 iskills help <命令>）
+  -v, --version      显示版本
+
+不带命令时打开交互式浏览界面。
 `);
 }

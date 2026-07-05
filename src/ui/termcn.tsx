@@ -309,12 +309,14 @@ export function Tabs({
   onTabChange,
   isActive = true,
   enableArrowNav = true,
+  focused = false,
 }: {
   tabs: Tab[];
   activeTab: string;
   onTabChange: (key: string) => void;
   isActive?: boolean;
   enableArrowNav?: boolean;
+  focused?: boolean;
 }): ReactNode {
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.key === activeTab));
   useInput(
@@ -350,6 +352,7 @@ export function Tabs({
               color={tab.key === activeTab ? colors.primary : colors.muted}
               bold={tab.key === activeTab}
               underline={tab.key === activeTab}
+              inverse={focused && tab.key === activeTab}
             >
               {tab.label}
             </Text>

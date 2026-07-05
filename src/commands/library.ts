@@ -145,10 +145,16 @@ export async function importSkillsToCollection(
   return { count };
 }
 
-async function globalSkillGroups(names: string[] = []): Promise<
+export async function globalSkillGroups(names: string[] = []): Promise<
   { agent: string; root: string; skills: Skill[] }[]
 > {
   const home = homedir();
+  const collectedByPath = new Map<string, CollectedSkill>();
+  for (const skill of await listCollection()) {
+    try {
+      collectedByPath.set(await realpath(skill.path), skill);
+    } catch {}
+  }
   const selected = names.length
     ? names.map((name) => {
         const agent = AGENTS[name];
@@ -159,8 +165,19 @@ async function globalSkillGroups(names: string[] = []): Promise<
   const groups: { agent: string; root: string; skills: Skill[] }[] = [];
   for (const { name, agent } of selected) {
     const root = agent.global(home);
-    if (!(await exists(root))) continue;
-    const skills = (await discoverSkills(root)).sort((a, b) => a.name.localeCompare(b.name));
+    const skills = await Promise.all(
+      (await discoverSkills(root)).map(async (skill) => {
+        try {
+          const collected = collectedByPath.get(await realpath(skill.path));
+          return collected
+            ? { ...collected, path: skill.path, fromCollection: true }
+            : { ...skill, fromCollection: false };
+        } catch {
+          return { ...skill, fromCollection: false };
+        }
+      })
+    );
+    skills.sort((a, b) => a.name.localeCompare(b.name));
     groups.push({ agent: name, root, skills });
   }
   return groups.sort((a, b) => a.agent.localeCompare(b.agent));
@@ -196,7 +213,10 @@ export async function commandImport(argv: string[]): Promise<void> {
     } else if (values.global) {
       const groups = await globalSkillGroups(values.agent);
       globalGroups = groups
-        .map((group) => ({ agent: group.agent, skills: group.skills.filter(isCollected) }))
+        .map((group) => ({
+          agent: group.agent,
+          skills: group.skills.filter((skill) => !skill.fromCollection && isCollected(skill)),
+        }))
         .filter((group) => group.skills.length > 0);
       skills = globalGroups.flatMap((group) => group.skills);
     } else {
@@ -357,6 +377,8 @@ export async function addSkillsToProject(
   if (!targetRoots.length) return { count: 0, targetCount: 0 };
   await Promise.all(targetRoots.map((targetRoot) => mkdir(targetRoot, { recursive: true })));
   const state = await readState();
+  const addedSkills = new Set<string>();
+  const addedTargets = new Set<string>();
 
   for (const targetRoot of targetRoots) {
     for (const skill of skills) {
@@ -370,7 +392,10 @@ export async function addSkillsToProject(
         if (!replace && process.stdin.isTTY && !values.yes) {
           replace = await confirm(`目标已存在，替换 ${target} 吗？`);
         }
-        if (!replace) throw new Error(`目标已存在：${target}，请确认后使用 --replace`);
+        if (!replace) {
+          if (process.stdin.isTTY && !values.yes) continue;
+          throw new Error(`目标已存在：${target}，请确认后使用 --replace`);
+        }
         await rm(target, { recursive: true });
       }
       if (values.copy) {
@@ -379,15 +404,17 @@ export async function addSkillsToProject(
         await symlink(skill.path, target, 'dir');
         state.links.push({ skill: skill.name, path: target, kind: 'usage' });
       }
+      addedSkills.add(skill.name);
+      addedTargets.add(targetRoot);
     }
   }
   await writeState(state);
   if (!values.quiet) {
     console.log(
-      `已添加 ${skills.length} 个技能到 ${targetRoots.length} 个目录${values.copy ? '（复制）' : ''}。`
+      `已添加 ${addedSkills.size} 个技能到 ${addedTargets.size} 个目录${values.copy ? '（复制）' : ''}。`
     );
   }
-  return { count: skills.length, targetCount: targetRoots.length };
+  return { count: addedSkills.size, targetCount: addedTargets.size };
 }
 
 export async function commandAdd(argv: string[]): Promise<void> {

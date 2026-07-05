@@ -67,6 +67,13 @@ export async function initCollectionGit(): Promise<boolean> {
   }
 }
 
+export async function configureCollectionRemote(remote: string): Promise<void> {
+  if (!remote.trim()) throw new Error('远程仓库地址不能为空');
+  const { root } = await ensureCollection();
+  const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
+  git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', remote]);
+}
+
 export async function cloneGitSource(input: string): Promise<GitImportContext> {
   const parsed = parseGitSource(input);
   const temporary = await mkdtemp(join(tmpdir(), 'iskills-source-'));
