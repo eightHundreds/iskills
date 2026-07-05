@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { realpath } from 'node:fs/promises';
 import { listCollection } from './core.js';
-import { Confirm, MultiSelect, Select, SkillMultiSelect, TextInput } from './ui/termcn.js';
+import { Confirm, MultiSelect, Select, SkillMultiSelect, TagEditor, TextInput } from './ui/termcn.js';
 import { InkSession } from './ui/session.js';
 import type { Choice, Skill } from './types.js';
 
@@ -131,4 +131,15 @@ export function chooseOptionsMany<T extends string>(
   return runPrompt<T[]>([], (finish) => (
     <MultiSelect<T> label={title} options={options} onSubmit={finish} />
   ));
+}
+
+export function editTags(
+  tags: string[],
+  initialValues: string[],
+  session: InkSession,
+  title = '编辑标签'
+): Promise<string[] | undefined> {
+  return runPrompt<string[] | undefined>(undefined, (finish) => (
+    <TagEditor tags={tags} initialValues={initialValues} title={title} onSubmit={finish} />
+  ), session);
 }
