@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { matches } from '../core.js';
-import type { Skill, SkillLink, SkillMetadata } from '../types.js';
+import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../types.js';
 import { InkSession } from './session.js';
 import { Tabs, TextInput, termcnColors } from './termcn.js';
 
@@ -10,7 +10,8 @@ export type BrowserResult =
   | { type: 'quit' }
   | { type: 'sync'; tab: BrowserTab; query: string }
   | { type: 'tags'; skills: Skill[]; tab: BrowserTab; query: string }
-  | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string };
+  | { type: 'add'; skills: CollectedSkill[]; tab: BrowserTab; query: string }
+  | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string; cursor: number; selected: string[] };
 
 type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
@@ -113,31 +114,54 @@ function Browser({
   collection,
   initialQuery,
   initialTab,
+  initialCursor,
+  initialSelected,
   canSync,
   status,
   finish,
 }: {
   project: Skill[];
-  collection: Skill[];
+  collection: CollectedSkill[];
   initialQuery: string;
   initialTab: BrowserTab;
+  initialCursor: number;
+  initialSelected: string[];
   canSync: boolean;
   status: string;
   finish: (result: BrowserResult) => void;
 }) {
   const [tab, setTab] = useState<BrowserTab>(initialTab);
   const [query, setQuery] = useState(initialQuery);
-  const [cursor, setCursor] = useState(0);
+  const projectRows = useMemo(() => groupedRows(project, query), [project, query]);
+  const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
+  const rows = tab === 'project' ? projectRows : collectionRows;
+  const [cursor, setCursor] = useState(() =>
+    Math.min(initialCursor, Math.max(0, (tab === 'project' ? projectRows : collectionRows).length - 1))
+  );
   const [searching, setSearching] = useState(false);
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const projectRows = useMemo(() => groupedRows(project, query), [project, query]);
-  const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
-  const rows = tab === 'project' ? projectRows : collectionRows;
 
-  useEffect(() => setCursor(0), [tab]);
+  const previousTab = useRef(tab);
+  useEffect(() => {
+    if (previousTab.current !== tab) {
+      setCursor(0);
+      previousTab.current = tab;
+    }
+  }, [tab]);
+
+  const openDetail = (skill: Skill, collection: boolean) =>
+    finish({
+      type: 'open',
+      skill,
+      collection,
+      tab,
+      query,
+      cursor,
+      selected: [...selected],
+    });
   useInput(
     (input, key) => {
       if (key.escape || (key.ctrl && input === 'c') || input === 'q') return finish({ type: 'quit' });
@@ -168,9 +192,27 @@ function Browser({
           return next;
         });
       }
-      const skill = row?.type === 'skill' ? row.skill : row?.skills[0];
-      if (key.return && skill) {
-        finish({ type: 'open', skill, collection: tab === 'collection', tab, query });
+      if (key.leftArrow) {
+        if (tab === 'collection') return setTab('project');
+        return;
+      }
+      if (key.rightArrow) {
+        if (tab === 'collection') {
+          if (row?.type === 'skill') {
+            return openDetail(row.skill, true);
+          }
+          return setTab('project');
+        }
+        return setTab('collection');
+      }
+      if (key.return) {
+        if (tab === 'collection' && selectedCollection.length) {
+          return finish({ type: 'add', skills: selectedCollection, tab, query });
+        }
+        if (tab === 'project') {
+          const skill = row?.type === 'skill' ? row.skill : row?.skills[0];
+          if (skill) openDetail(skill, false);
+        }
       }
     },
     { isActive: !searching }
@@ -203,6 +245,7 @@ function Browser({
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
         isActive={!searching}
+        enableArrowNav={false}
       />
       {searching ? (
         <TextInput
@@ -224,8 +267,11 @@ function Browser({
         />
       ) : (
         <Text color={termcnColors.muted}>
-          ←/→ 或 Tab 切换 · ↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出
+          {tab === 'collection'
+            ? '←/→ 切换 · ↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
+            : '←/→ 切换 · ↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
           {selected.size ? ` · 已选 ${selected.size}` : ''}
+          {tab === 'collection' && selectedCollection.length ? ' · Enter 添加' : ''}
           {tab === 'collection' && selectedCollection.length ? ' · t 批量加标签' : ''}
           {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
           {status ? ` · ${status}` : ''}
@@ -316,12 +362,14 @@ export function browseSkillDetail(
 
 export function browseSkills(
   project: Skill[],
-  collection: Skill[],
+  collection: CollectedSkill[],
   session: InkSession,
   initialQuery = '',
   initialTab: BrowserTab = 'project',
   canSync = false,
-  status = ''
+  status = '',
+  initialCursor = 0,
+  initialSelected: string[] = []
 ): Promise<BrowserResult> {
   return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
       <Browser
@@ -329,6 +377,8 @@ export function browseSkills(
         collection={collection}
         initialQuery={initialQuery}
         initialTab={initialTab}
+        initialCursor={initialCursor}
+        initialSelected={initialSelected}
         canSync={canSync}
         status={status}
         finish={finish}

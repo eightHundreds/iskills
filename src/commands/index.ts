@@ -1,8 +1,7 @@
 import { parseArgs } from 'node:util';
-import { join } from 'node:path';
-import { collectionPaths, errorMessage, exists, listCollection, readState } from '../core.js';
+import { errorMessage, listCollection, readState } from '../core.js';
 import { initCollectionGit, syncCollection, updateGitSkill } from '../git.js';
-import { chooseMany, chooseOne } from '../prompts.js';
+import { chooseMany } from '../prompts.js';
 import type { CollectedSkill, UpdateStatus } from '../types.js';
 import { commandList, interactiveList } from './browser.js';
 import { commandAdd, commandImport, commandRemove } from './library.js';
@@ -70,30 +69,6 @@ export async function commandInit(argv: string[] = []): Promise<void> {
   parseArgs({ args: argv });
   const initialized = await initCollectionGit();
   console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
-}
-
-export async function mainMenu(): Promise<void> {
-  if (!process.stdin.isTTY) {
-    printHelp();
-    return;
-  }
-  const actions = [
-      { label: '从收藏夹添加到当前目录', value: 'add' },
-      { label: '导入当前目录中的技能', value: 'import' },
-      { label: '扫描全局 Skill 目录', value: 'import-global' },
-      { label: '浏览收藏夹', value: 'list' },
-      { label: '更新远程来源技能', value: 'update' },
-  ];
-  if (!(await exists(join(collectionPaths().root, '.git')))) {
-    actions.push({ label: '初始化收藏夹 Git', value: 'init' });
-  }
-  const action = await chooseOne(actions, '你想做什么？', true);
-  if (action === 'add') return commandAdd([]);
-  if (action === 'import') return commandImport([]);
-  if (action === 'import-global') return commandImport(['-g']);
-  if (action === 'list') return interactiveList();
-  if (action === 'update') return commandUpdate([]);
-  if (action === 'init') return commandInit([]);
 }
 
 export function printHelp(command?: string): void {
