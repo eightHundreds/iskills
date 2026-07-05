@@ -218,6 +218,8 @@ interface AddValues {
   to?: string;
   copy?: boolean;
   replace?: boolean;
+  yes?: boolean;
+  quiet?: boolean;
 }
 
 async function resolveTargets(values: AddValues): Promise<string[]> {
@@ -303,6 +305,48 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
   );
 }
 
+export async function addSkillsToProject(
+  skills: CollectedSkill[],
+  values: AddValues = {}
+): Promise<{ count: number; targetCount: number }> {
+  if (!skills.length) return { count: 0, targetCount: 0 };
+  const targetRoots = await resolveTargets(values);
+  if (!targetRoots.length) return { count: 0, targetCount: 0 };
+  await Promise.all(targetRoots.map((targetRoot) => mkdir(targetRoot, { recursive: true })));
+  const state = await readState();
+
+  for (const targetRoot of targetRoots) {
+    for (const skill of skills) {
+      const target = join(targetRoot, skill.name);
+      if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
+        throw new Error(`目标会指向技能自身：${target}`);
+      }
+      if (await pathPresent(target)) {
+        if (await isExactSymlink(target, skill.path)) continue;
+        let replace = values.replace ?? false;
+        if (!replace && process.stdin.isTTY && !values.yes) {
+          replace = await confirm(`目标已存在，替换 ${target} 吗？`);
+        }
+        if (!replace) throw new Error(`目标已存在：${target}，请确认后使用 --replace`);
+        await rm(target, { recursive: true });
+      }
+      if (values.copy) {
+        await cp(skill.path, target, { recursive: true, errorOnExist: true });
+      } else {
+        await symlink(skill.path, target, 'dir');
+        state.links.push({ skill: skill.name, path: target, kind: 'usage' });
+      }
+    }
+  }
+  await writeState(state);
+  if (!values.quiet) {
+    console.log(
+      `已添加 ${skills.length} 个技能到 ${targetRoots.length} 个目录${values.copy ? '（复制）' : ''}。`
+    );
+  }
+  return { count: skills.length, targetCount: targetRoots.length };
+}
+
 export async function commandAdd(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -318,38 +362,14 @@ export async function commandAdd(argv: string[]): Promise<void> {
   });
   const skills = await selectCollectionSkills(positionals);
   if (!skills.length) return;
-  const targetRoots = await resolveTargets(values);
-  if (!targetRoots.length) return;
-  await Promise.all(targetRoots.map((targetRoot) => mkdir(targetRoot, { recursive: true })));
-  const state = await readState();
-
-  for (const targetRoot of targetRoots) {
-    for (const skill of skills) {
-      const target = join(targetRoot, skill.name);
-      if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
-        throw new Error(`目标会指向技能自身：${target}`);
-      }
-      if (await pathPresent(target)) {
-        if (await isExactSymlink(target, skill.path)) continue;
-        let replace = values.replace ?? false;
-        if (!replace && process.stdin.isTTY) {
-          replace = await confirm(`目标已存在，替换 ${target} 吗？`);
-        }
-        if (!replace) throw new Error(`目标已存在：${target}，请确认后使用 --replace`);
-        await rm(target, { recursive: true });
-      }
-      if (values.copy) {
-        await cp(skill.path, target, { recursive: true, errorOnExist: true });
-      } else {
-        await symlink(skill.path, target, 'dir');
-        state.links.push({ skill: skill.name, path: target, kind: 'usage' });
-      }
-    }
-  }
-  await writeState(state);
-  console.log(
-    `已添加 ${skills.length} 个技能到 ${targetRoots.length} 个目录${values.copy ? '（复制）' : ''}。`
-  );
+  const options: AddValues = {};
+  if (values.agent) options.agent = values.agent;
+  if (values.global !== undefined) options.global = values.global;
+  if (values.to) options.to = values.to;
+  if (values.copy !== undefined) options.copy = values.copy;
+  if (values.replace !== undefined) options.replace = values.replace;
+  if (values.yes !== undefined) options.yes = values.yes;
+  await addSkillsToProject(skills, options);
 }
 
 async function removeUsage(name: string, from?: string): Promise<void> {

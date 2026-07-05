@@ -308,22 +308,35 @@ export function Tabs({
   activeTab,
   onTabChange,
   isActive = true,
+  enableArrowNav = true,
 }: {
   tabs: Tab[];
   activeTab: string;
   onTabChange: (key: string) => void;
   isActive?: boolean;
+  enableArrowNav?: boolean;
 }): ReactNode {
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.key === activeTab));
   useInput(
     (_input, key) => {
-      if (key.leftArrow || (key.shift && key.tab)) {
-        const previous = tabs[Math.max(0, activeIndex - 1)];
-        if (previous) onTabChange(previous.key);
+      if (enableArrowNav) {
+        if (key.leftArrow || (key.shift && key.tab)) {
+          const previous = tabs[Math.max(0, activeIndex - 1)];
+          if (previous) onTabChange(previous.key);
+        }
+        if (key.rightArrow || (key.tab && !key.shift)) {
+          const next = tabs[Math.min(tabs.length - 1, activeIndex + 1)];
+          if (next) onTabChange(next.key);
+        }
+        return;
       }
-      if (key.rightArrow || (key.tab && !key.shift)) {
+      if (key.tab && !key.shift) {
         const next = tabs[Math.min(tabs.length - 1, activeIndex + 1)];
         if (next) onTabChange(next.key);
+      }
+      if (key.shift && key.tab) {
+        const previous = tabs[Math.max(0, activeIndex - 1)];
+        if (previous) onTabChange(previous.key);
       }
     },
     { isActive }

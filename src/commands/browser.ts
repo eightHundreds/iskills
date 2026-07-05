@@ -6,6 +6,7 @@ import {
   baselinePath,
   collectionPaths,
   commitCollection,
+  errorMessage,
   exists,
   isGitSource,
   listCollection,
@@ -21,6 +22,7 @@ import { editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import { browseSkillDetail, browseSkills, type BrowserTab } from '../ui/browser.js';
 import { InkSession } from '../ui/session.js';
+import { addSkillsToProject } from './library.js';
 
 const CLEAR_SCREEN = '\u001B[2J\u001B[H';
 const ENTER_ALTERNATE_SCREEN = '\u001B[?1049h';
@@ -114,9 +116,14 @@ async function skillDetail(
   }
 }
 
-export async function interactiveList(initialQuery = ''): Promise<void> {
+export async function interactiveList(
+  initialQuery = '',
+  initialTab: BrowserTab = 'project'
+): Promise<void> {
   let query = initialQuery;
-  let tab: BrowserTab = 'project';
+  let tab: BrowserTab = initialTab;
+  let cursor = 0;
+  let selected: string[] = [];
   let status = '';
   const session = new InkSession();
   process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
@@ -124,7 +131,17 @@ export async function interactiveList(initialQuery = ''): Promise<void> {
     while (true) {
       const [project, collection] = await Promise.all([listProject(), listCollection()]);
       const canSync = await exists(join(collectionPaths().root, '.git'));
-      const result = await browseSkills(project, collection, session, query, tab, canSync, status);
+      const result = await browseSkills(
+        project,
+        collection,
+        session,
+        query,
+        tab,
+        canSync,
+        status,
+        cursor,
+        selected
+      );
       if (result.type === 'quit') return;
       query = result.query;
       tab = result.tab;
@@ -153,7 +170,21 @@ export async function interactiveList(initialQuery = ''): Promise<void> {
         status = `已为 ${result.skills.length} 个技能添加标签`;
         continue;
       }
-      await skillDetail(result.skill, result.collection, session);
+      if (result.type === 'add') {
+        try {
+          const { count } = await addSkillsToProject(result.skills, { quiet: true });
+          status = `已添加 ${count} 个技能`;
+        } catch (error) {
+          status = errorMessage(error);
+        }
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'open') {
+        cursor = result.cursor;
+        selected = result.selected;
+        await skillDetail(result.skill, result.collection, session);
+      }
     }
   } finally {
     session.close();

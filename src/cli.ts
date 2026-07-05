@@ -6,7 +6,7 @@ import {
   commandRemove,
   commandSync,
   commandUpdate,
-  mainMenu,
+  interactiveList,
   printHelp,
 } from './commands/index.js';
 import { commitCollection, ensureCollection, readState } from './core.js';
@@ -31,7 +31,10 @@ async function run(argv: string[]): Promise<void> {
   const pending = (await readState()).conflicts;
   if (pending.length) console.error(`警告：存在 ${pending.length} 个待处理冲突。`);
 
-  if (!command) return mainMenu();
+  if (!command) {
+    if (!process.stdin.isTTY) return printHelp();
+    return interactiveList('', 'collection');
+  }
   if (command === 'add') return commandAdd(rest);
   if (command === 'import') return commandImport(rest);
   if (command === 'list') return commandList(rest);

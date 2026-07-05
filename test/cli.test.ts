@@ -851,9 +851,8 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: 'shared (2)', send: '' },
       { wait: '搜索：shared', send: ' ', enter: false, delayAfter: 100 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
-      { wait: '为 2 个技能添加标签', send: '', enter: false },
-      { wait: 'Esc 取消', send: '\t', enter: false, delayAfter: 300 },
-      { wait: '新增标签', send: 'batch', enter: false, delayAfter: 100 },
+      { wait: '为 2 个技能添加标签', send: '\t', enter: false, delayAfter: 300 },
+      { wait: '新增标签（逗号分隔）', send: 'batch', enter: false, delayAfter: 100 },
       { wait: 'batch', send: '', delayAfter: 300 },
       { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
@@ -893,12 +892,12 @@ test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
 
     const result = await runInteractive(context, ['list', 'beta'], [
       { wait: 'q 退出', send: '\u001b[C', enter: false },
-      { wait: '未分组 (1)', send: '' },
+      { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 200 },
+      { wait: '› ○ beta', send: '\u001b[C', enter: false, delayAfter: 200 },
       { wait: 't 标签', send: 't', enter: false, delayAfter: 100 },
       { wait: '编辑标签', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 1', send: '', enter: false },
-      { wait: 'Esc 取消', send: '\t', enter: false },
-      { wait: '新增标签', send: 'custom', enter: false, delayAfter: 100 },
+      { wait: '已选 1', send: '\t', enter: false, delayAfter: 300 },
+      { wait: '新增标签（逗号分隔）', send: 'custom', enter: false, delayAfter: 100 },
       { wait: 'custom', send: '' },
       { wait: 'frontend, custom', send: 'q', enter: false, delayAfter: 100 },
       { wait: 'q 退出', send: 'q', enter: false, delayAfter: 100 },
@@ -934,7 +933,8 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
       ['list'],
       [
         { wait: 'q 退出', send: '\u001b[C', enter: false },
-        { wait: 'interactive-skill', send: '' },
+        { wait: '→ 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
+        { wait: 'interactive-skill', send: '\u001b[C', enter: false, delayAfter: 100 },
         { wait: 'n 备注', send: 'n', enter: false, delayAfter: 100 },
         { wait: '编辑备注', send: 'written from tty', enter: false, delayAfter: 100 },
         { wait: 'written from tty', send: '' },
@@ -989,7 +989,7 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
   }
 });
 
-test('TTY main menu shows numbered actions and accepts a number shortcut', async (t) => {
+test('TTY entry opens collection browser directly', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -998,25 +998,24 @@ test('TTY main menu shows numbered actions and accepts a number shortcut', async
   }
 
   const context = await makeContext();
-  await makeSkill(join(context.project, 'entry-skill'), 'entry-skill');
+  const source = join(context.project, 'entry-skill');
+  await makeSkill(source, 'entry-skill');
 
   try {
+    await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
-      { wait: '你想做什么？', send: '2', enter: false },
-      { wait: '继续吗？', send: 'n', enter: false },
+      { wait: 'q 退出', send: 'q', enter: false },
     ]);
-    assert.match(result.stdout, /1\. 从收藏夹添加到当前目录/);
-    assert.match(result.stdout, /5\. 更新远程来源技能/);
-    assert.match(result.stdout, /6\. 初始化收藏夹 Git/);
-    assert.doesNotMatch(result.stdout, /同步收藏夹 Git/);
+    assert.match(result.stdout, /收藏夹 1/);
     assert.match(result.stdout, /entry-skill/);
+    assert.doesNotMatch(result.stdout, /你想做什么？/);
     assert.doesNotMatch(result.stdout, /错误：/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
 });
 
-test('TTY main menu initializes Git and then hides the action', async (t) => {
+test('TTY entry adds selected skills from collection browser', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1025,17 +1024,35 @@ test('TTY main menu initializes Git and then hides the action', async (t) => {
   }
 
   const context = await makeContext();
+  const source = join(context.project, 'browser-add-skill');
+  await makeSkill(source, 'browser-add-skill');
+
   try {
-    const initialized = await runInteractive(context, [], [
-      { wait: '初始化收藏夹 Git', send: '6', enter: false },
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: '→ 查看', send: ' ', enter: false },
+      { wait: 'Enter 添加', send: '' },
+      { wait: '已添加 1 个技能', send: 'q', enter: false },
     ]);
+    assert.match(result.stdout, /已添加 1 个技能/);
+    assert.equal(
+      (await lstat(join(context.project, '.agents/skills/browser-add-skill'))).isSymbolicLink(),
+      true
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('iskills init initializes Git', async (t) => {
+  const context = await makeContext();
+  try {
+    const initialized = await run(context, ['init']);
     assert.match(initialized.stdout, /已初始化收藏夹 Git/);
     assert.equal((await lstat(join(context.collection, '.git'))).isDirectory(), true);
 
-    const reopened = await runInteractive(context, [], [
-      { wait: '你想做什么？', send: '\u001b', enter: false },
-    ]);
-    assert.doesNotMatch(reopened.stdout, /初始化收藏夹 Git/);
+    const repeated = await run(context, ['init']);
+    assert.match(repeated.stdout, /收藏夹 Git 已初始化/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
