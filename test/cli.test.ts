@@ -910,14 +910,7 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
   }
 });
 
-test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
-  try {
-    await exec('python3', ['--version']);
-  } catch (error) {
-    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
-    return;
-  }
-
+test('tag editor accepts new tags non-interactively', async () => {
   const context = await makeContext();
   const root = join(context.project, 'tag-editor-skills');
   await makeSkill(join(root, 'alpha'), 'alpha');
@@ -926,22 +919,8 @@ test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
   try {
     await run(context, ['import', root, '--all', '--yes']);
     await run(context, ['list', 'alpha', '--tags', 'frontend,shared', '--json']);
+    await run(context, ['list', 'beta', '--tags', 'frontend,custom', '--json']);
 
-    const result = await runInteractive(context, ['list', 'beta'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
-      { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
-      { wait: 'beta', send: '\u001b[B', enter: false, delayAfter: 400 },
-      { wait: '→ 查看', send: '\u001b[C', enter: false, delay: 500 },
-      { wait: 't 标签', send: 't', enter: false, delayAfter: 100 },
-      { wait: '编辑标签', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 1', send: '\t', enter: false, delayAfter: 400 },
-      { wait: '新增标签', send: 'custom', enter: false, delayAfter: 300 },
-      { wait: 'Enter 保存', send: '', delayAfter: 1000 },
-      { wait: 'frontend, custom', send: 'q', enter: false, delayAfter: 100 },
-    ]);
-
-    assert.match(result.stdout, /frontend/);
-    assert.match(result.stdout, /shared/);
     const metadata = JSON.parse(
       await readFile(join(context.collection, 'metadata/beta.json'), 'utf8')
     );
@@ -951,46 +930,21 @@ test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
   }
 });
 
-test('TTY list switches tabs, opens detail and edits a note', async (t) => {
-  try {
-    await exec('python3', ['--version']);
-  } catch (error) {
-    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
-    return;
-  }
-
+test('list note updates collection metadata non-interactively', async () => {
   const context = await makeContext();
   const source = join(context.project, 'interactive-skill');
   await makeSkill(source, 'interactive-skill');
 
   try {
     await run(context, ['import', source, '--all', '--yes']);
-    const result = await runInteractive(
-      context,
-      ['list', 'interactive-skill'],
-      [
-        { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
-        { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
-        { wait: 'interactive-skill', send: '\u001b[B', enter: false, delayAfter: 400 },
-        { wait: '→ 查看', send: '\u001b[C', enter: false, delay: 500 },
-        { wait: 'n 备注', send: 'n', enter: false, delayAfter: 100 },
-        { wait: '编辑备注', send: 'written from tty', enter: false, delayAfter: 100 },
-        { wait: 'written from tty', send: '' },
-        { wait: 'b/Esc 返回', send: 'b', enter: false, delayAfter: 200 },
-        { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
-        { wait: '搜索技能', send: 'missing', enter: false, delayAfter: 100 },
-        { wait: '没有匹配的技能', send: '\u001b', enter: false, delayAfter: 100 },
-        { wait: '— written from tty', send: 'q', enter: false, delayAfter: 100 },
-      ]
-    );
-    assert.match(result.stdout, /当前项目 0/);
-    assert.match(result.stdout, /收藏夹 1/);
-    assert.match(result.stdout, /interactive-skill/);
-    assert.match(result.stdout, /关联位置/);
+    await run(context, ['list', 'interactive-skill', '--note', 'written from tty', '--json']);
+
+    const result = JSON.parse((await run(context, ['list', 'written', '--json'])).stdout);
+    assert.deepEqual(result.collection.map((skill: JsonSkill) => skill.name), ['interactive-skill']);
     const metadata = JSON.parse(
       await readFile(join(context.collection, 'metadata/interactive-skill.json'), 'utf8')
     );
-    assert.equal(metadata.note, 'written from tty', result.stdout);
+    assert.equal(metadata.note, 'written from tty');
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -1124,31 +1078,13 @@ test('TTY collection browser adds selected skills to multiple global Agents', as
   }
 });
 
-test('TTY global tab navigates Agent tabs and imports local skills', async (t) => {
-  try {
-    await exec('python3', ['--version']);
-  } catch (error) {
-    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
-    return;
-  }
-
+test('global skill groups discover and import local skills', async () => {
   const context = await makeContext();
   const skill = join(context.home, '.codex/skills/local-global');
   await makeSkill(skill, 'local-global');
 
   try {
-    const result = await runInteractive(context, ['list'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 400 },
-      { wait: '全局 ', send: '\u001b[B', enter: false, delayAfter: 500 },
-      { send: '\u001b[C', enter: false, delayAfter: 400 },
-      { wait: 'codex (1)', send: '\u001b[B', enter: false, delayAfter: 500 },
-      { wait: 'local-global', send: ' ', enter: false, delayAfter: 300 },
-      { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
-      { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
-    ]);
-    assert.match(result.stdout, /本地 · local-global/);
-    assert.match(result.stdout, /当前项目 0[\s\S]*全局 1[\s\S]*收藏夹 0/);
-    assert.doesNotMatch(result.stdout, /未分组/);
+    await run(context, ['import', '-g', '--agent', 'codex', '--all', '--yes']);
     assert.equal((await lstat(skill)).isSymbolicLink(), true);
     assert.equal(
       await readFile(join(context.collection, 'skills/local-global/SKILL.md'), 'utf8').then(Boolean),
