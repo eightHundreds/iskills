@@ -106,6 +106,45 @@ async function importRemoteSkill(
   return true;
 }
 
+interface ImportToCollectionOptions {
+  replace?: boolean;
+  yes?: boolean;
+  quiet?: boolean;
+}
+
+export async function importSkillsToCollection(
+  skills: Skill[],
+  options: ImportToCollectionOptions = {}
+): Promise<{ count: number }> {
+  if (!skills.length) return { count: 0 };
+  let selected = skills;
+  let allowReplace = options.replace ?? false;
+  const paths = collectionPaths();
+  const conflicts: string[] = [];
+  for (const skill of selected) {
+    if (await exists(join(paths.skills, skill.name))) conflicts.push(skill.name);
+  }
+  if (conflicts.length && !allowReplace) {
+    if (!process.stdin.isTTY || options.yes) {
+      throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
+    }
+    allowReplace = await confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+    if (!allowReplace) {
+      selected = selected.filter((skill) => !conflicts.includes(skill.name));
+    }
+  }
+  if (!selected.length) return { count: 0 };
+  let count = 0;
+  for (const skill of selected) {
+    if (await importLocalSkill(skill, allowReplace)) count++;
+  }
+  await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
+  if (!options.quiet) {
+    console.log(`已导入 ${count} 个技能。`);
+  }
+  return { count };
+}
+
 async function globalSkillGroups(names: string[] = []): Promise<
   { agent: string; root: string; skills: Skill[] }[]
 > {
@@ -187,6 +226,13 @@ export async function commandImport(argv: string[]): Promise<void> {
     }
 
     let allowReplace = values.replace ?? false;
+    if (!gitContext) {
+      await importSkillsToCollection(selected, {
+        replace: allowReplace,
+        yes: values.yes ?? false,
+      });
+      return;
+    }
     const conflicts: string[] = [];
     for (const skill of selected) {
       if (await exists(join(paths.skills, skill.name))) conflicts.push(skill.name);
@@ -200,10 +246,7 @@ export async function commandImport(argv: string[]): Promise<void> {
     }
     let count = 0;
     for (const skill of selected) {
-      const imported = gitContext
-        ? await importRemoteSkill(skill, gitContext, allowReplace)
-        : await importLocalSkill(skill, allowReplace);
-      if (imported) count++;
+      if (await importRemoteSkill(skill, gitContext, allowReplace)) count++;
     }
     await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
     console.log(`已导入 ${count} 个技能。`);

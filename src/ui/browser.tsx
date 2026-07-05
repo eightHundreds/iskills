@@ -11,6 +11,7 @@ export type BrowserResult =
   | { type: 'sync'; tab: BrowserTab; query: string }
   | { type: 'tags'; skills: Skill[]; tab: BrowserTab; query: string }
   | { type: 'add'; skills: CollectedSkill[]; tab: BrowserTab; query: string }
+  | { type: 'import'; skills: Skill[]; tab: BrowserTab; query: string; cursor: number; selected: string[] }
   | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string; cursor: number; selected: string[] };
 
 type SkillRow =
@@ -47,16 +48,26 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
   return rows;
 }
 
+function selectableSkills(row: SkillRow, localOnly: boolean): Skill[] {
+  if (row.type === 'group') {
+    return localOnly ? row.skills.filter((skill) => !skill.fromCollection) : row.skills;
+  }
+  if (localOnly && row.skill.fromCollection) return [];
+  return [row.skill];
+}
+
 function SkillPane({
   rows,
   cursor,
   selected,
   preferNote = false,
+  showSource = false,
 }: {
   rows: SkillRow[];
   cursor: number;
   selected: Set<string>;
   preferNote?: boolean;
+  showSource?: boolean;
 }) {
   const { stdout } = useStdout();
   const height = Math.max(3, stdout.rows - 8);
@@ -69,15 +80,19 @@ function SkillPane({
         visible.map((row, visibleIndex) => {
           const index = offset + visibleIndex;
           if (row.type === 'group') {
-            const count = row.skills.filter((skill) => selected.has(skill.path)).length;
-            const marker = count === 0 ? '○' : count === row.skills.length ? '●' : '◐';
+            const groupSkills = showSource
+              ? row.skills.filter((skill) => !skill.fromCollection)
+              : row.skills;
+            const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
+            const marker =
+              count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
             return (
               <Text
                 key={`group:${row.name}`}
                 bold
                 {...(index === active ? { color: termcnColors.primary } : {})}
               >
-                {`${index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`}
+                {`${index === active ? '›' : ' '} ${marker} ${row.name} (${showSource ? groupSkills.length : row.skills.length})`}
               </Text>
             );
           }
@@ -90,6 +105,9 @@ function SkillPane({
               {...(index === active ? { color: termcnColors.primary } : {})}
             >
               {`  ${index === active ? '›' : ' '} ${selected.has(skill.path) ? '●' : '○'} `}
+              {showSource && !skill.fromCollection && (
+                <Text color={termcnColors.muted}>本地 · </Text>
+              )}
               <Text bold={index === active}>{skill.name}</Text>
               {summary && (
                 <Text color={termcnColors.muted}> — {summary}</Text>
@@ -143,11 +161,13 @@ function Browser({
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
+  const selectedLocal = project.filter((skill) => selected.has(skill.path) && !skill.fromCollection);
 
   const previousTab = useRef(tab);
   useEffect(() => {
     if (previousTab.current !== tab) {
       setCursor(0);
+      setSelected(new Set());
       previousTab.current = tab;
     }
   }, [tab]);
@@ -173,6 +193,16 @@ function Browser({
       if (input === 't' && tab === 'collection' && selectedCollection.length) {
         return finish({ type: 'tags', skills: selectedCollection, tab, query });
       }
+      if (input === 'i' && tab === 'project' && selectedLocal.length) {
+        return finish({
+          type: 'import',
+          skills: selectedLocal,
+          tab,
+          query,
+          cursor,
+          selected: [...selected],
+        });
+      }
       if (input === '/') {
         setQueryBeforeSearch(query);
         setCursorBeforeSearch(cursor);
@@ -184,7 +214,8 @@ function Browser({
       }
       const row = rows[cursor];
       if (input === ' ' && row) {
-        const paths = row.type === 'group' ? row.skills.map((skill) => skill.path) : [row.skill.path];
+        const paths = selectableSkills(row, tab === 'project').map((skill) => skill.path);
+        if (!paths.length) return;
         return setSelected((previous) => {
           const next = new Set(previous);
           const allSelected = paths.every((path) => previous.has(path));
@@ -222,7 +253,7 @@ function Browser({
     {
       key: 'project',
       label: `当前项目 ${project.length}`,
-      content: <SkillPane rows={projectRows} cursor={cursor} selected={selected} />,
+      content: <SkillPane rows={projectRows} cursor={cursor} selected={selected} showSource />,
     },
     {
       key: 'collection',
@@ -271,6 +302,7 @@ function Browser({
             ? '←/→ 切换 · ↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
             : '←/→ 切换 · ↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
           {selected.size ? ` · 已选 ${selected.size}` : ''}
+          {tab === 'project' && selectedLocal.length ? ' · i 加入收藏夹' : ''}
           {tab === 'collection' && selectedCollection.length ? ' · Enter 添加' : ''}
           {tab === 'collection' && selectedCollection.length ? ' · t 批量加标签' : ''}
           {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
