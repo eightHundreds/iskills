@@ -820,6 +820,47 @@ test('edits detail metadata non-interactively and searches it from both list tab
   }
 });
 
+test('TTY list groups tagged Skills, filters groups and selects a group once', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const root = join(context.project, 'tagged-skills');
+  await makeSkill(join(root, 'alpha'), 'alpha');
+  await makeSkill(join(root, 'beta'), 'beta');
+  await makeSkill(join(root, 'gamma'), 'gamma');
+
+  try {
+    await run(context, ['import', root, '--all', '--yes']);
+    await run(context, ['list', 'alpha', '--tags', 'frontend,shared', '--json']);
+    await run(context, ['list', 'beta', '--tags', 'frontend', '--json']);
+    await run(context, ['list', 'gamma', '--tags', 'shared', '--json']);
+
+    const result = await runInteractive(context, ['list'], [
+      { wait: 'q 退出', send: '\u001b[C', enter: false },
+      { wait: 'frontend (2)', send: '/', enter: false, delayAfter: 100 },
+      { wait: '搜索技能', send: 'alpha', enter: false, delayAfter: 100 },
+      { wait: 'frontend (1)', send: '', enter: false },
+      { wait: 'shared (1)', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
+      { wait: '搜索技能', send: 'shared', enter: false, delayAfter: 100 },
+      { wait: 'shared (2)', send: '' },
+      { wait: '搜索：shared', send: ' ', enter: false, delayAfter: 100 },
+      { wait: '已选 2', send: 'q', enter: false, delayAfter: 100 },
+    ]);
+
+    assert.match(result.stdout, /frontend \(1\)/);
+    assert.match(result.stdout, /shared \(1\)/);
+    assert.match(result.stdout, /● shared \(2\)/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('TTY list switches tabs, opens detail and edits a note', async (t) => {
   try {
     await exec('python3', ['--version']);
@@ -842,7 +883,7 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
         { wait: 'interactive-skill', send: '' },
         { wait: 'n 备注', send: 'n', enter: false, delayAfter: 100 },
         { wait: '编辑备注', send: 'written from tty', enter: false, delayAfter: 100 },
-        { wait: '│ written from tty', send: '' },
+        { wait: 'written from tty', send: '' },
         { wait: 'b/Esc 返回', send: 'b', enter: false, delayAfter: 200 },
         { wait: 'q 退出', send: '/', enter: false, delayAfter: 100 },
         { wait: '搜索技能', send: 'missing', enter: false, delayAfter: 100 },
@@ -850,7 +891,8 @@ test('TTY list switches tabs, opens detail and edits a note', async (t) => {
         { wait: '— written from tty', send: 'q', enter: false, delayAfter: 100 },
       ]
     );
-    assert.match(result.stdout, /当前项目 0\s+│\s+收藏夹 1/);
+    assert.match(result.stdout, /当前项目 0/);
+    assert.match(result.stdout, /收藏夹 1/);
     assert.match(result.stdout, /interactive-skill/);
     assert.match(result.stdout, /关联位置/);
     const metadata = JSON.parse(
@@ -876,9 +918,9 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
 
   try {
     const result = await runInteractive(context, ['add'], [
-      { wait: '收藏夹还是空的', send: '\u001b[B\u001b[B', enter: false },
-      { wait: '❯ 输入本地路径或 Git 来源', send: '' },
-      { wait: '路径或 Git 来源', send: source, enter: false, delayAfter: 100 },
+      { wait: 'Esc 取消', send: '\u001b[B\u001b[B', enter: false },
+      { wait: 'Esc 取消', send: '' },
+      { wait: '路径或 Git 来源：', send: source, enter: false, delayAfter: 100 },
       { wait: 'first-skill', send: '' },
       { wait: '继续吗？', send: 'y', enter: false, delayAfter: 100 },
     ]);
