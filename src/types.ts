@@ -26,6 +26,7 @@ export interface Skill {
   tags?: string[];
   note?: string;
   source?: SkillSource;
+  fromCollection?: boolean;
 }
 
 export interface SkillMetadata {

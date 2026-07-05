@@ -468,7 +468,11 @@ export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
       if (!seen.has(key)) {
         seen.add(key);
         const collected = collectedByPath.get(key);
-        found.push(collected ? { ...collected, path: skill.path } : skill);
+        found.push(
+          collected
+            ? { ...collected, path: skill.path, fromCollection: true }
+            : { ...skill, fromCollection: false }
+        );
       }
     }
   }

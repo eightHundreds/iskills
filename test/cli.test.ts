@@ -44,6 +44,7 @@ interface JsonSkill {
   name: string;
   description?: string;
   tags?: string[];
+  fromCollection?: boolean;
 }
 
 interface JsonLink {
@@ -1039,6 +1040,48 @@ test('TTY entry adds selected skills from collection browser', async (t) => {
       (await lstat(join(context.project, '.agents/skills/browser-add-skill'))).isSymbolicLink(),
       true
     );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY project tab labels local skills and imports them with i', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const agentsSkills = join(context.project, '.agents/skills');
+  const local = join(agentsSkills, 'local-only');
+  await makeSkill(local, 'local-only');
+  const collectedSource = join(context.project, 'collected-source');
+  await makeSkill(collectedSource, 'collected-skill');
+
+  try {
+    await run(context, ['import', collectedSource, '--all', '--yes']);
+    await run(context, ['add', 'collected-skill', '--to', agentsSkills]);
+
+    const json = JSON.parse((await run(context, ['list', '--json'])).stdout);
+    const localSkill = json.project.find((skill: JsonSkill) => skill.name === 'local-only');
+    const linkedSkill = json.project.find((skill: JsonSkill) => skill.name === 'collected-skill');
+    assert.equal(localSkill?.fromCollection, false);
+    assert.equal(linkedSkill?.fromCollection, true);
+
+    const result = await runInteractive(context, ['list'], [
+      { wait: 'Enter 查看', send: ' ', enter: false },
+      { wait: 'i 加入收藏夹', send: 'i', enter: false },
+      { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
+    ]);
+    assert.match(result.stdout, /本地 · local-only/);
+    assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/local-only/SKILL.md'), 'utf8').then(Boolean),
+      true
+    );
+    assert.equal((await lstat(local)).isSymbolicLink(), true);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

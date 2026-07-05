@@ -22,7 +22,7 @@ import { editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import { browseSkillDetail, browseSkills, type BrowserTab } from '../ui/browser.js';
 import { InkSession } from '../ui/session.js';
-import { addSkillsToProject } from './library.js';
+import { addSkillsToProject, importSkillsToCollection } from './library.js';
 
 const CLEAR_SCREEN = '\u001B[2J\u001B[H';
 const ENTER_ALTERNATE_SCREEN = '\u001B[?1049h';
@@ -177,6 +177,18 @@ export async function interactiveList(
         } catch (error) {
           status = errorMessage(error);
         }
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'import') {
+        try {
+          const { count } = await importSkillsToCollection(result.skills, { quiet: true });
+          status = `已导入 ${count} 个技能到收藏夹`;
+        } catch (error) {
+          status = errorMessage(error);
+        }
+        cursor = result.cursor;
+        selected = [];
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
