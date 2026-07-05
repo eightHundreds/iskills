@@ -9,6 +9,7 @@ export type BrowserTab = 'project' | 'collection';
 export type BrowserResult =
   | { type: 'quit' }
   | { type: 'sync'; tab: BrowserTab; query: string }
+  | { type: 'tags'; skills: Skill[]; tab: BrowserTab; query: string }
   | { type: 'open'; skill: Skill; collection: boolean; tab: BrowserTab; query: string };
 
 type SkillRow =
@@ -133,6 +134,7 @@ function Browser({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const projectRows = useMemo(() => groupedRows(project, query), [project, query]);
   const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
+  const selectedCollection = collection.filter((skill) => selected.has(skill.path));
   const rows = tab === 'project' ? projectRows : collectionRows;
 
   useEffect(() => setCursor(0), [tab]);
@@ -143,6 +145,9 @@ function Browser({
       if (input === 'p') return setTab('project');
       if (input === 's' && tab === 'collection' && canSync) {
         return finish({ type: 'sync', tab, query });
+      }
+      if (input === 't' && tab === 'collection' && selectedCollection.length) {
+        return finish({ type: 'tags', skills: selectedCollection, tab, query });
       }
       if (input === '/') {
         setQueryBeforeSearch(query);
@@ -221,6 +226,7 @@ function Browser({
         <Text color={termcnColors.muted}>
           ←/→ 或 Tab 切换 · ↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出
           {selected.size ? ` · 已选 ${selected.size}` : ''}
+          {tab === 'collection' && selectedCollection.length ? ' · t 批量加标签' : ''}
           {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
           {status ? ` · ${status}` : ''}
           {query ? ` · 搜索：${query}` : ''}

@@ -850,12 +850,66 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: '搜索技能', send: 'shared', enter: false, delayAfter: 100 },
       { wait: 'shared (2)', send: '' },
       { wait: '搜索：shared', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 2', send: 'q', enter: false, delayAfter: 100 },
+      { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
+      { wait: '为 2 个技能添加标签', send: '', enter: false },
+      { wait: 'Esc 取消', send: '\t', enter: false, delayAfter: 300 },
+      { wait: '新增标签', send: 'batch', enter: false, delayAfter: 100 },
+      { wait: 'batch', send: '', delayAfter: 300 },
+      { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
 
     assert.match(result.stdout, /frontend \(1\)/);
     assert.match(result.stdout, /shared \(1\)/);
     assert.match(result.stdout, /● shared \(2\)/);
+    const alpha = JSON.parse(
+      await readFile(join(context.collection, 'metadata/alpha.json'), 'utf8')
+    );
+    const gamma = JSON.parse(
+      await readFile(join(context.collection, 'metadata/gamma.json'), 'utf8')
+    );
+    assert.deepEqual(alpha.tags, ['frontend', 'shared', 'batch']);
+    assert.deepEqual(gamma.tags, ['shared', 'batch']);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY tag editor reuses existing tags and accepts new tags', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const root = join(context.project, 'tag-editor-skills');
+  await makeSkill(join(root, 'alpha'), 'alpha');
+  await makeSkill(join(root, 'beta'), 'beta');
+
+  try {
+    await run(context, ['import', root, '--all', '--yes']);
+    await run(context, ['list', 'alpha', '--tags', 'frontend,shared', '--json']);
+
+    const result = await runInteractive(context, ['list', 'beta'], [
+      { wait: 'q 退出', send: '\u001b[C', enter: false },
+      { wait: '未分组 (1)', send: '' },
+      { wait: 't 标签', send: 't', enter: false, delayAfter: 100 },
+      { wait: '编辑标签', send: ' ', enter: false, delayAfter: 100 },
+      { wait: '已选 1', send: '', enter: false },
+      { wait: 'Esc 取消', send: '\t', enter: false },
+      { wait: '新增标签', send: 'custom', enter: false, delayAfter: 100 },
+      { wait: 'custom', send: '' },
+      { wait: 'frontend, custom', send: 'q', enter: false, delayAfter: 100 },
+      { wait: 'q 退出', send: 'q', enter: false, delayAfter: 100 },
+    ]);
+
+    assert.match(result.stdout, /frontend/);
+    assert.match(result.stdout, /shared/);
+    const metadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/beta.json'), 'utf8')
+    );
+    assert.deepEqual(metadata.tags, ['frontend', 'custom']);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

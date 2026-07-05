@@ -17,7 +17,7 @@ import {
   writeMetadata,
 } from '../core.js';
 import { syncCollection } from '../git.js';
-import { editInput } from '../prompts.js';
+import { editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import { browseSkillDetail, browseSkills, type BrowserTab } from '../ui/browser.js';
 import { InkSession } from '../ui/session.js';
@@ -76,16 +76,11 @@ async function skillDetail(
       await commitCollection(`note ${skill.name}`);
     }
     if (action === 'tags') {
-      const tags = await editInput(
-        '编辑标签，使用逗号分隔（Enter 保存，Esc 取消）',
-        metadata.tags.join(', '),
-        session
-      );
+      const existing = [...new Set((await listCollection()).flatMap((item) => item.tags))]
+        .sort((left, right) => left.localeCompare(right));
+      const tags = await editTags(existing, metadata.tags, session);
       if (tags === undefined) continue;
-      metadata.tags = tags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
+      metadata.tags = tags;
       await writeMetadata(metadata);
       await commitCollection(`tag ${skill.name}`);
     }
@@ -137,6 +132,25 @@ export async function interactiveList(initialQuery = ''): Promise<void> {
         await syncCollection(false);
         status = 'Git 同步完成';
         process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'tags') {
+        const existing = [...new Set(collection.flatMap((skill) => skill.tags))]
+          .sort((left, right) => left.localeCompare(right));
+        const added = await editTags(
+          existing,
+          [],
+          session,
+          `为 ${result.skills.length} 个技能添加标签`
+        );
+        if (!added?.length) continue;
+        await Promise.all(result.skills.map(async (skill) => {
+          const metadata = await readMetadata(skill.name);
+          metadata.tags = [...new Set([...metadata.tags, ...added])];
+          await writeMetadata(metadata);
+        }));
+        await commitCollection(`tag ${result.skills.map((skill) => skill.name).join(', ')}`);
+        status = `已为 ${result.skills.length} 个技能添加标签`;
         continue;
       }
       await skillDetail(result.skill, result.collection, session);
