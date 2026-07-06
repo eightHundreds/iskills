@@ -1,10 +1,5 @@
-import {
-  ConfirmInput,
-  MultiSelect as InkMultiSelect,
-  Select as InkSelect,
-} from '@inkjs/ui';
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { Skill } from '../types.js';
 
 const colors = {
@@ -45,6 +40,165 @@ function resolveOptionValue<T>(options: Option<T>[], value: string): T | undefin
   return options[index]?.value;
 }
 
+// Copy-owned replacements for the three @inkjs/ui components used here (Select,
+// MultiSelect, ConfirmInput). @inkjs/ui does not declare `react` as a dependency
+// or peer dependency, so under pnpm's isolated node_modules it can resolve a
+// different React copy than ink, producing "Invalid hook call" / duplicate-React
+// crashes (Cannot read properties of null (reading 'useContext')). Reimplementing
+// on top of ink primitives keeps every hook on the single React instance ink uses.
+
+interface InternalOption {
+  value: string;
+  label: string;
+}
+
+interface WindowState {
+  focus: number;
+  from: number;
+}
+
+type WindowAction = { type: 'next' | 'previous'; length: number; count: number };
+
+// Uses a reducer (like @inkjs/ui) so that keypresses dispatched in quick
+// succession accumulate against the latest state instead of a stale closure.
+function windowReducer(state: WindowState, action: WindowAction): WindowState {
+  const focus = Math.min(state.focus, Math.max(0, action.length - 1));
+  if (action.type === 'next') {
+    const next = Math.min(action.length - 1, focus + 1);
+    const from = next >= state.from + action.count ? next - action.count + 1 : state.from;
+    return { focus: next, from };
+  }
+  const previous = Math.max(0, focus - 1);
+  const from = previous < state.from ? previous : state.from;
+  return { focus: previous, from };
+}
+
+function useScrollWindow(length: number, visibleCount: number) {
+  const count = Math.max(1, Math.min(visibleCount, Math.max(1, length)));
+  const [state, dispatch] = useReducer(windowReducer, { focus: 0, from: 0 });
+  const focus = Math.min(state.focus, Math.max(0, length - 1));
+  const from = Math.max(0, Math.min(state.from, Math.max(0, length - count)));
+  return {
+    count,
+    focus,
+    from,
+    focusNext: () => dispatch({ type: 'next', length, count }),
+    focusPrevious: () => dispatch({ type: 'previous', length, count }),
+  };
+}
+
+function ConfirmInput({
+  defaultChoice,
+  onConfirm,
+  onCancel,
+  isActive = true,
+}: {
+  defaultChoice: 'confirm' | 'cancel';
+  onConfirm: () => void;
+  onCancel: () => void;
+  isActive?: boolean;
+}): ReactNode {
+  useInput(
+    (input, key) => {
+      if (input.toLowerCase() === 'y') return onConfirm();
+      if (input.toLowerCase() === 'n') return onCancel();
+      if (key.return) return defaultChoice === 'confirm' ? onConfirm() : onCancel();
+    },
+    { isActive }
+  );
+  return <Text dimColor={!isActive}>{defaultChoice === 'confirm' ? 'Y/n' : 'y/N'}</Text>;
+}
+
+function OptionSelect({
+  options,
+  visibleCount,
+  onChange,
+}: {
+  options: InternalOption[];
+  visibleCount: number;
+  onChange: (value: string) => void;
+}): ReactNode {
+  const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
+    options.length,
+    visibleCount
+  );
+  useInput((_input, key) => {
+    if (key.downArrow) return focusNext();
+    if (key.upArrow) return focusPrevious();
+    if (key.return) {
+      const option = options[focus];
+      if (option) onChange(option.value);
+    }
+  });
+  const visible = options.slice(from, from + count);
+  return (
+    <Box flexDirection="column">
+      {visible.map((option, index) => {
+        const isFocused = from + index === focus;
+        return (
+          <Box key={option.value} gap={1} paddingLeft={isFocused ? 0 : 2}>
+            {isFocused && <Text color={colors.primary}>❯</Text>}
+            <Text {...(isFocused ? { color: colors.primary } : {})}>{option.label}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function OptionMultiSelect({
+  options,
+  visibleCount,
+  onSubmit,
+}: {
+  options: InternalOption[];
+  visibleCount: number;
+  onSubmit: (values: string[]) => void;
+}): ReactNode {
+  const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
+    options.length,
+    visibleCount
+  );
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  useInput((input, key) => {
+    if (key.downArrow) return focusNext();
+    if (key.upArrow) return focusPrevious();
+    if (input === ' ') {
+      const option = options[focus];
+      if (!option) return;
+      setSelected((previous) => {
+        const next = new Set(previous);
+        if (next.has(option.value)) next.delete(option.value);
+        else next.add(option.value);
+        return next;
+      });
+      return;
+    }
+    if (key.return) {
+      onSubmit(
+        options.filter((option) => selected.has(option.value)).map((option) => option.value)
+      );
+    }
+  });
+  const visible = options.slice(from, from + count);
+  return (
+    <Box flexDirection="column">
+      {visible.map((option, index) => {
+        const isFocused = from + index === focus;
+        const isSelected = selected.has(option.value);
+        const labelColor = isSelected ? 'green' : isFocused ? colors.primary : undefined;
+        return (
+          <Box key={option.value} gap={1} paddingLeft={isFocused ? 0 : 2}>
+            {isFocused && <Text color={colors.primary}>❯</Text>}
+            <Text {...(labelColor ? { color: labelColor } : {})}>{option.label}</Text>
+            {isSelected && <Text color="green">✔</Text>}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 export function Select<T>({
   label,
   options,
@@ -66,8 +220,8 @@ export function Select<T>({
   return (
     <Box flexDirection="column">
       {label && <Text bold>{label}</Text>}
-      <InkSelect
-        visibleOptionCount={visibleOptionCount(stdout.rows, label)}
+      <OptionSelect
+        visibleCount={visibleOptionCount(stdout.rows, label)}
         options={inkOptions}
         onChange={(value) => {
           const resolved = resolveOptionValue(options, value);
@@ -95,8 +249,8 @@ export function MultiSelect<T>({
   return (
     <Box flexDirection="column">
       {label && <Text bold>{label}</Text>}
-      <InkMultiSelect
-        visibleOptionCount={visibleOptionCount(stdout.rows, label)}
+      <OptionMultiSelect
+        visibleCount={visibleOptionCount(stdout.rows, label)}
         options={inkOptions}
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
       />
