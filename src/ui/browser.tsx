@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { matches } from '../core.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../types.js';
 import { InkSession } from './session.js';
-import { Tabs, TextInput, termcnColors } from './termcn.js';
+import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
 export type BrowserFocus = 'tabs' | 'agents' | 'list';
@@ -33,10 +33,19 @@ type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
   | { type: 'skill'; group: string; skill: Skill };
 
+function skillGroups(skill: Skill): string[] {
+  return [...new Set(skill.tags?.length ? skill.tags : ['未分组'])];
+}
+
 function groupedRows(skills: Skill[], query: string): SkillRow[] {
+  if (query.trim()) {
+    return skills
+      .filter((skill) => matches(skill, query))
+      .map((skill) => ({ type: 'skill', group: skillGroups(skill).join(' · '), skill }));
+  }
   const groups = new Map<string, Skill[]>();
   for (const skill of skills) {
-    for (const tag of new Set(skill.tags?.length ? skill.tags : ['未分组'])) {
+    for (const tag of skillGroups(skill)) {
       const group = groups.get(tag) ?? [];
       group.push(skill);
       groups.set(tag, group);
@@ -46,19 +55,10 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
     if (left === right) return 0;
     return left === '未分组' ? 1 : right === '未分组' ? -1 : left.localeCompare(right);
   });
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const matchingGroups = new Set(
-    sorted
-      .filter(([name]) => words.length && words.every((word) => name.toLowerCase().includes(word)))
-      .map(([name]) => name)
-  );
   const rows: SkillRow[] = [];
   for (const [name, group] of sorted) {
-    if (matchingGroups.size && !matchingGroups.has(name)) continue;
-    const visible = matchingGroups.size ? group : group.filter((skill) => matches(skill, query));
-    if (!visible.length) continue;
-    rows.push({ type: 'group', name, skills: visible });
-    rows.push(...visible.map((skill) => ({ type: 'skill' as const, group: name, skill })));
+    rows.push({ type: 'group', name, skills: group });
+    rows.push(...group.map((skill) => ({ type: 'skill' as const, group: name, skill })));
   }
   return rows;
 }
@@ -84,6 +84,7 @@ function SkillPane({
   isActive,
   preferNote = false,
   showSource = false,
+  showGroup = false,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -91,6 +92,7 @@ function SkillPane({
   isActive: boolean;
   preferNote?: boolean;
   showSource?: boolean;
+  showGroup?: boolean;
 }) {
   const { stdout } = useStdout();
   const height = Math.max(3, stdout.rows - 8);
@@ -134,6 +136,9 @@ function SkillPane({
               {...(isActive && index === active ? { color: termcnColors.primary } : {})}
             >
               {`  ${isActive && index === active ? '›' : ' '} ${selectionMarker} `}
+              {showGroup && row.group && (
+                <Text color={termcnColors.muted}>{row.group} / </Text>
+              )}
               {showSource && !skill.fromCollection ? (
                 `本地 · ${skill.name}`
               ) : (
@@ -204,6 +209,7 @@ function Browser({
     Math.min(initialCursor, Math.max(0, rows.length - 1))
   );
   const [searching, setSearching] = useState(false);
+  const [choosingGroup, setChoosingGroup] = useState(false);
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
@@ -213,6 +219,13 @@ function Browser({
   );
   const selectedGlobalLocal = globalGroups.flatMap((group) =>
     group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
+  );
+  const groupRows = useMemo(
+    () => groupedRows(tab === 'project' ? project : collection, ''),
+    [collection, project, tab]
+  );
+  const groups = groupRows.filter(
+    (row): row is Extract<SkillRow, { type: 'group' }> => row.type === 'group'
   );
 
   const previousTab = useRef(tab);
@@ -254,6 +267,9 @@ function Browser({
         setQueryBeforeSearch(query);
         setCursorBeforeSearch(cursor);
         return setSearching(true);
+      }
+      if (input === 'g' && tab !== 'global' && groups.length) {
+        return setChoosingGroup(true);
       }
       if (input === 's' && tab === 'collection' && canSync) {
         return finish({ ...browserState(), type: 'sync' });
@@ -317,7 +333,15 @@ function Browser({
         }
       }
     },
-    { isActive: !searching }
+    { isActive: !searching && !choosingGroup }
+  );
+  useInput(
+    (input, key) => {
+      if (key.escape || (key.ctrl && input === 'c') || input === 'q') {
+        setChoosingGroup(false);
+      }
+    },
+    { isActive: choosingGroup }
   );
 
   const tabs = [
@@ -331,6 +355,7 @@ function Browser({
           selected={selected}
           isActive={focus === 'list'}
           showSource
+          showGroup={Boolean(query.trim())}
         />
       ),
     },
@@ -374,10 +399,30 @@ function Browser({
           selected={selected}
           isActive={focus === 'list'}
           preferNote
+          showGroup={Boolean(query.trim())}
         />
       ),
     },
   ];
+
+  if (choosingGroup) {
+    return (
+      <Select
+        label="跳转到分组："
+        numbered
+        options={groups.map((group) => ({
+          label: `${group.name} (${group.skills.length})`,
+          value: group.name,
+        }))}
+        onSubmit={(name) => {
+          setQuery('');
+          setCursor(groupRows.findIndex((row) => row.type === 'group' && row.name === name));
+          setFocus('list');
+          setChoosingGroup(false);
+        }}
+      />
+    );
+  }
 
   return (
     <Box flexDirection="column">
@@ -417,6 +462,7 @@ function Browser({
                 ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
                 : '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
           {selected.size ? ` · 已选 ${selected.size}` : ''}
+          {tab !== 'global' ? ' · g 分组' : ''}
           {tab === 'project' && selectedProjectLocal.length ? ' · i 加入收藏夹' : ''}
           {tab === 'global' && selectedGlobalLocal.length ? ' · i 加入收藏夹' : ''}
           {tab === 'collection' && selectedCollection.length ? ' · Enter 添加' : ''}

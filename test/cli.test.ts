@@ -857,7 +857,7 @@ test('edits detail metadata non-interactively and searches it from both list tab
   }
 });
 
-test('TTY list groups tagged Skills, filters groups and selects a group once', async (t) => {
+test('TTY list searches across groups and jumps directly to a group', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -881,11 +881,9 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
       { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'alpha', enter: false, delayAfter: 100 },
-      { wait: 'frontend (1)', send: '', enter: false },
-      { wait: 'shared (1)', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
-      { wait: '搜索技能', send: 'shared', enter: false, delayAfter: 100 },
-      { wait: 'shared (2)', send: '', delayAfter: 200 },
+      { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: 'g 分组', send: 'g', enter: false, delayAfter: 100 },
+      { wait: '跳转到分组', send: '2', enter: false, delayAfter: 100 },
       { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
       { wait: '为 2 个技能添加标签', send: ' ', enter: false },
@@ -893,8 +891,7 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
 
-    assert.match(result.stdout, /frontend \(1\)/);
-    assert.match(result.stdout, /shared \(1\)/);
+    assert.match(result.stdout, /frontend · shared \/ /);
     assert.match(result.stdout, /● shared \(2\)/);
     const alpha = JSON.parse(
       await readFile(join(context.collection, 'metadata/alpha.json'), 'utf8')
