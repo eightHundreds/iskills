@@ -1,4 +1,5 @@
 import { cp, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
@@ -204,18 +205,35 @@ export async function interactiveList(
           session
         );
         if (!destination) continue;
-        const agents = destination === 'global'
-          ? await chooseOptionsMany(
-              Object.keys(AGENTS).map((name) => ({ label: name, value: name })),
-              '选择全局 Agent：',
-              session
-            )
-          : [];
-        if (destination === 'global' && !agents.length) continue;
+        const isGlobal = destination === 'global';
+        const targetOptions = [
+          {
+            label: `标准 Agent Skills (${isGlobal ? '~/.agents/skills' : '.agents/skills'})`,
+            value: 'agents',
+          },
+          {
+            label: `Claude Code (${isGlobal ? '~/.claude/skills' : '.claude/skills'})`,
+            value: 'claude',
+          },
+        ];
+        const defaultAgents: string[] = [];
+        for (const option of targetOptions) {
+          const agent = AGENTS[option.value];
+          const path = isGlobal ? agent?.global(homedir()) : agent?.project;
+          if (path && await exists(path)) defaultAgents.push(option.value);
+        }
+        const agents = await chooseOptionsMany(
+          targetOptions,
+          destination === 'global' ? '选择全局 Skill 目录：' : '选择项目 Skill 目录：',
+          session,
+          defaultAgents
+        );
+        if (!agents.length) continue;
         try {
           const { count, targetCount } = await addSkillsToProject(result.skills, {
             quiet: true,
-            ...(destination === 'global' ? { global: true, agent: agents } : {}),
+            agent: agents,
+            ...(isGlobal ? { global: true } : {}),
           });
           status = `已添加 ${count} 个技能到 ${targetCount} 个目录`;
           selected = [];

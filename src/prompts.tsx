@@ -128,10 +128,16 @@ export function chooseOne<T extends string>(
 export function chooseOptionsMany<T extends string>(
   options: Choice<T>[],
   title: string,
-  session?: InkSession
+  session?: InkSession,
+  defaultValues: T[] = []
 ): Promise<T[]> {
   return runPrompt<T[]>([], (finish) => (
-    <MultiSelect<T> label={title} options={options} onSubmit={finish} />
+    <MultiSelect<T>
+      label={title}
+      options={options}
+      defaultValues={defaultValues}
+      onSubmit={finish}
+    />
   ), session);
 }
 
