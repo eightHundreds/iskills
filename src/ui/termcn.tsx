@@ -149,17 +149,19 @@ function OptionSelect({
 function OptionMultiSelect({
   options,
   visibleCount,
+  defaultValue = [],
   onSubmit,
 }: {
   options: InternalOption[];
   visibleCount: number;
+  defaultValue?: string[];
   onSubmit: (values: string[]) => void;
 }): ReactNode {
   const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
     options.length,
     visibleCount
   );
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultValue));
   useInput((input, key) => {
     if (key.downArrow) return focusNext();
     if (key.upArrow) return focusPrevious();
@@ -175,9 +177,11 @@ function OptionMultiSelect({
       return;
     }
     if (key.return) {
-      onSubmit(
-        options.filter((option) => selected.has(option.value)).map((option) => option.value)
-      );
+      if (selected.size) {
+        onSubmit(
+          options.filter((option) => selected.has(option.value)).map((option) => option.value)
+        );
+      }
     }
   });
   const visible = options.slice(from, from + count);
@@ -186,12 +190,15 @@ function OptionMultiSelect({
       {visible.map((option, index) => {
         const isFocused = from + index === focus;
         const isSelected = selected.has(option.value);
-        const labelColor = isSelected ? 'green' : isFocused ? colors.primary : undefined;
         return (
           <Box key={option.value} gap={1} paddingLeft={isFocused ? 0 : 2}>
             {isFocused && <Text color={colors.primary}>❯</Text>}
-            <Text {...(labelColor ? { color: labelColor } : {})}>{option.label}</Text>
-            {isSelected && <Text color="green">✔</Text>}
+            <Text color={isFocused || isSelected ? colors.primary : colors.muted}>
+              {isSelected ? '●' : '○'}
+            </Text>
+            <Text {...(isFocused ? { color: colors.primary, bold: true } : {})}>
+              {option.label}
+            </Text>
           </Box>
         );
       })}
@@ -238,23 +245,29 @@ export function Select<T>({
 export function MultiSelect<T>({
   label,
   options,
+  defaultValues = [],
   onSubmit,
 }: {
   label?: string;
   options: Option<T>[];
+  defaultValues?: T[];
   onSubmit: (values: T[]) => void;
 }): ReactNode {
   const { stdout } = useStdout();
   const inkOptions = useMemo(() => toInkOptions(options), [options]);
+  const defaultValue = options.flatMap((option, index) =>
+    defaultValues.includes(option.value) ? [String(index)] : []
+  );
   return (
     <Box flexDirection="column">
       {label && <Text bold>{label}</Text>}
       <OptionMultiSelect
+        defaultValue={defaultValue}
         visibleCount={visibleOptionCount(stdout.rows, label)}
         options={inkOptions}
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
       />
-      <Text color={colors.muted}>Space 选择 · Enter 确认 · Esc 取消</Text>
+      <Text color={colors.muted}>Space/空格 勾选 · Enter 确认 · Esc 取消</Text>
     </Box>
   );
 }

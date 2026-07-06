@@ -888,9 +888,8 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
       { wait: 'shared (2)', send: '', delayAfter: 200 },
       { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
-      { wait: '为 2 个技能添加标签', send: '\t', enter: false, delayAfter: 400 },
-      { wait: '新增标签', send: 'batch', enter: false, delayAfter: 300 },
-      { wait: 'Enter 保存', send: '', delayAfter: 1000 },
+      { wait: '为 2 个技能添加标签', send: ' ', enter: false },
+      { wait: '已选 1', send: '', delayAfter: 1000 },
       { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
     ]);
 
@@ -903,8 +902,8 @@ test('TTY list groups tagged Skills, filters groups and selects a group once', a
     const gamma = JSON.parse(
       await readFile(join(context.collection, 'metadata/gamma.json'), 'utf8')
     );
-    assert.deepEqual(alpha.tags, ['frontend', 'shared', 'batch']);
-    assert.deepEqual(gamma.tags, ['shared', 'batch']);
+    assert.deepEqual(alpha.tags, ['frontend', 'shared']);
+    assert.deepEqual(gamma.tags, ['shared', 'frontend']);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -1002,6 +1001,46 @@ test('TTY entry opens collection browser directly', async (t) => {
     assert.match(result.stdout, /entry-skill/);
     assert.doesNotMatch(result.stdout, /你想做什么？/);
     assert.doesNotMatch(result.stdout, /错误：/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY entry defaults to existing project Skill directories', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'entry-agent-skill');
+  await makeSkill(source, 'entry-agent-skill');
+  await mkdir(join(context.project, '.claude/skills'), { recursive: true });
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '已选 1', send: '', delayAfter: 100 },
+      { wait: '添加到：', send: '' },
+      { wait: '选择项目 Skill 目录：', send: '', enter: false },
+      { wait: '○', send: '', enter: false },
+      { wait: '标准 Agent Skills (.agents/skills)', send: '', enter: false },
+      { wait: '●', send: '', enter: false },
+      { wait: 'Claude Code (.claude/skills)', send: '', delayAfter: 150 },
+      { wait: '已添加 1 个技能到 1 个目录', send: 'q', enter: false },
+    ]);
+    assert.doesNotMatch(result.stdout, /错误：/);
+    assert.equal(
+      (await lstat(join(context.project, '.claude/skills/entry-agent-skill'))).isSymbolicLink(),
+      true
+    );
+    await assert.rejects(lstat(join(context.project, '.agents/skills/entry-agent-skill')), {
+      code: 'ENOENT',
+    });
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
