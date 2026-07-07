@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
@@ -34,6 +34,59 @@ import type {
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
+}
+
+const remoteHeadCache = new Map<string, Promise<string | undefined>>();
+
+function remoteBranchHead(url: string, ref: string): Promise<string | undefined> {
+  const key = `${url}\0${ref}`;
+  const cached = remoteHeadCache.get(key);
+  if (cached) return cached;
+  // ponytail: process-local caching is enough for one browser session.
+  const request = new Promise<string | undefined>((resolve) => {
+    execFile(
+      'git',
+      ['ls-remote', '--heads', url, `refs/heads/${ref}`],
+      {
+        encoding: 'utf8',
+        timeout: 8000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      },
+      (error, stdout) => {
+        if (error) remoteHeadCache.delete(key);
+        resolve(error ? undefined : stdout.trim().split(/\s+/)[0]);
+      }
+    );
+  });
+  remoteHeadCache.set(key, request);
+  return request;
+}
+
+export async function checkGitSkillUpdates(skills: Skill[]): Promise<{
+  updates: Set<string>;
+  failed: number;
+}> {
+  const checkable = skills.flatMap((skill) => {
+    const source = skill.source;
+    if (
+      source?.type !== 'git' ||
+      source.refType !== 'branch' ||
+      !source.url ||
+      !source.ref ||
+      !source.commit
+    ) return [];
+    return [{ name: skill.name, url: source.url, ref: source.ref, commit: source.commit }];
+  });
+  const results = await Promise.all(checkable.map(async (skill) => ({
+    ...skill,
+    remote: await remoteBranchHead(skill.url, skill.ref),
+  })));
+
+  return {
+    updates: new Set(results.filter((skill) => skill.remote && skill.remote !== skill.commit)
+      .map((skill) => skill.name)),
+    failed: results.filter((skill) => !skill.remote).length,
+  };
 }
 
 export async function initCollectionGit(): Promise<boolean> {
