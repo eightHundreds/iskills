@@ -1000,7 +1000,7 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
   try {
     const result = await runInteractive(context, ['add'], [
       { wait: 'Esc 取消', send: '\u001b[B\u001b[B', enter: false },
-      { wait: 'Esc 取消', send: '' },
+      { wait: '输入本地路径或 Git 来源', send: '' },
       { wait: '路径或 Git 来源：', send: source, enter: false, delayAfter: 100 },
       { wait: 'first-skill', send: '' },
       { wait: '继续吗？', send: 'y', enter: false, delayAfter: 100 },
