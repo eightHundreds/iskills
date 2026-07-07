@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { execFile, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
 import {
@@ -78,7 +78,12 @@ async function makeContext(): Promise<TestContext> {
     home,
     config,
     project,
-    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: config },
+    env: {
+      ...process.env,
+      HOME: home,
+      XDG_CONFIG_HOME: config,
+      SK_NO_BACKGROUND_SYNC: '1',
+    },
     collection: join(config, 'iskills'),
   };
 }
@@ -323,6 +328,40 @@ test('updates a branch source through a three-way Git merge', async () => {
     assert.equal(
       await readFile(join(context.collection, 'skills/remote-skill/asset.txt'), 'utf8'),
       'upstream update\n'
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('collection browser detects and updates a changed branch source', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const { repository, skill } = await makeGitSkillRepo(context);
+
+  try {
+    await run(context, ['import', `file://${repository}`, '--all', '--yes']);
+    await writeFile(join(skill, 'asset.txt'), 'browser update\n', 'utf8');
+    await exec('git', ['add', '.'], { cwd: repository });
+    await exec('git', ['commit', '-m', 'browser update'], { cwd: repository });
+
+    const result = await runInteractive(context, [], [
+      { wait: '1 个技能可更新', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: '\u001b[B', enter: false },
+      { send: 'u', enter: false },
+      { wait: 'remote-skill: updated', send: 'q', enter: false },
+    ]);
+
+    assert.match(result.stdout, /1 个技能可更新/);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/remote-skill/asset.txt'), 'utf8'),
+      'browser update\n'
     );
   } finally {
     await rm(context.root, { recursive: true, force: true });
@@ -1397,6 +1436,7 @@ test('collection browser sync establishes the first upstream and excludes machin
 
 test('a mutating command returns while its detached Git sync pushes in the background', async () => {
   const context = await makeContext();
+  delete context.env.SK_NO_BACKGROUND_SYNC;
   const collection = context.collection;
   const remote = join(context.root, 'async-sync.git');
   const source = join(context.project, 'async-skill');

@@ -25,7 +25,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean --silent && tsc",
     "start": "npm run build --silent && node ./bin/iskills.js",
-    "test": "npm run build --silent && node --test --test-concurrency=1 ./dist/test/cli.test.js",
+    "test": "npm run build --silent && vitest run test/cli.test.ts --sequence.concurrent --maxConcurrency=4 --testTimeout=30000",
     "type-check": "tsc --noEmit",
     "prepack": "npm run build"
   },
@@ -39,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.10"
   }
 }
