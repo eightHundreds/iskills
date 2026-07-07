@@ -19,7 +19,7 @@ import {
   readState,
   writeMetadata,
 } from '../core.js';
-import { syncCollection } from '../git.js';
+import { syncCollection, updateGitSkill } from '../git.js';
 import { chooseOne, chooseOptionsMany, editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import {
@@ -172,6 +172,15 @@ export async function interactiveList(
       if (result.type === 'sync') {
         await syncCollection(false);
         status = 'Git 同步完成';
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'update') {
+        try {
+          status = `${result.skill.name}: ${await updateGitSkill(result.skill, false)}`;
+        } catch (error) {
+          status = `${result.skill.name}: 更新失败 — ${errorMessage(error)}`;
+        }
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }

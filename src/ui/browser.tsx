@@ -1,6 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { matches } from '../core.js';
+import { checkGitSkillUpdates } from '../git.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../types.js';
 import { InkSession } from './session.js';
 import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
@@ -24,6 +25,7 @@ export type BrowserResult =
   | (BrowserState & (
       | { type: 'sync' }
       | { type: 'tags'; skills: Skill[] }
+      | { type: 'update'; skill: CollectedSkill }
       | { type: 'add'; skills: CollectedSkill[] }
       | { type: 'import'; skills: Skill[] }
       | { type: 'open'; skill: Skill; collection: boolean }
@@ -85,6 +87,7 @@ function SkillPane({
   preferNote = false,
   showSource = false,
   showGroup = false,
+  updates = new Set<string>(),
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -93,6 +96,7 @@ function SkillPane({
   preferNote?: boolean;
   showSource?: boolean;
   showGroup?: boolean;
+  updates?: Set<string>;
 }) {
   const { stdout } = useStdout();
   const height = Math.max(3, stdout.rows - 8);
@@ -144,6 +148,7 @@ function SkillPane({
               ) : (
                 <Text bold={isActive && index === active}>{skill.name}</Text>
               )}
+              {updates.has(skill.name) && <Text color={termcnColors.primary}> ↑</Text>}
               {summary && (
                 <Text color={termcnColors.muted}> — {summary}</Text>
               )}
@@ -208,11 +213,18 @@ function Browser({
   const [cursor, setCursor] = useState(() =>
     Math.min(initialCursor, Math.max(0, rows.length - 1))
   );
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const [updateCheck, setUpdateCheck] = useState<{
+    checking: boolean;
+    updates: Set<string>;
+    failed: number;
+  }>({ checking: false, updates: new Set(), failed: 0 });
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
   const selectedProjectLocal = project.filter(
     (skill) => selected.has(skill.path) && !skill.fromCollection
@@ -243,11 +255,20 @@ function Browser({
       previousAgent.current = agent;
     }
   }, [agent]);
+  const checkedUpdates = useRef(false);
+  useEffect(() => {
+    if (tab !== 'collection' || checkedUpdates.current) return;
+    checkedUpdates.current = true;
+    setUpdateCheck((current) => ({ ...current, checking: true }));
+    void checkGitSkillUpdates(collection).then(({ updates, failed }) => {
+      setUpdateCheck({ checking: false, updates, failed });
+    });
+  }, [collection, tab]);
 
   const browserState = (): BrowserState => ({
     tab,
     query,
-    cursor,
+    cursor: cursorRef.current,
     selected: [...selected],
     agent,
     focus,
@@ -265,7 +286,7 @@ function Browser({
       if (key.escape || (key.ctrl && input === 'c') || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
         setQueryBeforeSearch(query);
-        setCursorBeforeSearch(cursor);
+        setCursorBeforeSearch(cursorRef.current);
         return setSearching(true);
       }
       if (input === 'g' && tab !== 'global' && groups.length) {
@@ -295,6 +316,16 @@ function Browser({
         }
         return;
       }
+      const row = rows[cursorRef.current];
+      if (
+        input === 'u' &&
+        tab === 'collection' &&
+        row?.type === 'skill' &&
+        row.skill.source?.type === 'git' &&
+        row.skill.source.refType === 'branch'
+      ) {
+        return finish({ ...browserState(), type: 'update', skill: row.skill as CollectedSkill });
+      }
       if (input === 't' && tab === 'collection' && selectedCollection.length) {
         return finish({ ...browserState(), type: 'tags', skills: selectedCollection });
       }
@@ -303,13 +334,12 @@ function Browser({
         return finish({ ...browserState(), type: 'import', skills: selectedLocal });
       }
       if (key.upArrow) {
-        if (cursor === 0) return setFocus(tab === 'global' ? 'agents' : 'tabs');
+        if (cursorRef.current === 0) return setFocus(tab === 'global' ? 'agents' : 'tabs');
         return setCursor((index) => index - 1);
       }
       if (key.downArrow) {
         return setCursor((index) => Math.min(Math.max(0, rows.length - 1), index + 1));
       }
-      const row = rows[cursor];
       if (input === ' ' && row) {
         const paths = selectableSkills(row, tab !== 'collection').map((skill) => skill.path);
         if (!paths.length) return;
@@ -400,6 +430,7 @@ function Browser({
           isActive={focus === 'list'}
           preferNote
           showGroup={Boolean(query.trim())}
+          updates={updateCheck.updates}
         />
       ),
     },
@@ -468,6 +499,13 @@ function Browser({
           {tab === 'collection' && selectedCollection.length ? ' · Enter 添加' : ''}
           {tab === 'collection' && selectedCollection.length ? ' · t 批量加标签' : ''}
           {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
+          {tab === 'collection' && updateCheck.checking ? ' · 正在检查更新…' : ''}
+          {tab === 'collection' && updateCheck.updates.size
+            ? ` · ${updateCheck.updates.size} 个技能可更新 · u 更新当前技能`
+            : ''}
+          {tab === 'collection' && !updateCheck.checking && updateCheck.failed
+            ? ` · ${updateCheck.failed} 个技能检查失败`
+            : ''}
           {status ? ` · ${status}` : ''}
           {query ? ` · 搜索：${query}` : ''}
         </Text>
