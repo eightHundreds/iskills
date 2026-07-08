@@ -39,7 +39,6 @@ iskills sync                    # 阻塞式同步收藏夹 Git
 ## 开发文档
 
 - [CLI/TUI 交互规范](docs/cli-tui-guidelines.md)
-- [CLI/TUI 当前符合性报告](docs/cli-tui-conformance.md)
 - [终端 UI 架构 ADR](docs/adr/0001-terminal-ui-runtime.md)
 - [收藏数据完整性契约](docs/data-integrity.md)
 - [Agent Skills 目录支持调研](docs/agent-skills-support.md)

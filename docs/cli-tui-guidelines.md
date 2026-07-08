@@ -14,7 +14,7 @@
 - 平台与框架事实：[POSIX Utility Syntax Guidelines](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap12.html#tag_12_02) 只用于参数语法；[Ink 6.8.0](https://github.com/vadimdemedes/ink/blob/v6.8.0/readme.md) 和 [React](https://react.dev/reference/react) 文档只用于解释 API 与生命周期。
 - `iskills` 产品决策：本文中关于中文文案、搜索、收藏冲突和具体按键的选择。
 
-[Ink UI](https://github.com/vadimdemedes/ink-ui)、[terminal-ui skill 固定版本](https://github.com/pproenca/dot-skills/tree/8e3b42f8898762501ae14496b542efdf64a6e4a3/skills/.curated/terminal-ui) 及其他实现仅供调研。它们的规则不会因被链接而自动生效。ADR 记录实现选择，[符合性报告](cli-tui-conformance.md) 记录现状缺口；两者都不是第二份规范。
+[Ink UI](https://github.com/vadimdemedes/ink-ui)、[terminal-ui skill 固定版本](https://github.com/pproenca/dot-skills/tree/8e3b42f8898762501ae14496b542efdf64a6e4a3/skills/.curated/terminal-ui) 及其他实现仅供调研。它们的规则不会因被链接而自动生效。ADR 记录实现选择，不是第二份规范。
 
 ## 2. CLI 契约
 
@@ -168,6 +168,6 @@
 
 ## 9. 文档维护
 
-- 新规则先修改本文，再实现并更新 [符合性报告](cli-tui-conformance.md)。不得为了让现有代码“符合”而降低规则。
+- 新规则先修改本文，再实现并补充对应测试。不得为了让现有代码“符合”而降低规则。
 - 框架、依赖和组件边界写入 [终端 UI 架构 ADR](adr/0001-terminal-ui-runtime.md)，不能伪装成社区 MUST。
 - 外部资料变化只触发重新评估；维护者把决定写入本文后才生效。
