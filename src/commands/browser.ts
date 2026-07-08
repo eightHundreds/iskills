@@ -162,7 +162,7 @@ export async function interactiveList(
   let agent = '';
   let focus: BrowserFocus = 'tabs';
   let status = '';
-  const session = new InkSession();
+  const session = new InkSession(true);
   process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
   try {
     while (true) {
@@ -194,9 +194,14 @@ export async function interactiveList(
       agent = result.agent;
       focus = result.focus;
       if (result.type === 'sync') {
-        await syncCollection(false);
-        status = 'Git 同步完成';
-        process.stdout.write(CLEAR_SCREEN);
+        session.close();
+        process.stdout.write(LEAVE_ALTERNATE_SCREEN);
+        try {
+          await syncCollection(false);
+          status = 'Git 同步完成';
+        } finally {
+          process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
+        }
         continue;
       }
       if (result.type === 'update') {

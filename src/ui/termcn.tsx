@@ -10,6 +10,16 @@ const colors = {
   error: '#EF4444',
 };
 
+const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+function graphemes(value: string): string[] {
+  return [...segmenter.segment(value)].map((part) => part.segment);
+}
+
+function isReturn(input: string, keyReturn: boolean): boolean {
+  return keyReturn || input.includes('\r') || input.includes('\n');
+}
+
 export interface Option<T> {
   value: T;
   label: string;
@@ -100,9 +110,12 @@ function ConfirmInput({
 }): ReactNode {
   useInput(
     (input, key) => {
-      if (input.toLowerCase() === 'y') return onConfirm();
-      if (input.toLowerCase() === 'n') return onCancel();
-      if (key.return) return defaultChoice === 'confirm' ? onConfirm() : onCancel();
+      const choice = input.trim().toLowerCase();
+      if (choice === 'y') return onConfirm();
+      if (choice === 'n') return onCancel();
+      if (isReturn(input, key.return)) {
+        return defaultChoice === 'confirm' ? onConfirm() : onCancel();
+      }
     },
     { isActive }
   );
@@ -122,10 +135,10 @@ function OptionSelect({
     options.length,
     visibleCount
   );
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.downArrow) return focusNext();
     if (key.upArrow) return focusPrevious();
-    if (key.return) {
+    if (isReturn(input, key.return)) {
       const option = options[focus];
       if (option) onChange(option.value);
     }
@@ -176,7 +189,7 @@ function OptionMultiSelect({
       });
       return;
     }
-    if (key.return) {
+    if (isReturn(input, key.return)) {
       if (selected.size) {
         onSubmit(
           options.filter((option) => selected.has(option.value)).map((option) => option.value)
@@ -228,7 +241,7 @@ export function Select<T>({
     <Box flexDirection="column">
       {label && <Text bold>{label}</Text>}
       <OptionSelect
-        visibleCount={visibleOptionCount(stdout.rows, label)}
+        visibleCount={visibleOptionCount(stdout.rows ?? 24, label)}
         options={inkOptions}
         onChange={(value) => {
           const resolved = resolveOptionValue(options, value);
@@ -263,7 +276,7 @@ export function MultiSelect<T>({
       {label && <Text bold>{label}</Text>}
       <OptionMultiSelect
         defaultValue={defaultValue}
-        visibleCount={visibleOptionCount(stdout.rows, label)}
+        visibleCount={visibleOptionCount(stdout.rows ?? 24, label)}
         options={inkOptions}
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
       />
@@ -314,34 +327,61 @@ export function TextInput({
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
   const valueRef = useRef(initialValue);
-  const [cursor, setCursor] = useState(initialValue.length);
-  const cursorRef = useRef(initialValue.length);
+  const [cursor, setCursor] = useState(graphemes(initialValue).length);
+  const cursorRef = useRef(graphemes(initialValue).length);
   const { stdout } = useStdout();
-  const resolvedWidth = Math.min(width, Math.max(20, stdout.columns - 2));
+  const resolvedWidth = Math.min(width, Math.max(20, (stdout.columns ?? 80) - 2));
   const update = (next: string) => {
     valueRef.current = next;
     setValue(next);
     onChange?.(next);
   };
+  const insert = (input: string): string => {
+    const next = graphemes(valueRef.current);
+    const inserted = graphemes(input);
+    next.splice(cursorRef.current, 0, ...inserted);
+    cursorRef.current += inserted.length;
+    setCursor(cursorRef.current);
+    const value = next.join('');
+    update(value);
+    return value;
+  };
   useInput((input, key) => {
-    if (key.return || input === '\r' || input === '\n') return onSubmit(valueRef.current);
-    if (key.escape || (key.ctrl && input === 'c')) return onCancel?.();
+    const newline = input.search(/[\r\n]/);
+    if (key.return || newline >= 0) {
+      const typed = newline >= 0 ? input.slice(0, newline) : input;
+      return onSubmit(typed && !key.ctrl && !key.meta ? insert(typed) : valueRef.current);
+    }
+    if (key.escape) return onCancel?.();
     if (key.leftArrow) {
       cursorRef.current = Math.max(0, cursorRef.current - 1);
       return setCursor(cursorRef.current);
     }
     if (key.rightArrow) {
-      cursorRef.current = Math.min(valueRef.current.length, cursorRef.current + 1);
+      cursorRef.current = Math.min(graphemes(valueRef.current).length, cursorRef.current + 1);
       return setCursor(cursorRef.current);
     }
-    if (key.backspace || key.delete) {
+    if (key.home) {
+      cursorRef.current = 0;
+      return setCursor(0);
+    }
+    if (key.end) {
+      cursorRef.current = graphemes(valueRef.current).length;
+      return setCursor(cursorRef.current);
+    }
+    if (key.backspace) {
       if (!cursorRef.current) return;
-      const next =
-        valueRef.current.slice(0, cursorRef.current - 1) +
-        valueRef.current.slice(cursorRef.current);
+      const next = graphemes(valueRef.current);
+      next.splice(cursorRef.current - 1, 1);
       cursorRef.current--;
       setCursor(cursorRef.current);
-      return update(next);
+      return update(next.join(''));
+    }
+    if (key.delete) {
+      const next = graphemes(valueRef.current);
+      if (cursorRef.current >= next.length) return;
+      next.splice(cursorRef.current, 1);
+      return update(next.join(''));
     }
     if (
       input &&
@@ -354,15 +394,10 @@ export function TextInput({
       !key.upArrow &&
       !key.downArrow
     ) {
-      const next =
-        valueRef.current.slice(0, cursorRef.current) +
-        input +
-        valueRef.current.slice(cursorRef.current);
-      cursorRef.current += input.length;
-      setCursor(cursorRef.current);
-      update(next);
+      insert(input);
     }
   }, { isActive });
+  const parts = graphemes(value);
   return (
     <Box flexDirection="column">
       <Text bold>{label}</Text>
@@ -373,10 +408,10 @@ export function TextInput({
         width={resolvedWidth}
       >
         <Text>{isActive ? <>
-          {value.slice(0, cursor)}
-          <Text inverse>{value[cursor] || ' '}</Text>
-          {value.slice(cursor + 1)}
-        </> : value || ' '}</Text>
+            {parts.slice(0, cursor).join('')}
+            <Text inverse>{parts[cursor] || ' '}</Text>
+            {parts.slice(cursor + 1).join('')}
+          </> : value || ' '}</Text>
       </Box>
     </Box>
   );
@@ -397,7 +432,7 @@ export function TagEditor({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialValues));
   const [focus, setFocus] = useState<'list' | 'input'>(tags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
-  const height = Math.max(3, stdout.rows - 13);
+  const height = Math.max(3, (stdout.rows ?? 24) - 13);
   const offset = Math.max(0, Math.min(cursor - Math.floor(height / 2), tags.length - height));
   const visible = tags.slice(offset, offset + height);
   const save = (input: string) => onSubmit([
@@ -426,7 +461,7 @@ export function TagEditor({
         return next;
       });
     }
-    if (key.return) save('');
+    if (isReturn(input, key.return)) save('');
   });
 
   return (
@@ -596,7 +631,7 @@ export function SkillMultiSelect<T extends Skill>({
   const total = groups.reduce((sum, group) => sum + group.options.length, 0);
   const singleAgent = groups.length <= 1;
 
-  const height = Math.max(3, stdout.rows - 9);
+  const height = Math.max(3, (stdout.rows ?? 24) - 9);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, options.length - 1)));
   const offset = Math.max(
     0,
@@ -644,11 +679,11 @@ export function SkillMultiSelect<T extends Skill>({
 
   useInput((input, key) => {
     if (viewing) {
-      if (key.escape || key.leftArrow || (key.ctrl && input === 'c')) {
+      if (key.escape || key.leftArrow) {
         setViewing(undefined);
         return;
       }
-      if (key.return) {
+      if (isReturn(input, key.return)) {
         submit();
         return;
       }
@@ -708,7 +743,7 @@ export function SkillMultiSelect<T extends Skill>({
       toggleAllInTab();
       return;
     }
-    if (key.return) {
+    if (isReturn(input, key.return)) {
       submit();
       return;
     }

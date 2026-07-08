@@ -4,6 +4,7 @@ import { execFile, type ExecFileOptionsWithStringEncoding } from 'node:child_pro
 import { createServer } from 'node:http';
 import {
   cp,
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -40,6 +41,11 @@ interface InteractiveStep {
   delay?: number;
   delayAfter?: number;
   enter?: boolean;
+}
+
+interface TerminalSize {
+  rows: number;
+  columns: number;
 }
 
 interface JsonSkill {
@@ -114,7 +120,8 @@ async function runInteractive(
   context: TestContext,
   args: string[],
   steps: InteractiveStep[],
-  cwd = context.project
+  cwd = context.project,
+  size: TerminalSize = { rows: 40, columns: 120 }
 ): Promise<ExecResult> {
   const driver = String.raw`
 import fcntl, json, os, pty, select, struct, sys, termios, time
@@ -124,7 +131,9 @@ steps = json.loads(os.environ.pop("SK_PTY_STEPS"))
 pid, fd = pty.fork()
 if pid == 0:
     os.execvpe(command[0], command, os.environ)
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+rows = int(os.environ.pop("SK_PTY_ROWS"))
+columns = int(os.environ.pop("SK_PTY_COLUMNS"))
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
 
 output = bytearray()
 cursor = 0
@@ -155,8 +164,7 @@ for step in steps:
         cursor = found + len(pattern)
     else:
         time.sleep(step.get("delay", 150) / 1000)
-    if step.get("delayAfter"):
-        time.sleep(step["delayAfter"] / 1000)
+    time.sleep(step.get("delayAfter", 50) / 1000)
     try:
         payload = step["send"].encode("utf-8")
         if step.get("enter", True):
@@ -180,7 +188,8 @@ if status is None:
     os.kill(pid, 9)
     _, status = os.waitpid(pid, 0)
 sys.stdout.buffer.write(output)
-sys.exit(os.waitstatus_to_exitcode(status))
+exit_code = os.waitstatus_to_exitcode(status)
+sys.exit(128 - exit_code if exit_code < 0 else exit_code)
 `;
   return exec('python3', ['-c', driver], {
     cwd,
@@ -188,15 +197,18 @@ sys.exit(os.waitstatus_to_exitcode(status))
       ...context.env,
       SK_PTY_COMMAND: JSON.stringify([process.execPath, cli, ...args]),
       SK_PTY_STEPS: JSON.stringify(steps),
+      SK_PTY_ROWS: String(size.rows),
+      SK_PTY_COLUMNS: String(size.columns),
     },
   });
 }
 
 async function makeGitSkillRepo(
   context: TestContext,
-  name = 'remote-skill'
+  name = 'remote-skill',
+  directory = 'remote'
 ): Promise<{ repository: string; skill: string }> {
-  const repository = join(context.root, 'remote');
+  const repository = join(context.root, directory);
   const skill = join(repository, 'skills', name);
   await makeSkill(skill, name);
   await exec('git', ['init', '-b', 'main'], { cwd: repository });
@@ -520,16 +532,22 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
 
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context, 'search-skill');
+  const { repository: replacementRepository } = await makeGitSkillRepo(
+    context,
+    'search-skill',
+    'replacement-remote'
+  );
   let requestedQuery = '';
+  let remoteSource = 'search-owner/search-repo';
   const server = createServer((request, response) => {
     const url = new URL(request.url || '/', 'http://localhost');
     requestedQuery = url.searchParams.get('q') || '';
     response.setHeader('content-type', 'application/json');
     response.end(JSON.stringify({
       skills: [{
-        id: 'search-owner/search-repo/search-skill',
+        id: `${remoteSource}/search-skill`,
         name: 'search-skill',
-        source: 'search-owner/search-repo',
+        source: remoteSource,
         installs: 1234,
       }],
     }));
@@ -537,13 +555,15 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
   await new Promise<void>((resolveServer) => server.listen(0, '127.0.0.1', resolveServer));
   const address = server.address() as AddressInfo;
   context.env.SKILLS_API_URL = `http://127.0.0.1:${address.port}`;
-  context.env.GIT_CONFIG_COUNT = '1';
+  context.env.GIT_CONFIG_COUNT = '2';
   context.env.GIT_CONFIG_KEY_0 = `url.file://${repository}.insteadOf`;
   context.env.GIT_CONFIG_VALUE_0 = 'https://github.com/search-owner/search-repo';
+  context.env.GIT_CONFIG_KEY_1 = `url.file://${replacementRepository}.insteadOf`;
+  context.env.GIT_CONFIG_VALUE_1 = 'https://github.com/search-owner/replacement-repo';
 
   try {
     const result = await runInteractive(context, ['search', 'search'], [
-      { wait: 'search-skill', send: '' },
+      { wait: 'search-skill', send: '', delayAfter: 300 },
     ]);
     assert.match(result.stdout, /已收藏 search-skill/);
     assert.equal(requestedQuery, 'search');
@@ -558,18 +578,29 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
     assert.equal(metadata.source.path, 'skills/search-skill');
 
     const declined = await runInteractive(context, ['search', 'search'], [
-      { wait: '已收藏同名技能', send: '' },
-      { wait: '替换为 search-owner/search-repo 的版本吗？', send: 'n', enter: false },
+      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
     ]);
     assert.doesNotMatch(declined.stdout, /错误：/);
-    assert.doesNotMatch(declined.stdout, /Y\/n 确认|Enter 确认/);
-    assert.match(declined.stdout, /版本吗？ \(y\/N\)/);
+    assert.match(declined.stdout, /已收藏自同一来源/);
+    assert.doesNotMatch(declined.stdout, /\(y\/N\)/);
+
+    remoteSource = 'search-owner/replacement-repo';
+    const conflict = await runInteractive(context, ['search', 'search'], [
+      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
+      { wait: 'replacement-repo/skills/search-skill', send: 'n', delayAfter: 300 },
+    ]);
+    assert.match(conflict.stdout, /search-repo\/skills\/search-skill/);
+    assert.match(conflict.stdout, /\(y\/N\)/);
 
     const replaced = await runInteractive(context, ['search', 'search'], [
-      { wait: '已收藏同名技能', send: '' },
-      { wait: '替换为 search-owner/search-repo 的版本吗？', send: 'y', enter: false },
+      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
+      { wait: 'replacement-repo/skills/search-skill', send: 'y', delayAfter: 300 },
     ]);
     assert.match(replaced.stdout, /已收藏 search-skill/);
+    const replacedMetadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/search-skill.json'), 'utf8')
+    );
+    assert.equal(replacedMetadata.source.url, 'https://github.com/search-owner/replacement-repo');
   } finally {
     await new Promise<void>((resolveServer, rejectServer) => {
       server.close((error) => error ? rejectServer(error) : resolveServer());
@@ -578,10 +609,147 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
   }
 });
 
-test('search rejects non-interactive use because selecting a favorite requires a TTY', async () => {
+test('search exposes ordered JSON and collects by stable result ID', async () => {
+  const context = await makeContext();
+  const { repository } = await makeGitSkillRepo(context, 'relevant');
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({
+      skills: [
+        { id: 'owner/repo/relevant', name: 'relevant', source: 'owner/repo', installs: 1 },
+        { id: 'owner/repo/popular', name: 'popular', source: 'owner/repo', installs: 999999 },
+      ],
+    }));
+  });
+  await new Promise<void>((resolveServer) => server.listen(0, '127.0.0.1', resolveServer));
+  const address = server.address() as AddressInfo;
+  context.env.SKILLS_API_URL = `http://127.0.0.1:${address.port}`;
+  context.env.GIT_CONFIG_COUNT = '1';
+  context.env.GIT_CONFIG_KEY_0 = `url.file://${repository}.insteadOf`;
+  context.env.GIT_CONFIG_VALUE_0 = 'https://github.com/owner/repo';
+
+  try {
+    const result = await run(context, ['search', 'relevant', '--json']);
+    const payload = JSON.parse(result.stdout);
+    assert.deepEqual(payload.results.map((skill: { resultId: string }) => skill.resultId), [
+      'owner/repo/relevant',
+      'owner/repo/popular',
+    ]);
+    assert.equal(result.stderr, '');
+    await assert.rejects(lstat(context.collection), { code: 'ENOENT' });
+
+    const collected = await run(context, ['search', '--collect', 'owner/repo/relevant']);
+    assert.match(collected.stdout, /已收藏 relevant/);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/relevant/asset.txt'), 'utf8'),
+      'keep me\n'
+    );
+  } finally {
+    await new Promise<void>((resolveServer, rejectServer) => {
+      server.close((error) => error ? rejectServer(error) : resolveServer());
+    });
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('noninteractive search rejects source conflicts and treats default Git ports as equivalent', async () => {
+  const context = await makeContext();
+  const { repository } = await makeGitSkillRepo(context, 'search-skill');
+  const { repository: replacementRepository } = await makeGitSkillRepo(
+    context,
+    'search-skill',
+    'replacement-remote'
+  );
+  let remoteSource = 'owner/repo';
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({
+      skills: [{
+        id: `${remoteSource}/search-skill`,
+        name: 'search-skill',
+        source: remoteSource,
+        installs: 1,
+      }],
+    }));
+  });
+  await new Promise<void>((resolveServer) => server.listen(0, '127.0.0.1', resolveServer));
+  const address = server.address() as AddressInfo;
+  context.env.SKILLS_API_URL = `http://127.0.0.1:${address.port}`;
+  context.env.GIT_CONFIG_COUNT = '2';
+  context.env.GIT_CONFIG_KEY_0 = `url.file://${repository}.insteadOf`;
+  context.env.GIT_CONFIG_VALUE_0 = 'https://github.com/owner/repo';
+  context.env.GIT_CONFIG_KEY_1 = `url.file://${replacementRepository}.insteadOf`;
+  context.env.GIT_CONFIG_VALUE_1 = 'https://github.com/owner/replacement';
+
+  try {
+    await run(context, ['search', '--collect', 'owner/repo/search-skill']);
+    const metadataPath = join(context.collection, 'metadata/search-skill.json');
+    const metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+    metadata.source.url = 'ssh://git@github.com:22/owner/repo';
+    await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+
+    const unchanged = await run(context, ['search', '--collect', 'owner/repo/search-skill']);
+    assert.match(unchanged.stdout, /已收藏自同一来源/);
+
+    remoteSource = 'owner/replacement';
+    await assert.rejects(
+      run(context, ['search', '--collect', 'owner/replacement/search-skill']),
+      /异源同名技能.*--replace/
+    );
+  } finally {
+    await new Promise<void>((resolveServer, rejectServer) => {
+      server.close((error) => error ? rejectServer(error) : resolveServer());
+    });
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('interactive search cancellation has no persistent side effects', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
   const context = await makeContext();
   try {
-    await assert.rejects(run(context, ['search', 'react']), /交互式终端/);
+    await runInteractive(context, ['search'], [
+      { wait: '搜索技能', send: '\u001b', enter: false },
+    ], context.project, { rows: 10, columns: 40 });
+    await assert.rejects(lstat(context.collection), { code: 'ENOENT' });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('Ctrl+C interrupts an Ink screen with exit code 130', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+  const context = await makeContext();
+  try {
+    try {
+      await runInteractive(context, ['search'], [
+        { wait: '搜索技能', send: '\u0003', enter: false, delayAfter: 100 },
+      ]);
+      assert.fail('Ctrl+C should interrupt the command');
+    } catch (error) {
+      const failure = error as Error & { code?: number; stdout?: string };
+      assert.equal(failure.code, 130);
+      assert.doesNotMatch(failure.stdout || '', /错误：/);
+    }
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('search requires a TTY unless a non-interactive mode is selected', async () => {
+  const context = await makeContext();
+  try {
+    await assert.rejects(run(context, ['search', 'react']), /stdin 和 stdout TTY/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -966,17 +1134,17 @@ test('TTY source rebinding discovers repository paths and focuses the matching S
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看', send: '\u001b[B', enter: false },
       { send: '\u001b[C', enter: false, delay: 200 },
-      { wait: 's 来源', send: 's', enter: false },
+      { wait: 's 来源', send: 's', enter: false, delayAfter: 200 },
       { wait: 'Git 来源', send: `file://${repository}`, enter: false },
       { send: '', enter: false, delay: 200 },
       { send: '', delay: 100 },
       { wait: '分支、Tag 或 Commit', send: 'main', enter: false },
       { send: '', enter: false, delay: 200 },
       { send: '', delay: 100 },
-      { wait: '选择仓库内 Skill', send: '' },
+      { wait: '选择仓库内 Skill', send: '', delayAfter: 200 },
       { send: '', enter: false, delay: 1000 },
-      { wait: 's 来源', send: 'q', enter: false },
-      { wait: 'q 退出', send: 'q', enter: false },
+      { wait: 's 来源', send: 'q', enter: false, delayAfter: 300 },
+      { wait: 'q 退出', send: 'q', enter: false, delayAfter: 300 },
     ]);
 
     assert.doesNotMatch(result.stdout, /错误：/);
@@ -1385,6 +1553,7 @@ test('same-name import requires explicit replacement and restores the previous o
   const context = await makeContext();
   const first = join(context.project, 'first/duplicate');
   const second = join(context.project, 'second/duplicate');
+  const usage = join(context.project, '.agents/skills');
   await makeSkill(first, 'duplicate');
   await makeSkill(second, 'duplicate');
   await writeFile(join(first, 'version.txt'), 'first\n', 'utf8');
@@ -1392,6 +1561,7 @@ test('same-name import requires explicit replacement and restores the previous o
 
   try {
     await run(context, ['import', first, '--all', '--yes']);
+    await run(context, ['add', 'duplicate', '--to', usage]);
     await assert.rejects(run(context, ['import', second, '--all', '--yes']));
     assert.equal((await lstat(second)).isDirectory(), true);
 
@@ -1403,6 +1573,53 @@ test('same-name import requires explicit replacement and restores the previous o
       await readFile(join(context.collection, 'skills/duplicate/version.txt'), 'utf8'),
       'second\n'
     );
+    assert.equal(
+      await readFile(join(usage, 'duplicate/version.txt'), 'utf8'),
+      'second\n'
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('failed replacement commit restores the old collection and links', async () => {
+  const context = await makeContext();
+  context.env.SK_NO_BACKGROUND_SYNC = '1';
+  const first = join(context.project, 'first/rollback-skill');
+  const second = join(context.project, 'second/rollback-skill');
+  const usage = join(context.project, '.agents/skills');
+  await makeSkill(first, 'rollback-skill');
+  await makeSkill(second, 'rollback-skill');
+  await writeFile(join(first, 'version.txt'), 'first\n', 'utf8');
+  await writeFile(join(second, 'version.txt'), 'second\n', 'utf8');
+
+  try {
+    await run(context, ['init']);
+    await run(context, ['import', first, '--all', '--yes']);
+    await run(context, ['add', 'rollback-skill', '--to', usage]);
+    await run(context, ['list', 'rollback-skill', '--note', 'preserved']);
+    const hook = join(context.collection, '.git/hooks/pre-commit');
+    await writeFile(hook, '#!/bin/sh\nexit 1\n', 'utf8');
+    await chmod(hook, 0o755);
+
+    await assert.rejects(
+      run(context, ['import', second, '--all', '--yes', '--replace'])
+    );
+    assert.equal(await readFile(join(first, 'version.txt'), 'utf8'), 'first\n');
+    assert.equal((await lstat(first)).isSymbolicLink(), true);
+    assert.equal((await lstat(second)).isDirectory(), true);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/rollback-skill/version.txt'), 'utf8'),
+      'first\n'
+    );
+    assert.equal(
+      await readFile(join(usage, 'rollback-skill/version.txt'), 'utf8'),
+      'first\n'
+    );
+    const metadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/rollback-skill.json'), 'utf8')
+    );
+    assert.equal(metadata.note, 'preserved');
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

@@ -416,7 +416,7 @@ function startBackgroundSync(): void {
   child.unref();
 }
 
-export async function commitCollection(message: string): Promise<void> {
+export async function commitCollection(message: string, strict = false): Promise<void> {
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return;
   try {
@@ -433,12 +433,14 @@ export async function commitCollection(message: string): Promise<void> {
       startBackgroundSync();
     }
   } catch (error) {
+    if (strict) throw error;
     console.error(`警告：收藏夹 Git 提交失败：${errorMessage(error)}`);
   }
 }
 
 export async function listCollection(): Promise<CollectedSkill[]> {
-  const paths = await ensureCollection();
+  const paths = collectionPaths();
+  if (!(await exists(paths.skills))) return [];
   const entries = await readdir(paths.skills, { withFileTypes: true });
   const skills: CollectedSkill[] = [];
   for (const entry of entries) {
