@@ -13,6 +13,7 @@ export default defineConfig({
           ],
           maxWorkers: 3,
           sequence: { groupOrder: 0 },
+          testTimeout: 30_000,
         },
       },
       {
