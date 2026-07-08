@@ -30,7 +30,7 @@
     "prepack": "npm run build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "dependencies": {
     "ink": "^6.5.1",
