@@ -1113,7 +1113,7 @@ test('collection browser sync establishes the first upstream and excludes machin
     await run(context, ['import', source, '--all', '--yes']);
 
     await runInteractive(context, ['list'], [
-      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 200 },
+      { wait: 'q 退出', send: '\u001b[C', enter: false, delayAfter: 800 },
       { wait: '全局 ', send: '\u001b[C', enter: false, delayAfter: 200 },
       { wait: 's 同步 Git', send: 's', enter: false, delayAfter: 800 },
       { wait: 'Git 同步完成', send: 'q', enter: false },
