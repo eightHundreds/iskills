@@ -106,6 +106,27 @@ async function importRemoteSkill(
   return true;
 }
 
+export async function importRemoteSkillToCollection(
+  source: string,
+  skillName: string,
+  allowReplace = false
+): Promise<string> {
+  const gitContext = await cloneGitSource(source);
+  try {
+    const found = (await discoverSkills(gitContext.repository)).filter(
+      (skill) => skill.name.toLowerCase() === skillName.toLowerCase()
+    );
+    if (!found.length) throw new Error(`来源仓库中不存在技能：${skillName}`);
+    if (found.length > 1) throw new Error(`来源仓库中存在多个同名技能：${skillName}`);
+    const skill = found[0]!;
+    await importRemoteSkill(skill, gitContext, allowReplace);
+    await commitCollection(`import ${skill.name}`);
+    return skill.name;
+  } finally {
+    await rm(gitContext.temporary, { recursive: true, force: true });
+  }
+}
+
 interface ImportToCollectionOptions {
   replace?: boolean;
   yes?: boolean;

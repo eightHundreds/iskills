@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
+import { createServer } from 'node:http';
 import {
   cp,
   lstat,
@@ -14,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
@@ -456,6 +458,10 @@ test('subcommand --help and -h print command-specific help', async () => {
   try {
     const cases: Array<{ command: string; patterns: RegExp[] }> = [
       {
+        command: 'search',
+        patterns: [/iskills search \[关键词\]/, /skills\.sh/, /保存到收藏夹/],
+      },
+      {
         command: 'add',
         patterns: [/iskills add \[技能/, /--copy/, /--to <目录>/],
       },
@@ -499,6 +505,83 @@ test('subcommand --help and -h print command-specific help', async () => {
         assert.equal(result.stderr, '', `${args.join(' ')} should not write stderr`);
       }
     }
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY search selects a skills.sh result and saves its Git source to the collection', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const { repository } = await makeGitSkillRepo(context, 'search-skill');
+  let requestedQuery = '';
+  const server = createServer((request, response) => {
+    const url = new URL(request.url || '/', 'http://localhost');
+    requestedQuery = url.searchParams.get('q') || '';
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({
+      skills: [{
+        id: 'search-owner/search-repo/search-skill',
+        name: 'search-skill',
+        source: 'search-owner/search-repo',
+        installs: 1234,
+      }],
+    }));
+  });
+  await new Promise<void>((resolveServer) => server.listen(0, '127.0.0.1', resolveServer));
+  const address = server.address() as AddressInfo;
+  context.env.SKILLS_API_URL = `http://127.0.0.1:${address.port}`;
+  context.env.GIT_CONFIG_COUNT = '1';
+  context.env.GIT_CONFIG_KEY_0 = `url.file://${repository}.insteadOf`;
+  context.env.GIT_CONFIG_VALUE_0 = 'https://github.com/search-owner/search-repo';
+
+  try {
+    const result = await runInteractive(context, ['search', 'search'], [
+      { wait: 'search-skill', send: '' },
+    ]);
+    assert.match(result.stdout, /已收藏 search-skill/);
+    assert.equal(requestedQuery, 'search');
+    assert.equal(
+      await readFile(join(context.collection, 'skills/search-skill/asset.txt'), 'utf8'),
+      'keep me\n'
+    );
+    const metadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/search-skill.json'), 'utf8')
+    );
+    assert.equal(metadata.source.url, 'https://github.com/search-owner/search-repo');
+    assert.equal(metadata.source.path, 'skills/search-skill');
+
+    const declined = await runInteractive(context, ['search', 'search'], [
+      { wait: '已收藏同名技能', send: '' },
+      { wait: '替换为 search-owner/search-repo 的版本吗？', send: 'n', enter: false },
+    ]);
+    assert.doesNotMatch(declined.stdout, /错误：/);
+    assert.doesNotMatch(declined.stdout, /Y\/n 确认|Enter 确认/);
+    assert.match(declined.stdout, /版本吗？ \(y\/N\)/);
+
+    const replaced = await runInteractive(context, ['search', 'search'], [
+      { wait: '已收藏同名技能', send: '' },
+      { wait: '替换为 search-owner/search-repo 的版本吗？', send: 'y', enter: false },
+    ]);
+    assert.match(replaced.stdout, /已收藏 search-skill/);
+  } finally {
+    await new Promise<void>((resolveServer, rejectServer) => {
+      server.close((error) => error ? rejectServer(error) : resolveServer());
+    });
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('search rejects non-interactive use because selecting a favorite requires a TTY', async () => {
+  const context = await makeContext();
+  try {
+    await assert.rejects(run(context, ['search', 'react']), /交互式终端/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -852,6 +935,57 @@ test('edits detail metadata non-interactively and searches it from both list tab
     assert.deepEqual(result.collection.map((skill: JsonSkill) => skill.name), ['metadata-skill']);
     assert.deepEqual(result.project.map((skill: JsonSkill) => skill.name), ['metadata-skill']);
     assert.deepEqual(result.collection[0].tags, ['frontend', 'design']);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY source rebinding discovers repository paths and focuses the matching Skill', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'metadata-skill');
+  const repository = join(context.root, 'rebind-remote');
+  await makeSkill(source, 'metadata-skill');
+  await makeSkill(join(repository, 'skills/unrelated'), 'aaa-unrelated');
+  await makeSkill(join(repository, 'nested/matched'), 'metadata-skill');
+  await exec('git', ['init', '-b', 'main'], { cwd: repository });
+  await exec('git', ['config', 'user.name', 'Test'], { cwd: repository });
+  await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: repository });
+  await exec('git', ['add', '.'], { cwd: repository });
+  await exec('git', ['commit', '-m', 'initial'], { cwd: repository });
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: '→ 查看', send: '\u001b[B', enter: false },
+      { send: '\u001b[C', enter: false, delay: 200 },
+      { wait: 's 来源', send: 's', enter: false },
+      { wait: 'Git 来源', send: `file://${repository}`, enter: false },
+      { send: '', enter: false, delay: 200 },
+      { send: '', delay: 100 },
+      { wait: '分支、Tag 或 Commit', send: 'main', enter: false },
+      { send: '', enter: false, delay: 200 },
+      { send: '', delay: 100 },
+      { wait: '选择仓库内 Skill', send: '' },
+      { send: '', enter: false, delay: 1000 },
+      { wait: 's 来源', send: 'q', enter: false },
+      { wait: 'q 退出', send: 'q', enter: false },
+    ]);
+
+    assert.doesNotMatch(result.stdout, /错误：/);
+    const metadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/metadata-skill.json'), 'utf8')
+    );
+    assert.equal(metadata.source.url, `file://${repository}`);
+    assert.equal(metadata.source.ref, 'main');
+    assert.equal(metadata.source.path, 'nested/matched');
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

@@ -17,6 +17,7 @@ iskills --help
 
 ```bash
 iskills                         # 交互式主界面
+iskills search [关键词]          # 实时搜索 skills.sh，选择后保存到收藏夹
 iskills list                    # 当前项目 / 全局 / 收藏夹列表，全局按 Agent 分 Tab
 iskills import [路径或 Git URL]  # 导入到收藏夹，原本地位置保留软链
 iskills import -g               # 扫描常见 Agent 全局目录
@@ -34,6 +35,14 @@ iskills sync                    # 阻塞式同步收藏夹 Git
 `iskills init` 首次运行时会询问是否配置远程仓库；配置后运行 `iskills sync` 开始同步。
 
 冲突不会写入正在使用的 Skill。来源冲突保留在 `.local/conflicts`，由用户使用编辑器和 Git 手动解决；后续运行 CLI 时自动应用已提交的合并结果。
+
+## 开发文档
+
+- [CLI/TUI 交互规范](docs/cli-tui-guidelines.md)
+- [CLI/TUI 当前符合性报告](docs/cli-tui-conformance.md)
+- [终端 UI 架构 ADR](docs/adr/0001-terminal-ui-runtime.md)
+- [收藏数据完整性契约](docs/data-integrity.md)
+- [Agent Skills 目录支持调研](docs/agent-skills-support.md)
 
 ## 验证
 

@@ -4,6 +4,7 @@ import {
   commandInit,
   commandList,
   commandRemove,
+  commandSearch,
   commandSync,
   commandUpdate,
   interactiveList,
@@ -36,6 +37,7 @@ async function run(argv: string[]): Promise<void> {
     return interactiveList('', 'collection');
   }
   if (command === 'add') return commandAdd(rest);
+  if (command === 'search') return commandSearch(rest);
   if (command === 'import') return commandImport(rest);
   if (command === 'list') return commandList(rest);
   if (command === 'remove') return commandRemove(rest);

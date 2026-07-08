@@ -556,6 +556,7 @@ function Detail({
             <Text><Text bold>标签  </Text>{metadata.tags.length ? metadata.tags.join(', ') : '无'}</Text>
             <Text><Text bold>备注  </Text>{metadata.note || '无'}</Text>
             <Text><Text bold>来源  </Text>{source}</Text>
+            {metadata.source.path && <Text><Text bold>路径  </Text>{metadata.source.path}</Text>}
             <Text bold>关联位置</Text>
             {links.length ? links.map((link) => (
               <Text key={`${link.kind}:${link.path}`} color={termcnColors.muted}>

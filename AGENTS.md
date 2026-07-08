@@ -21,6 +21,10 @@
 
 测试使用 `node:test` 和 `node:assert/strict`。用可观察行为命名，例如 `test('imports multiple Skills ...')`。涉及 CLI 流程时，使用临时 `HOME` 和 `XDG_*` 目录，并在 `finally` 中清理。PTY 和 Git 交互是串行敏感的，不要并发化这些测试。
 
+## CLI/TUI 交互规范
+
+[`docs/cli-tui-guidelines.md`](docs/cli-tui-guidelines.md) 是本仓库 CLI/TUI 交互行为的唯一规范入口。新增或修改命令、提示和 Ink 界面时必须遵守；其中引用的数据完整性契约属于其细化。Accepted ADR 可以约束内部实现，但从属于主规范且不能改变交互行为；外部链接、符合性报告和当前代码不产生规则。交互行为变化必须有对应 PTY 或非交互契约测试。
+
 ## 提交与 PR
 
 提交信息通常使用 `feat:`、`fix:`、`test:`、`chore:` 这类前缀，每个提交只做一件事。PR 需要说明改了什么、为什么改、影响什么、怎么验证；涉及可视化 UI 时附终端截图。合并前应通过 `npm test` 和 `npm pack --dry-run`。
