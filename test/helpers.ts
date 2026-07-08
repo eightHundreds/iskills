@@ -1,0 +1,204 @@
+import { execFile, type ExecFileOptionsWithStringEncoding } from 'node:child_process';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
+
+export interface ExecResult {
+  stdout: string;
+  stderr: string;
+}
+
+export interface TestContext {
+  root: string;
+  home: string;
+  config: string;
+  project: string;
+  env: NodeJS.ProcessEnv;
+  collection: string;
+}
+
+export interface InteractiveStep {
+  send: string;
+  wait?: string;
+  regex?: boolean;
+  delay?: number;
+  delayAfter?: number;
+  enter?: boolean;
+}
+
+export interface TerminalSize {
+  rows: number;
+  columns: number;
+}
+
+export interface JsonSkill {
+  name: string;
+  description?: string;
+  tags?: string[];
+  fromCollection?: boolean;
+}
+
+export interface JsonLink {
+  skill: string;
+  path: string;
+}
+
+export const exec = promisify(execFile) as (
+  file: string,
+  args: readonly string[],
+  options?: ExecFileOptionsWithStringEncoding
+) => Promise<ExecResult>;
+const cli = resolve('bin/iskills.js');
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function makeContext(): Promise<TestContext> {
+  const root = await mkdtemp(join(tmpdir(), 'iskills-cli-'));
+  const home = join(root, 'home');
+  const config = join(root, 'config');
+  const project = join(root, 'project');
+  await Promise.all([
+    mkdir(home, { recursive: true }),
+    mkdir(config, { recursive: true }),
+    mkdir(project, { recursive: true }),
+  ]);
+  return {
+    root,
+    home,
+    config,
+    project,
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: config },
+    collection: join(config, 'iskills'),
+  };
+}
+
+export async function makeSkill(
+  path: string,
+  name = 'demo-skill',
+  description = 'Demo skill'
+): Promise<void> {
+  await mkdir(path, { recursive: true });
+  await writeFile(
+    join(path, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: ${description}\n---\n\nInstructions.\n`,
+    'utf8'
+  );
+  await writeFile(join(path, 'asset.txt'), 'keep me\n', 'utf8');
+}
+
+export async function run(
+  context: TestContext,
+  args: string[],
+  cwd = context.project
+): Promise<ExecResult> {
+  return exec(process.execPath, [cli, ...args], {
+    cwd,
+    env: context.env,
+  });
+}
+
+export async function runInteractive(
+  context: TestContext,
+  args: string[],
+  steps: InteractiveStep[],
+  cwd = context.project,
+  size: TerminalSize = { rows: 40, columns: 120 }
+): Promise<ExecResult> {
+  const driver = String.raw`
+import fcntl, json, os, pty, select, struct, sys, termios, time
+
+command = json.loads(os.environ.pop("SK_PTY_COMMAND"))
+steps = json.loads(os.environ.pop("SK_PTY_STEPS"))
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvpe(command[0], command, os.environ)
+rows = int(os.environ.pop("SK_PTY_ROWS"))
+columns = int(os.environ.pop("SK_PTY_COLUMNS"))
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+
+output = bytearray()
+cursor = 0
+
+def read_once(timeout=0.1):
+    ready, _, _ = select.select([fd], [], [], timeout)
+    if not ready:
+        return False
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        return False
+    if chunk:
+        output.extend(chunk)
+        return True
+    return False
+
+for step in steps:
+    wait = step.get("wait")
+    if wait:
+        pattern = wait.encode("utf-8")
+        deadline = time.time() + 20
+        while output.find(pattern, cursor) < 0 and time.time() < deadline:
+            read_once()
+        found = output.find(pattern, cursor)
+        if found < 0:
+            raise TimeoutError("PTY prompt not found: " + wait + "\n" + output.decode("utf-8", "replace"))
+        cursor = found + len(pattern)
+    else:
+        time.sleep(step.get("delay", 150) / 1000)
+    time.sleep(step.get("delayAfter", 50) / 1000)
+    try:
+        payload = step["send"].encode("utf-8")
+        if step.get("enter", True):
+            payload += b"\r"
+        os.write(fd, payload)
+    except OSError:
+        sys.stdout.buffer.write(output)
+        raise
+
+deadline = time.time() + 20
+status = None
+while time.time() < deadline:
+    read_once()
+    finished, current_status = os.waitpid(pid, os.WNOHANG)
+    if finished:
+        status = current_status
+        while read_once(0):
+            pass
+        break
+if status is None:
+    os.kill(pid, 9)
+    _, status = os.waitpid(pid, 0)
+sys.stdout.buffer.write(output)
+exit_code = os.waitstatus_to_exitcode(status)
+sys.exit(128 - exit_code if exit_code < 0 else exit_code)
+`;
+  return exec('python3', ['-c', driver], {
+    cwd,
+    env: {
+      ...context.env,
+      SK_PTY_COMMAND: JSON.stringify([process.execPath, cli, ...args]),
+      SK_PTY_STEPS: JSON.stringify(steps),
+      SK_PTY_ROWS: String(size.rows),
+      SK_PTY_COLUMNS: String(size.columns),
+    },
+  });
+}
+
+export async function makeGitSkillRepo(
+  context: TestContext,
+  name = 'remote-skill',
+  directory = 'remote'
+): Promise<{ repository: string; skill: string }> {
+  const repository = join(context.root, directory);
+  const skill = join(repository, 'skills', name);
+  await makeSkill(skill, name);
+  await exec('git', ['init', '-b', 'main'], { cwd: repository });
+  await exec('git', ['config', 'user.name', 'Test'], { cwd: repository });
+  await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: repository });
+  await exec('git', ['add', '.'], { cwd: repository });
+  await exec('git', ['commit', '-m', 'initial'], { cwd: repository });
+  return { repository, skill };
+}
