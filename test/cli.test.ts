@@ -1182,7 +1182,8 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
     const result = await runInteractive(context, [], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
       { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
-      { wait: '搜索技能', send: 'alpha', enter: false, delayAfter: 100 },
+      { wait: '搜索技能', send: 'alphax', enter: false, delayAfter: 100 },
+      { wait: '没有匹配的技能', send: '\x7f', enter: false, delayAfter: 100 },
       { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
       { wait: 'g 分组', send: 'g', enter: false, delayAfter: 100 },
       { wait: '跳转到分组', send: '2', enter: false, delayAfter: 100 },
@@ -1504,6 +1505,9 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
 
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: 'agents (2)', send: '\u001b[C', enter: false, delayAfter: 100 },
+      { wait: '没有匹配的技能', send: '\u001b[D', enter: false, delayAfter: 100 },
+      { wait: '本地 · local-only', send: '\u001b[B', enter: false },
       { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },

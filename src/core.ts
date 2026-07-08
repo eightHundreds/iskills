@@ -452,29 +452,47 @@ export async function listCollection(): Promise<CollectedSkill[]> {
   return skills.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
-  const found: Skill[] = [];
-  const seen = new Set<string>();
+export async function listProjectGroups(cwd = process.cwd()): Promise<
+  { agent: string; skills: Skill[] }[]
+> {
   const collectedByPath = new Map<string, CollectedSkill>();
   for (const skill of await listCollection()) {
     try {
       collectedByPath.set(await realpath(skill.path), skill);
     } catch {}
   }
-  for (const directory of PROJECT_SKILL_DIRS) {
-    for (const skill of await discoverSkills(join(cwd, directory), 0, 2)) {
+  return Promise.all(PROJECT_SKILL_DIRS.map(async (directory) => {
+    const skills = await Promise.all(
+      (await discoverSkills(join(cwd, directory), 0, 2)).map(async (skill) => {
+        try {
+          const collected = collectedByPath.get(await realpath(skill.path));
+          return collected
+            ? { ...collected, path: skill.path, fromCollection: true }
+            : { ...skill, fromCollection: false };
+        } catch {
+          return { ...skill, fromCollection: false };
+        }
+      })
+    );
+    return {
+      agent: directory.split('/')[0]!.slice(1),
+      skills: skills.sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }));
+}
+
+export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
+  const found: Skill[] = [];
+  const seen = new Set<string>();
+  for (const group of await listProjectGroups(cwd)) {
+    for (const skill of group.skills) {
       let key = skill.path;
       try {
         key = await realpath(skill.path);
       } catch {}
       if (!seen.has(key)) {
         seen.add(key);
-        const collected = collectedByPath.get(key);
-        found.push(
-          collected
-            ? { ...collected, path: skill.path, fromCollection: true }
-            : { ...skill, fromCollection: false }
-        );
+        found.push(skill);
       }
     }
   }

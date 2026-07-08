@@ -369,18 +369,13 @@ export function TextInput({
       cursorRef.current = graphemes(valueRef.current).length;
       return setCursor(cursorRef.current);
     }
-    if (key.backspace) {
+    // ponytail: Ink 6 reports the usual terminal Backspace (DEL) as Delete too.
+    if (key.backspace || key.delete) {
       if (!cursorRef.current) return;
       const next = graphemes(valueRef.current);
       next.splice(cursorRef.current - 1, 1);
       cursorRef.current--;
       setCursor(cursorRef.current);
-      return update(next.join(''));
-    }
-    if (key.delete) {
-      const next = graphemes(valueRef.current);
-      if (cursorRef.current >= next.length) return;
-      next.splice(cursorRef.current, 1);
       return update(next.join(''));
     }
     if (

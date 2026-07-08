@@ -14,6 +14,7 @@ import {
   isGitSource,
   listCollection,
   listProject,
+  listProjectGroups,
   matches,
   parseGitSource,
   readMetadata,
@@ -166,14 +167,14 @@ export async function interactiveList(
   process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
   try {
     while (true) {
-      const [project, collection, globals] = await Promise.all([
-        listProject(),
+      const [projects, collection, globals] = await Promise.all([
+        listProjectGroups(),
         listCollection(),
         globalSkillGroups(),
       ]);
       const canSync = await exists(join(collectionPaths().root, '.git'));
       const result = await browseSkills(
-        project,
+        projects,
         collection,
         globals,
         session,
