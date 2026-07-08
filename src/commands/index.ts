@@ -91,10 +91,15 @@ export async function commandInit(argv: string[] = []): Promise<void> {
 const COMMAND_HELP: Record<string, string> = {
   search: `用法：
   iskills search [关键词]
+  iskills search <关键词> --json
+  iskills search --collect <resultId> [--replace]
 
 实时搜索 skills.sh，选择后保存到收藏夹。
 
 选项：
+  --json             以 JSON 输出搜索结果
+  --collect <ID>     按搜索结果 ID 收藏，不依赖交互排名
+  --replace          替换异源同名收藏
   -h, --help         显示帮助
 `,
   add: `用法：

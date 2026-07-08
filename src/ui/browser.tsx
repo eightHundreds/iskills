@@ -99,7 +99,7 @@ function SkillPane({
   updates?: Set<string>;
 }) {
   const { stdout } = useStdout();
-  const height = Math.max(3, stdout.rows - 8);
+  const height = Math.max(3, (stdout.rows ?? 24) - 8);
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
@@ -259,10 +259,14 @@ function Browser({
   useEffect(() => {
     if (tab !== 'collection' || checkedUpdates.current) return;
     checkedUpdates.current = true;
+    let active = true;
     setUpdateCheck((current) => ({ ...current, checking: true }));
     void checkGitSkillUpdates(collection).then(({ updates, failed }) => {
-      setUpdateCheck({ checking: false, updates, failed });
+      if (active) setUpdateCheck({ checking: false, updates, failed });
     });
+    return () => {
+      active = false;
+    };
   }, [collection, tab]);
 
   const browserState = (): BrowserState => ({
@@ -283,7 +287,7 @@ function Browser({
     });
   useInput(
     (input, key) => {
-      if (key.escape || (key.ctrl && input === 'c') || input === 'q') return finish({ type: 'quit' });
+      if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
         setQueryBeforeSearch(query);
         setCursorBeforeSearch(cursorRef.current);
@@ -353,7 +357,7 @@ function Browser({
       if (key.rightArrow && tab === 'collection' && row?.type === 'skill') {
         return openDetail(row.skill, true);
       }
-      if (key.return) {
+      if (key.return || input.includes('\r') || input.includes('\n')) {
         if (tab === 'collection' && selectedCollection.length) {
           return finish({ ...browserState(), type: 'add', skills: selectedCollection });
         }
@@ -367,7 +371,7 @@ function Browser({
   );
   useInput(
     (input, key) => {
-      if (key.escape || (key.ctrl && input === 'c') || input === 'q') {
+      if (key.escape || input === 'q') {
         setChoosingGroup(false);
       }
     },
@@ -455,6 +459,24 @@ function Browser({
     );
   }
 
+  const currentRow = rows[cursor];
+  const actions = [
+    tab !== 'global' && groups.length ? 'g 分组' : '',
+    tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
+    tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
+    tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
+    tab === 'collection' && canSync ? 's 同步 Git' : '',
+    tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
+      ? 'u 更新当前技能'
+      : '',
+  ].filter(Boolean);
+  const activity = [
+    updateCheck.checking ? '正在检查更新…' : '',
+    !updateCheck.checking && updateCheck.failed ? `${updateCheck.failed} 个技能检查失败` : '',
+    status,
+    query ? `搜索：${query}` : '',
+  ].filter(Boolean);
+
   return (
     <Box flexDirection="column">
       <Tabs
@@ -484,31 +506,27 @@ function Browser({
           }}
         />
       ) : (
-        <Text color={termcnColors.muted}>
-          {focus === 'tabs'
-            ? '←/→ 切换顶级 Tab · ↓ 进入 · / 搜索 · q 退出'
-            : focus === 'agents'
-              ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入技能列表 · / 搜索 · q 退出'
-              : tab === 'collection'
-                ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
-                : '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
-          {selected.size ? ` · 已选 ${selected.size}` : ''}
-          {tab !== 'global' ? ' · g 分组' : ''}
-          {tab === 'project' && selectedProjectLocal.length ? ' · i 加入收藏夹' : ''}
-          {tab === 'global' && selectedGlobalLocal.length ? ' · i 加入收藏夹' : ''}
-          {tab === 'collection' && selectedCollection.length ? ' · Enter 添加' : ''}
-          {tab === 'collection' && selectedCollection.length ? ' · t 批量加标签' : ''}
-          {tab === 'collection' && canSync ? ' · s 同步 Git' : ''}
-          {tab === 'collection' && updateCheck.checking ? ' · 正在检查更新…' : ''}
-          {tab === 'collection' && updateCheck.updates.size
-            ? ` · ${updateCheck.updates.size} 个技能可更新 · u 更新当前技能`
-            : ''}
-          {tab === 'collection' && !updateCheck.checking && updateCheck.failed
-            ? ` · ${updateCheck.failed} 个技能检查失败`
-            : ''}
-          {status ? ` · ${status}` : ''}
-          {query ? ` · 搜索：${query}` : ''}
-        </Text>
+        <Box flexDirection="column">
+          <Text color={termcnColors.muted} wrap="truncate-end">
+            {focus === 'tabs'
+              ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · q 退出'
+              : focus === 'agents'
+                ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · q 退出'
+                : tab === 'collection'
+                  ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
+                  : '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
+          </Text>
+          {(selected.size > 0 || actions.length > 0) && (
+            <Text color={termcnColors.muted} wrap="truncate-end">
+              {[selected.size ? `已选 ${selected.size}` : '', ...actions].filter(Boolean).join(' · ')}
+            </Text>
+          )}
+          {activity.length > 0 && (
+            <Text color={updateCheck.failed ? termcnColors.error : termcnColors.muted} wrap="truncate-end">
+              {activity.join(' · ')}
+            </Text>
+          )}
+        </Box>
       )}
     </Box>
   );
@@ -533,7 +551,6 @@ function Detail({
     if (
       key.escape ||
       key.leftArrow ||
-      (key.ctrl && input === 'c') ||
       input === 'b' ||
       input === 'q'
     ) {

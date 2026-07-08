@@ -30,6 +30,7 @@ export interface Skill {
 }
 
 export interface RemoteSkill {
+  resultId: string;
   name: string;
   source: string;
   installs: number;

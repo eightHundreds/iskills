@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, realpath, rm, symlink } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -11,14 +11,18 @@ import {
   collectionPaths,
   commitCollection,
   discoverSkills,
+  ensureCollection,
+  errorMessage,
   exists,
   isExactSymlink,
   isGitSource,
   listCollection,
   matches,
+  metadataPath,
   moveDirectory,
   pathPresent,
   provenanceFromKnownLocks,
+  readMetadata,
   readState,
   removeFromCollection,
   validateSkillTree,
@@ -34,13 +38,150 @@ import {
   confirm,
   input,
 } from '../prompts.js';
-import type { CollectedSkill, GitImportContext, Skill } from '../types.js';
+import type {
+  CollectedSkill,
+  CollectionState,
+  GitImportContext,
+  Skill,
+  SkillMetadata,
+} from '../types.js';
 
-async function replaceExistingCollection(name: string, allowReplace: boolean): Promise<void> {
-  const target = join(collectionPaths().skills, name);
-  if (!(await exists(target))) return;
-  if (!allowReplace) throw new Error(`收藏夹已存在同名技能：${name}，请确认后使用 --replace`);
-  await removeFromCollection(name, true);
+function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata): boolean {
+  const normalize = (value: string): string => {
+    const scp = value.includes('://') ? null : value.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
+    const candidate = scp ? `ssh://${scp[1]}/${scp[2]}` : value;
+    try {
+      const url = new URL(candidate);
+      const host = url.hostname.toLowerCase();
+      const defaultPort = url.protocol === 'ssh:' ? '22' : url.protocol === 'git:' ? '9418' : '';
+      const port = url.port && url.port !== defaultPort ? `:${url.port}` : '';
+      let path = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
+      if (host === 'github.com') path = path.toLowerCase();
+      return `${host}${port}/${path}`;
+    } catch {
+      return value.replace(/\.git\/?$/i, '').replace(/\/$/, '').toLowerCase();
+    }
+  };
+  return current.source.type === 'git' &&
+    incoming.source.type === 'git' &&
+    !!current.source.url &&
+    !!incoming.source.url &&
+    normalize(current.source.url) === normalize(incoming.source.url) &&
+    (current.source.path || '.') === (incoming.source.path || '.');
+}
+
+interface ReplacementInput {
+  name: string;
+  staged: string;
+  metadata: SkillMetadata;
+  local?: { source: string; selectedPath: string; selectedWasSymlink: boolean };
+}
+
+async function replaceCollectionSkill(input: ReplacementInput): Promise<void> {
+  const paths = collectionPaths();
+  const target = join(paths.skills, input.name);
+  const metadata = metadataPath(input.name);
+  const baseline = baselinePath(input.name);
+  const transaction = await mkdtemp(join(paths.local, `.replace-${input.name}-`));
+  const oldTree = join(transaction, 'old-tree');
+  const oldMetadata = join(transaction, 'old-metadata.json');
+  const oldBaseline = join(transaction, 'old-baseline');
+  const newSource = join(transaction, 'new-source');
+  const state = await readState();
+  const links = state.links.filter((link) => link.skill === input.name);
+  const origin = links.find((link) => link.kind === 'origin');
+  const hadMetadata = await pathPresent(metadata);
+  const hadBaseline = await pathPresent(baseline);
+  let sourceMoved = false;
+
+  if (origin && !(await isExactSymlink(origin.path, target))) {
+    await rm(transaction, { recursive: true, force: true });
+    throw new Error(`原始位置已不是指向收藏夹的软链，已中止：${origin.path}`);
+  }
+
+  try {
+    await cp(target, oldTree, { recursive: true, errorOnExist: true });
+    if (hadMetadata) await cp(metadata, oldMetadata, { errorOnExist: true });
+    if (hadBaseline) await cp(baseline, oldBaseline, { recursive: true, errorOnExist: true });
+  } catch (error) {
+    await rm(transaction, { recursive: true, force: true });
+    throw error;
+  }
+
+  try {
+    if (input.local) {
+      await moveDirectory(input.local.source, newSource);
+      sourceMoved = true;
+    }
+    if (origin) {
+      await rm(origin.path);
+      await cp(oldTree, origin.path, { recursive: true, errorOnExist: true });
+    }
+
+    await rm(target, { recursive: true, force: true });
+    await moveDirectory(input.staged, target);
+    if (input.local) await symlink(target, input.local.source, 'dir');
+    await writeMetadata(input.metadata);
+    await rm(baseline, { recursive: true, force: true });
+    if (input.metadata.source.type === 'git' && !input.metadata.source.commit) {
+      await cp(target, baseline, { recursive: true });
+    }
+    const nextState: CollectionState = {
+      links: state.links.filter((link) => link.skill !== input.name || link.kind === 'usage'),
+      conflicts: state.conflicts.filter(
+        (conflict) => conflict.type !== 'source' || conflict.skill !== input.name
+      ),
+    };
+    if (input.local) {
+      nextState.links.push({ skill: input.name, path: input.local.source, kind: 'origin' });
+      if (input.local.selectedWasSymlink) {
+        nextState.links.push({
+          skill: input.name,
+          path: input.local.selectedPath,
+          kind: 'dependent',
+        });
+      }
+    }
+    await writeState(nextState);
+    await commitCollection(`import ${input.name}`, true);
+  } catch (error) {
+    try {
+      if (input.local && sourceMoved) {
+        await rm(input.local.source, { recursive: true, force: true });
+        await moveDirectory(newSource, input.local.source);
+      }
+      await rm(target, { recursive: true, force: true });
+      await cp(oldTree, target, { recursive: true, errorOnExist: true });
+      if (hadMetadata) await cp(oldMetadata, metadata, { force: true });
+      else await rm(metadata, { force: true });
+      await rm(baseline, { recursive: true, force: true });
+      if (hadBaseline) await cp(oldBaseline, baseline, { recursive: true });
+      await writeState(state);
+      if (origin) {
+        await rm(origin.path, { recursive: true, force: true });
+        await mkdir(resolve(origin.path, '..'), { recursive: true });
+        await symlink(target, origin.path, 'dir');
+      }
+      await commitCollection(`rollback import ${input.name}`);
+    } catch (rollbackError) {
+      throw new Error(
+        `导入失败：${errorMessage(error)}；回滚失败：${errorMessage(rollbackError)}`
+      );
+    }
+    await rm(transaction, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+
+  for (const conflict of state.conflicts) {
+    if (conflict.type === 'source' && conflict.skill === input.name) {
+      await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
+        console.error(`警告：旧冲突目录清理失败：${errorMessage(error)}`);
+      });
+    }
+  }
+  await rm(transaction, { recursive: true, force: true }).catch((error) => {
+    console.error(`警告：替换备份清理失败：${errorMessage(error)}`);
+  });
 }
 
 async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<boolean> {
@@ -53,7 +194,37 @@ async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<bo
 
   const provenance = await provenanceFromKnownLocks(skill);
   await validateSkillTree(source);
-  await replaceExistingCollection(skill.name, allowReplace);
+  if (await pathPresent(target)) {
+    if (!allowReplace) {
+      throw new Error(`收藏夹已存在同名技能：${skill.name}，请确认后使用 --replace`);
+    }
+    await ensureCollection();
+    const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
+    const staged = join(transaction, 'tree');
+    try {
+      await cp(source, staged, { recursive: true, errorOnExist: true });
+      await replaceCollectionSkill({
+        name: skill.name,
+        staged,
+        metadata: {
+          name: skill.name,
+          description: skill.description,
+          tags: [],
+          note: '',
+          source: provenance,
+        },
+        local: {
+          source,
+          selectedPath,
+          selectedWasSymlink: selectedStats.isSymbolicLink(),
+        },
+      });
+    } finally {
+      await rm(transaction, { recursive: true, force: true });
+    }
+    return true;
+  }
+  await ensureCollection();
   await moveDirectory(source, target);
   try {
     await symlink(target, source, 'dir');
@@ -91,7 +262,35 @@ async function importRemoteSkill(
   const paths = collectionPaths();
   const target = join(paths.skills, assertSkillName(skill.name));
   await validateSkillTree(skill.path);
-  await replaceExistingCollection(skill.name, allowReplace);
+  if (await pathPresent(target)) {
+    if (!allowReplace) {
+      throw new Error(`收藏夹已存在同名技能：${skill.name}，请确认后使用 --replace`);
+    }
+    await ensureCollection();
+    const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
+    const staged = join(transaction, 'tree');
+    try {
+      await cp(skill.path, staged, { recursive: true, errorOnExist: true });
+      await replaceCollectionSkill({
+        name: skill.name,
+        staged,
+        metadata: {
+          name: skill.name,
+          description: skill.description,
+          tags: [],
+          note: '',
+          source: {
+            ...gitContext.source,
+            path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
+          },
+        },
+      });
+    } finally {
+      await rm(transaction, { recursive: true, force: true });
+    }
+    return true;
+  }
+  await ensureCollection();
   await cp(skill.path, target, { recursive: true, errorOnExist: true });
   await writeMetadata({
     name: skill.name,
@@ -106,11 +305,21 @@ async function importRemoteSkill(
   return true;
 }
 
+export interface RemoteImportOptions {
+  replace?: boolean;
+  confirmReplace?: (current: SkillMetadata, incoming: SkillMetadata) => Promise<boolean>;
+}
+
+export interface RemoteImportResult {
+  name: string;
+  status: 'imported' | 'unchanged' | 'cancelled';
+}
+
 export async function importRemoteSkillToCollection(
   source: string,
   skillName: string,
-  allowReplace = false
-): Promise<string> {
+  options: RemoteImportOptions = {}
+): Promise<RemoteImportResult> {
   const gitContext = await cloneGitSource(source);
   try {
     const found = (await discoverSkills(gitContext.repository)).filter(
@@ -119,9 +328,35 @@ export async function importRemoteSkillToCollection(
     if (!found.length) throw new Error(`来源仓库中不存在技能：${skillName}`);
     if (found.length > 1) throw new Error(`来源仓库中存在多个同名技能：${skillName}`);
     const skill = found[0]!;
-    await importRemoteSkill(skill, gitContext, allowReplace);
-    await commitCollection(`import ${skill.name}`);
-    return skill.name;
+    const incoming: SkillMetadata = {
+      name: skill.name,
+      description: skill.description,
+      tags: [],
+      note: '',
+      source: {
+        ...gitContext.source,
+        path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
+      },
+    };
+    const target = join(collectionPaths().skills, skill.name);
+    const replacing = await pathPresent(target);
+    if (replacing) {
+      const current = await readMetadata(skill.name);
+      if (sameGitIdentity(current, incoming)) {
+        return { name: skill.name, status: 'unchanged' };
+      }
+      if (!options.replace) {
+        if (!options.confirmReplace) {
+          throw new Error(`收藏夹已存在异源同名技能：${skill.name}；请使用 --replace`);
+        }
+        if (!(await options.confirmReplace(current, incoming))) {
+          return { name: skill.name, status: 'cancelled' };
+        }
+      }
+    }
+    await importRemoteSkill(skill, gitContext, replacing);
+    if (!replacing) await commitCollection(`import ${skill.name}`);
+    return { name: skill.name, status: 'imported' };
   } finally {
     await rm(gitContext.temporary, { recursive: true, force: true });
   }

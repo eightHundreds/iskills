@@ -13,6 +13,7 @@ import {
 import { commitCollection, ensureCollection, readState } from './core.js';
 import { finalizeResolvedConflicts } from './git.js';
 import { closePrompts } from './prompts.js';
+import { InterruptError } from './ui/session.js';
 
 async function run(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
@@ -24,6 +25,7 @@ async function run(argv: string[]): Promise<void> {
     console.log('0.0.0');
     return;
   }
+  if (command === 'search') return commandSearch(rest);
 
   await ensureCollection();
   if (command === 'init') return commandInit(rest);
@@ -37,7 +39,6 @@ async function run(argv: string[]): Promise<void> {
     return interactiveList('', 'collection');
   }
   if (command === 'add') return commandAdd(rest);
-  if (command === 'search') return commandSearch(rest);
   if (command === 'import') return commandImport(rest);
   if (command === 'list') return commandList(rest);
   if (command === 'remove') return commandRemove(rest);
@@ -49,6 +50,12 @@ async function run(argv: string[]): Promise<void> {
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   try {
     await run(argv);
+  } catch (error) {
+    if (error instanceof InterruptError) {
+      process.exitCode = error.exitCode;
+      return;
+    }
+    throw error;
   } finally {
     closePrompts();
   }
