@@ -8,7 +8,7 @@ import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
 export type BrowserFocus = 'tabs' | 'agents' | 'list';
-export interface GlobalSkillGroup {
+export interface SkillGroup {
   agent: string;
   skills: Skill[];
 }
@@ -167,8 +167,36 @@ function SkillPane({
   );
 }
 
+function AgentTabs({
+  groups,
+  agent,
+  focused,
+}: {
+  groups: SkillGroup[];
+  agent: string;
+  focused: boolean;
+}) {
+  return (
+    <Box paddingLeft={1}>
+      {groups.map((group, index) => (
+        <Box key={group.agent}>
+          <Text
+            color={group.agent === agent ? termcnColors.primary : termcnColors.muted}
+            bold={group.agent === agent}
+            underline={group.agent === agent}
+            inverse={focused && group.agent === agent}
+          >
+            {group.agent} ({group.skills.length})
+          </Text>
+          {index < groups.length - 1 && <Text color={termcnColors.border}> │ </Text>}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function Browser({
-  project,
+  projectGroups,
   collection,
   globalGroups,
   initialQuery,
@@ -181,9 +209,9 @@ function Browser({
   status,
   finish,
 }: {
-  project: Skill[];
+  projectGroups: SkillGroup[];
   collection: CollectedSkill[];
-  globalGroups: GlobalSkillGroup[];
+  globalGroups: SkillGroup[];
   initialQuery: string;
   initialTab: BrowserTab;
   initialAgent: string;
@@ -196,13 +224,19 @@ function Browser({
 }) {
   const [tab, setTab] = useState<BrowserTab>(initialTab);
   const [query, setQuery] = useState(initialQuery);
+  const allAgents = [...new Set([...projectGroups, ...globalGroups].map((group) => group.agent))];
   const [agent, setAgent] = useState(
-    globalGroups.some((group) => group.agent === initialAgent)
+    allAgents.includes(initialAgent)
       ? initialAgent
-      : globalGroups[0]?.agent ?? ''
+      : projectGroups[0]?.agent ?? globalGroups[0]?.agent ?? ''
   );
   const [focus, setFocus] = useState<BrowserFocus>(initialFocus);
-  const projectRows = useMemo(() => groupedRows(project, query), [project, query]);
+  const project = projectGroups.flatMap((group) => group.skills);
+  const projectGroup = projectGroups.find((group) => group.agent === agent) ?? projectGroups[0];
+  const projectRows = useMemo(
+    () => groupedRows(projectGroup?.skills ?? [], query),
+    [projectGroup, query]
+  );
   const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
   const globalGroup = globalGroups.find((group) => group.agent === agent) ?? globalGroups[0];
   const globalRows = useMemo(
@@ -300,7 +334,7 @@ function Browser({
         return finish({ ...browserState(), type: 'sync' });
       }
       if (focus === 'tabs') {
-        if (key.downArrow) return setFocus(tab === 'global' ? 'agents' : 'list');
+        if (key.downArrow) return setFocus(tab === 'collection' ? 'list' : 'agents');
         if (key.leftArrow || key.rightArrow) {
           const order: BrowserTab[] = ['project', 'global', 'collection'];
           const index = order.indexOf(tab);
@@ -313,7 +347,8 @@ function Browser({
         if (key.upArrow) return setFocus('tabs');
         if (key.downArrow) return setFocus('list');
         if (key.leftArrow || key.rightArrow) {
-          const names = globalGroups.map((group) => group.agent);
+          const names = (tab === 'project' ? projectGroups : globalGroups)
+            .map((group) => group.agent);
           const index = names.indexOf(agent);
           const next = names[index + (key.leftArrow ? -1 : 1)];
           if (next) setAgent(next);
@@ -338,7 +373,7 @@ function Browser({
         return finish({ ...browserState(), type: 'import', skills: selectedLocal });
       }
       if (key.upArrow) {
-        if (cursorRef.current === 0) return setFocus(tab === 'global' ? 'agents' : 'tabs');
+        if (cursorRef.current === 0) return setFocus(tab === 'collection' ? 'tabs' : 'agents');
         return setCursor((index) => index - 1);
       }
       if (key.downArrow) {
@@ -383,14 +418,17 @@ function Browser({
       key: 'project',
       label: `当前项目 ${project.length}`,
       content: (
-        <SkillPane
-          rows={projectRows}
-          cursor={cursor}
-          selected={selected}
-          isActive={focus === 'list'}
-          showSource
-          showGroup={Boolean(query.trim())}
-        />
+        <Box flexDirection="column">
+          <AgentTabs groups={projectGroups} agent={agent} focused={focus === 'agents'} />
+          <SkillPane
+            rows={projectRows}
+            cursor={cursor}
+            selected={selected}
+            isActive={focus === 'list'}
+            showSource
+            showGroup={Boolean(query.trim())}
+          />
+        </Box>
       ),
     },
     {
@@ -398,21 +436,7 @@ function Browser({
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
         <Box flexDirection="column">
-          <Box paddingLeft={1}>
-            {globalGroups.map((group, index) => (
-              <Box key={group.agent}>
-                <Text
-                  color={group.agent === agent ? termcnColors.primary : termcnColors.muted}
-                  bold={group.agent === agent}
-                  underline={group.agent === agent}
-                  inverse={focus === 'agents' && group.agent === agent}
-                >
-                  {group.agent} ({group.skills.length})
-                </Text>
-                {index < globalGroups.length - 1 && <Text color={termcnColors.border}> │ </Text>}
-              </Box>
-            ))}
-          </Box>
+          <AgentTabs groups={globalGroups} agent={agent} focused={focus === 'agents'} />
           <SkillPane
             rows={globalRows}
             cursor={cursor}
@@ -611,9 +635,9 @@ export function browseSkillDetail(
 }
 
 export function browseSkills(
-  project: Skill[],
+  projectGroups: SkillGroup[],
   collection: CollectedSkill[],
-  globalGroups: GlobalSkillGroup[],
+  globalGroups: SkillGroup[],
   session: InkSession,
   initialQuery = '',
   initialTab: BrowserTab = 'project',
@@ -626,7 +650,7 @@ export function browseSkills(
 ): Promise<BrowserResult> {
   return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
       <Browser
-        project={project}
+        projectGroups={projectGroups}
         collection={collection}
         globalGroups={globalGroups}
         initialQuery={initialQuery}
