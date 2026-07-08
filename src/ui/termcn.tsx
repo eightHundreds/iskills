@@ -282,20 +282,16 @@ export function Confirm({
   onSubmit: (value: boolean) => void;
 }): ReactNode {
   return (
-    <Box flexDirection="column">
-      <Text>
-        <Text color={colors.primary}>? </Text>
-        {message}
-      </Text>
-      <Box paddingLeft={2}>
-        <ConfirmInput
-          defaultChoice={defaultValue ? 'confirm' : 'cancel'}
-          onConfirm={() => onSubmit(true)}
-          onCancel={() => onSubmit(false)}
-        />
-      </Box>
-      <Text color={colors.muted}>Y/n 确认 · Enter 确认 · Esc 取消</Text>
-    </Box>
+    <Text>
+      <Text color={colors.primary}>? </Text>
+      {message} (
+      <ConfirmInput
+        defaultChoice={defaultValue ? 'confirm' : 'cancel'}
+        onConfirm={() => onSubmit(true)}
+        onCancel={() => onSubmit(false)}
+      />
+      )
+    </Text>
   );
 }
 

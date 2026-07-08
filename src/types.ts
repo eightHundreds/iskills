@@ -29,6 +29,12 @@ export interface Skill {
   fromCollection?: boolean;
 }
 
+export interface RemoteSkill {
+  name: string;
+  source: string;
+  installs: number;
+}
+
 export interface SkillMetadata {
   name: string;
   description: string;

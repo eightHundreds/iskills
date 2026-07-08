@@ -1,6 +1,6 @@
 import { cp, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   AGENTS,
@@ -8,6 +8,7 @@ import {
   baselinePath,
   collectionPaths,
   commitCollection,
+  discoverSkills,
   errorMessage,
   exists,
   isGitSource,
@@ -19,7 +20,7 @@ import {
   readState,
   writeMetadata,
 } from '../core.js';
-import { syncCollection, updateGitSkill } from '../git.js';
+import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
 import { chooseOne, chooseOptionsMany, editInput, editTags } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import {
@@ -44,7 +45,8 @@ async function bindMetadataSource(
   metadata: SkillMetadata,
   input: string,
   ref: string | undefined,
-  sourcePath: string
+  sourcePath: string,
+  refType?: GitSource['refType']
 ): Promise<void> {
   if (!isGitSource(input)) throw new Error(`不是有效的 Git 来源：${input}`);
   const parsed = parseGitSource(input);
@@ -52,7 +54,7 @@ async function bindMetadataSource(
   const source: GitSource = {
     type: 'git',
     url: parsed.url,
-    refType: /^[0-9a-f]{7,40}$/i.test(resolvedRef || '') ? 'commit' : 'branch',
+    refType: refType || (/^[0-9a-f]{7,40}$/i.test(resolvedRef || '') ? 'commit' : 'branch'),
     path: assertRelativePath(sourcePath),
     ...(resolvedRef ? { ref: resolvedRef } : {}),
   };
@@ -105,24 +107,46 @@ async function skillDetail(
       );
       if (sourceValue === undefined) continue;
       const sourceInput = sourceValue.trim();
+      if (!isGitSource(sourceInput)) throw new Error(`不是有效的 Git 来源：${sourceInput}`);
       const parsed = parseGitSource(sourceInput);
       const refValue = await editInput(
         '分支、Tag 或 Commit（Enter 继续，Esc 取消）',
-        metadata.source.ref || parsed.ref || '',
+        parsed.ref || metadata.source.ref || '',
         session
       );
       if (refValue === undefined) continue;
-      const pathValue = await editInput(
-        '仓库内 Skill 路径（Enter 保存，Esc 取消）',
-        metadata.source.path || '',
-        session
-      );
-      if (pathValue === undefined) continue;
       const ref = refValue.trim();
-      const sourcePath = assertRelativePath(pathValue.trim());
-      await bindMetadataSource(skill.name, metadata, sourceInput, ref, sourcePath);
-      await writeMetadata(metadata);
-      await commitCollection(`source ${skill.name}`);
+      const gitContext = await cloneGitSource(ref ? `${parsed.url}#${ref}` : parsed.url);
+      try {
+        const options = (await discoverSkills(gitContext.repository))
+          .map((candidate) => {
+            const path = assertRelativePath(
+              relative(gitContext.repository, candidate.path).split(sep).join('/')
+            );
+            return {
+              label: `${candidate.name} — ${path}`,
+              value: path,
+              rank: candidate.name !== skill.name ? 2 : path === metadata.source.path ? 0 : 1,
+            };
+          })
+          .sort((left, right) => left.rank - right.rank || left.value.localeCompare(right.value))
+          .map(({ label, value }) => ({ label, value }));
+        if (!options.length) throw new Error('目标仓库中没有找到 SKILL.md');
+        const sourcePath = await chooseOne(options, '选择仓库内 Skill：', false, session);
+        if (sourcePath === undefined) continue;
+        await bindMetadataSource(
+          skill.name,
+          metadata,
+          gitContext.source.url,
+          gitContext.source.ref,
+          sourcePath,
+          gitContext.source.refType
+        );
+        await writeMetadata(metadata);
+        await commitCollection(`source ${skill.name}`);
+      } finally {
+        await rm(gitContext.temporary, { recursive: true, force: true });
+      }
     }
   }
 }

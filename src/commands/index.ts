@@ -10,8 +10,9 @@ import { chooseMany, confirm, input } from '../prompts.js';
 import type { CollectedSkill, UpdateStatus } from '../types.js';
 import { commandList, interactiveList } from './browser.js';
 import { commandAdd, commandImport, commandRemove } from './library.js';
+import { commandSearch } from './search.js';
 
-export { commandAdd, commandImport, commandList, commandRemove, interactiveList };
+export { commandAdd, commandImport, commandList, commandRemove, commandSearch, interactiveList };
 
 export async function commandUpdate(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -88,6 +89,14 @@ export async function commandInit(argv: string[] = []): Promise<void> {
 }
 
 const COMMAND_HELP: Record<string, string> = {
+  search: `用法：
+  iskills search [关键词]
+
+实时搜索 skills.sh，选择后保存到收藏夹。
+
+选项：
+  -h, --help         显示帮助
+`,
   add: `用法：
   iskills add [技能...] [选项]
 
@@ -182,6 +191,7 @@ export function printHelp(command?: string): void {
   iskills [命令] [选项]
 
 命令：
+  search [关键词]    搜索技能并保存到收藏夹
   add [技能...]      从收藏夹添加到当前项目
   import [来源]      导入本地路径或 Git 来源
   list [关键词]      浏览当前项目、收藏夹和全局技能

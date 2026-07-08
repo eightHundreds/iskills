@@ -129,7 +129,7 @@ export function sourceSkillFile(path: string): string {
   return path === '.' ? 'SKILL.md' : `${path}/SKILL.md`;
 }
 
-function sanitizeTerminal(value: string): string {
+export function sanitizeTerminal(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 }
 

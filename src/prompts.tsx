@@ -42,6 +42,7 @@ export function editInput(
 ): Promise<string | undefined> {
   return runPrompt<string | undefined>(undefined, (finish) => (
     <TextInput
+      key={message}
       label={message}
       initialValue={initialValue}
       onCancel={() => finish(undefined)}
