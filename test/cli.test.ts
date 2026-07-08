@@ -1325,12 +1325,13 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
       { wait: 'Space 选择', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
       { wait: '添加到：', send: '' },
+      { wait: '添加方式：', send: '' },
       { wait: '选择项目 Skill 目录：', send: '', enter: false },
       { wait: '○', send: '', enter: false },
       { wait: '标准 Agent Skills (.agents/skills)', send: '', enter: false },
       { wait: '●', send: '', enter: false },
       { wait: 'Claude Code (.claude/skills)', send: '', delayAfter: 150 },
-      { wait: '已添加 1 个技能到 1 个目录', send: 'q', enter: false },
+      { wait: '已通过软链添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
     assert.doesNotMatch(result.stdout, /错误：/);
     assert.equal(
@@ -1340,6 +1341,71 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
     await assert.rejects(lstat(join(context.project, '.agents/skills/entry-agent-skill')), {
       code: 'ENOENT',
     });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY entry can copy a selected collection Skill into a global Agent directory', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'entry-copy-skill');
+  await makeSkill(source, 'entry-copy-skill');
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '已选 1', send: '', delayAfter: 100 },
+      { wait: '添加到：', send: '\u001b[B', enter: false },
+      { wait: '全局', send: '' },
+      { wait: '添加方式：', send: '\u001b[B', enter: false },
+      { wait: '复制', send: '' },
+      { wait: '选择全局 Skill 目录：', send: ' ', enter: false },
+      { wait: '●', send: '' },
+      { wait: '已通过复制添加 1 个技能到 1 个目录', send: 'q', enter: false },
+    ]);
+    const target = join(context.home, '.agents/skills/entry-copy-skill');
+    const state = JSON.parse(await readFile(join(context.collection, '.local/state.json'), 'utf8'));
+    assert.doesNotMatch(result.stdout, /错误：/);
+    assert.equal((await lstat(target)).isSymbolicLink(), false);
+    assert.equal(state.links.some((link: JsonLink) => link.path === target), false);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY entry cancels add mode selection without creating a target', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'entry-cancel-skill');
+  await makeSkill(source, 'entry-cancel-skill');
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '已选 1', send: '', delayAfter: 100 },
+      { wait: '添加到：', send: '' },
+      { wait: '添加方式：', send: '\u001b', enter: false },
+      { wait: 'q 退出', send: 'q', enter: false },
+    ]);
+    assert.doesNotMatch(result.stdout, /错误：/);
+    await assert.rejects(lstat(join(context.project, '.agents/skills')), { code: 'ENOENT' });
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

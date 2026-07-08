@@ -243,6 +243,16 @@ export async function interactiveList(
           session
         );
         if (!destination) continue;
+        const mode = await chooseOne(
+          [
+            { label: '软链（推荐）', value: 'link' },
+            { label: '复制', value: 'copy' },
+          ],
+          '添加方式：',
+          false,
+          session
+        );
+        if (!mode) continue;
         const isGlobal = destination === 'global';
         const targetOptions = [
           {
@@ -271,9 +281,10 @@ export async function interactiveList(
           const { count, targetCount } = await addSkillsToProject(result.skills, {
             quiet: true,
             agent: agents,
+            copy: mode === 'copy',
             ...(isGlobal ? { global: true } : {}),
           });
-          status = `已添加 ${count} 个技能到 ${targetCount} 个目录`;
+          status = `已通过${mode === 'copy' ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
           selected = [];
         } catch (error) {
           status = errorMessage(error);
