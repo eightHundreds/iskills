@@ -71,6 +71,9 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
     if (left === right) return 0;
     return left === '未分组' ? 1 : right === '未分组' ? -1 : left.localeCompare(right);
   });
+  if (sorted.length === 1 && sorted[0]?.[0] === '未分组') {
+    return sorted[0][1].map((skill) => ({ type: 'skill', group: '', skill }));
+  }
   const rows: SkillRow[] = [];
   for (const [name, group] of sorted) {
     rows.push({ type: 'group', name, skills: group });

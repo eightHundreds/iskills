@@ -793,6 +793,33 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
   }
 });
 
+test('TTY list flattens a sole ungrouped section', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'plain-skill');
+  await makeSkill(source, 'plain-skill');
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false, delayAfter: 400 },
+      { wait: 'plain-skill', send: 'q', enter: false },
+    ]);
+
+    assert.match(result.stdout, /plain-skill/);
+    assert.doesNotMatch(result.stdout, /未分组/);
+    assert.doesNotMatch(result.stdout, /g 分组/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
   try {
     await exec('python3', ['--version']);
@@ -869,7 +896,7 @@ test('collection browser shows progress while updating a Skill', async (t) => {
 
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
-      { wait: '› ○ 未分组', send: '\u001b[B', enter: false },
+      { wait: 'remote-skill', send: '', enter: false },
       { wait: 'u 更新当前技能', send: 'u', enter: false },
       { wait: '正在更新 remote-skill', send: '', enter: false },
       { wait: 'remote-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
@@ -1018,9 +1045,9 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
 
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
-      { wait: 'agents (2)', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: '本地 · local-only', send: '\u001b[B', enter: false },
-      { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: 'Enter 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '› ○ 本地 · local-only', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
     ]);
