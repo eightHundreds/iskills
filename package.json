@@ -26,6 +26,10 @@
     "build": "npm run clean --silent && tsc",
     "start": "npm run build --silent && node ./bin/iskills.js",
     "test": "npm run build --silent && vitest run",
+    "test:dev": "npm run build --silent && node scripts/test-dev.mjs",
+    "test:fast": "npm run build --silent && vitest run --project parallel",
+    "test:git": "npm run build --silent && vitest run --project git",
+    "test:tty": "npm run build --silent && vitest run --project tty",
     "type-check": "tsc --noEmit",
     "prepack": "npm run build"
   },

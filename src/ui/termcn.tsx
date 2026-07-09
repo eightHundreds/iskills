@@ -40,6 +40,12 @@ function skillNameColumnWidth(options: { skill: Skill }[], columns: number): num
   return Math.max(12, Math.min(Math.max(20, longestName), availableNameWidth));
 }
 
+function collectionStatusLabel(status: Skill['collectionStatus']): string {
+  if (status === 'same-source') return '已收藏自同一来源';
+  if (status === 'same-name') return '已收藏同名技能';
+  return '';
+}
+
 function toInkOptions<T>(options: Option<T>[], numbered = false) {
   return options.map((option, index) => ({
     value: String(index),
@@ -577,6 +583,16 @@ export interface SkillOption<T extends Skill> {
   agent: string;
 }
 
+export interface ImportReviewItem<T extends Skill> {
+  skill: T;
+  detail: string;
+}
+
+export interface ImportReviewResult {
+  confirmed: boolean;
+  tags: string[];
+}
+
 function SkillDetailPreview<T extends Skill>({
   skill,
   agent,
@@ -602,6 +618,12 @@ function SkillDetailPreview<T extends Skill>({
         <Text bold>备注：</Text>
         <Text>{note ?? '无'}</Text>
       </Box>
+      {collectionStatusLabel(skill.collectionStatus) && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>收藏状态：</Text>
+          <Text>{collectionStatusLabel(skill.collectionStatus)}</Text>
+        </Box>
+      )}
       <Text color={colors.muted}>Esc 返回 · Space 选择 · Enter 确认导入</Text>
     </Box>
   );
@@ -793,6 +815,8 @@ export function SkillMultiSelect<T extends Skill>({
             const index = offset + visibleIndex;
             const isSelected = selected.has(option.skill.path);
             const isCursor = focus === 'list' && index === clampedCursor;
+            const status = collectionStatusLabel(option.skill.collectionStatus);
+            const description = [option.skill.description, status].filter(Boolean).join(' · ');
             return (
               <Box key={option.skill.path} gap={1} width="100%">
                 <Text {...(isCursor ? { color: colors.primary } : {})}>
@@ -805,7 +829,7 @@ export function SkillMultiSelect<T extends Skill>({
                 </Box>
                 <Box flexGrow={1} overflow="hidden">
                   <Text wrap="truncate-end" color={colors.muted}>
-                    {option.skill.description}
+                    {description}
                   </Text>
                 </Box>
               </Box>
@@ -827,6 +851,171 @@ export function SkillMultiSelect<T extends Skill>({
             ? '←/→ 切换 Agent · ↓ 返回技能列表 · Esc 取消'
             : '↑/↓ 移动 · Space 选择 · → 详情 · a 全选当前 · Enter 确认 · Esc 取消'}
       </Text>
+    </Box>
+  );
+}
+
+export function ImportReview<T extends Skill>({
+  label = '确认导入',
+  items,
+  existingTags,
+  onSubmit,
+}: {
+  label?: string;
+  items: ImportReviewItem<T>[];
+  existingTags: string[];
+  onSubmit: (result: ImportReviewResult) => void;
+}): ReactNode {
+  const { stdout } = useStdout();
+  const [activeTab, setActiveTab] = useState<'tags' | 'confirm'>('tags');
+  const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
+  const [cursor, setCursor] = useState(0);
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set());
+  const height = Math.max(3, (stdout.rows ?? 24) - 15);
+  const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, existingTags.length - 1)));
+  const offset = Math.max(
+    0,
+    Math.min(clampedCursor - Math.floor(height / 2), Math.max(0, existingTags.length - height))
+  );
+  const visibleTags = existingTags.slice(offset, offset + height);
+  const visibleItems = items.slice(0, Math.max(3, Math.min(items.length, (stdout.rows ?? 24) - 10)));
+
+  const submit = (confirmed: boolean) => {
+    onSubmit({ confirmed, tags: [...selectedTags] });
+  };
+  const addTags = (input: string) => {
+    const tags = input.split(',').map((tag) => tag.trim()).filter(Boolean);
+    if (tags.length) {
+      setSelectedTags((previous) => new Set([...previous, ...tags]));
+    }
+    setActiveTab('confirm');
+  };
+  const toggleCurrentTag = () => {
+    const tag = existingTags[clampedCursor];
+    if (!tag) return;
+    setSelectedTags((previous) => {
+      const next = new Set(previous);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
+
+  useInput((input, key) => {
+    if (activeTab === 'confirm') {
+      if (key.leftArrow) {
+        setActiveTab('tags');
+        return;
+      }
+      if (input.trim().toLowerCase() === 'n') {
+        submit(false);
+        return;
+      }
+      if (input.trim().toLowerCase() === 'y' || isReturn(input, key.return)) {
+        submit(true);
+        return;
+      }
+      return;
+    }
+
+    if (tagFocus === 'list' && key.rightArrow) {
+      setActiveTab('confirm');
+      return;
+    }
+    if (key.tab) {
+      setTagFocus((value) => existingTags.length && value === 'input' ? 'list' : 'input');
+      return;
+    }
+    if (tagFocus !== 'list') return;
+    if (key.upArrow) {
+      setCursor(Math.max(0, clampedCursor - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setCursor(existingTags.length ? (clampedCursor + 1) % existingTags.length : 0);
+      return;
+    }
+    if (input === ' ') {
+      toggleCurrentTag();
+      return;
+    }
+    if (isReturn(input, key.return)) {
+      setActiveTab('confirm');
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>{label}</Text>
+      <Box paddingLeft={1}>
+        {(['tags', 'confirm'] as const).map((tab, index) => (
+          <Box key={tab}>
+            <Text
+              color={activeTab === tab ? colors.primary : colors.muted}
+              bold={activeTab === tab}
+              underline={activeTab === tab}
+            >
+              {tab === 'tags' ? '选择标签' : '确认'}
+            </Text>
+            {index === 0 && <Text color={colors.border}> │ </Text>}
+          </Box>
+        ))}
+      </Box>
+      {activeTab === 'tags' ? (
+        <Box flexDirection="column">
+          <Text color={colors.muted}>
+            已选标签：{selectedTags.size ? [...selectedTags].join(', ') : '无'}
+          </Text>
+          <Box
+            flexDirection="column"
+            borderStyle="round"
+            borderColor={tagFocus === 'list' ? colors.primary : colors.border}
+            paddingX={1}
+          >
+            {visibleTags.length ? (
+              visibleTags.map((tag, visibleIndex) => {
+                const index = offset + visibleIndex;
+                const active = tagFocus === 'list' && index === clampedCursor;
+                return (
+                  <Text key={tag} {...(active ? { color: colors.primary } : {})}>
+                    {`${active ? '›' : ' '} ${selectedTags.has(tag) ? '●' : '○'} ${tag}`}
+                  </Text>
+                );
+              })
+            ) : (
+              <Text color={colors.muted}>暂无已有标签</Text>
+            )}
+          </Box>
+          <TextInput
+            label="新增标签（逗号分隔）"
+            isActive={tagFocus === 'input'}
+            onSubmit={addTags}
+          />
+          <Text color={colors.muted}>
+            {tagFocus === 'input'
+              ? 'Enter 完成标签 · Tab 返回已有标签 · Esc 取消'
+              : '↑/↓ 移动 · Space 选择 · Tab 切换输入 · Enter 完成标签 · → 确认 · Esc 取消'}
+          </Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          <Text>
+            将导入 {items.length} 个技能；标签：
+            {selectedTags.size ? [...selectedTags].join(', ') : '无'}
+          </Text>
+          <Box flexDirection="column" marginTop={1}>
+            {visibleItems.map((item) => (
+              <Text key={item.skill.path} color={colors.muted} wrap="truncate-end">
+                - {item.skill.name}: {item.detail}
+              </Text>
+            ))}
+            {items.length > visibleItems.length && (
+              <Text color={colors.muted}>… 还有 {items.length - visibleItems.length} 个</Text>
+            )}
+          </Box>
+          <Text color={colors.muted}>Enter 确认导入 · ← 返回标签 · n 取消 · Esc 取消</Text>
+        </Box>
+      )}
     </Box>
   );
 }

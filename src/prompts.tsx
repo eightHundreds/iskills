@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react';
 import { realpath } from 'node:fs/promises';
 import { listCollection } from './core.js';
-import { Confirm, MultiSelect, Select, SkillMultiSelect, TagEditor, TextInput } from './ui/termcn.js';
+import {
+  Confirm,
+  ImportReview,
+  MultiSelect,
+  Select,
+  SkillMultiSelect,
+  TagEditor,
+  TextInput,
+  type ImportReviewItem,
+  type ImportReviewResult,
+} from './ui/termcn.js';
 import { InkSession } from './ui/session.js';
 import type { Choice, Skill } from './types.js';
 
@@ -138,6 +148,20 @@ export function chooseOptionsMany<T extends string>(
       options={options}
       defaultValues={defaultValues}
       onSubmit={finish}
+    />
+  ), session);
+}
+
+export function reviewImport<T extends Skill>(
+  items: ImportReviewItem<T>[],
+  existingTags: string[],
+  session?: InkSession
+): Promise<ImportReviewResult | undefined> {
+  return runPrompt<ImportReviewResult | undefined>(undefined, (finish) => (
+    <ImportReview<T>
+      items={items}
+      existingTags={existingTags}
+      onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
   ), session);
 }

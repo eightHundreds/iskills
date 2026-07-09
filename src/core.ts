@@ -133,6 +133,32 @@ export function sanitizeTerminal(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 }
 
+export function normalizeGitRepositoryIdentity(value: string): string {
+  const scp = value.includes('://') ? null : value.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
+  const candidate = scp ? `ssh://${scp[1]}/${scp[2]}` : value;
+  try {
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase();
+    const defaultPort = url.protocol === 'ssh:' ? '22' : url.protocol === 'git:' ? '9418' : '';
+    const port = url.port && url.port !== defaultPort ? `:${url.port}` : '';
+    let path = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
+    if (host === 'github.com') path = path.toLowerCase();
+    return `${host}${port}/${path}`;
+  } catch {
+    return value.replace(/\.git\/?$/i, '').replace(/\/$/, '').toLowerCase();
+  }
+}
+
+export function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata): boolean {
+  return current.source.type === 'git' &&
+    incoming.source.type === 'git' &&
+    !!current.source.url &&
+    !!incoming.source.url &&
+    normalizeGitRepositoryIdentity(current.source.url) ===
+      normalizeGitRepositoryIdentity(incoming.source.url) &&
+    (current.source.path || '.') === (incoming.source.path || '.');
+}
+
 function parseScalar(value: string): string {
   const trimmed = value.trim();
   if (
@@ -517,7 +543,11 @@ export function matches(skill: Skill, query: string): boolean {
     .every((word) => haystack.includes(word));
 }
 
-export async function removeFromCollection(name: string, confirmed = false): Promise<void> {
+export async function removeFromCollection(
+  name: string,
+  confirmed = false,
+  quiet = false
+): Promise<void> {
   const paths = collectionPaths();
   const skillPath = join(paths.skills, assertSkillName(name));
   if (!(await exists(skillPath))) throw new Error(`收藏夹中不存在：${name}`);
@@ -552,7 +582,9 @@ export async function removeFromCollection(name: string, confirmed = false): Pro
   );
   await writeState(state);
   await commitCollection(`remove ${name}`);
-  console.log(
-    origin ? `已从收藏夹移除 ${name}，并还回 ${origin.path}。` : `已从收藏夹移除 ${name}。`
-  );
+  if (!quiet) {
+    console.log(
+      origin ? `已从收藏夹移除 ${name}，并还回 ${origin.path}。` : `已从收藏夹移除 ${name}。`
+    );
+  }
 }
