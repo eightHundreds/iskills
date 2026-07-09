@@ -20,6 +20,7 @@ import {
   parseGitSource,
   readMetadata,
   readState,
+  removeFromCollection,
   writeMetadata,
 } from '../core.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
@@ -28,6 +29,7 @@ import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import {
   browseSkillDetail,
   browseSkills,
+  confirmBrowseAction,
   displayBrowseSkills,
   type BrowserFocus,
   type BrowserTab,
@@ -202,6 +204,30 @@ export async function interactiveList(
         status = '';
         transientStatus = false;
       }
+      const confirmInBrowser = (
+        message: string,
+        details: string[] = [],
+        title = '确认',
+        confirmingSkillName?: string
+      ) => confirmBrowseAction(
+        projects,
+        collection,
+        globals,
+        session,
+        message,
+        details,
+        title,
+        query,
+        tab,
+        canSync,
+        status,
+        cursor,
+        selected,
+        agent,
+        focus,
+        transientStatus,
+        confirmingSkillName
+      );
       if (result.type === 'sync') {
         session.close();
         process.stdout.write(LEAVE_ALTERNATE_SCREEN);
@@ -236,7 +262,17 @@ export async function interactiveList(
         );
         await delay(120);
         try {
-          const updateStatus = await updateGitSkill(result.skill, false);
+          const updateStatus = await updateGitSkill(result.skill, false, {
+            quietDelete: true,
+            confirmDelete: (links) => confirmInBrowser(
+              `上游已删除 ${result.skill.name}，执行收藏夹移除流程吗？`,
+              links.map((link) => {
+                const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
+                return `${kind}：${link.path}`;
+              }),
+              '上游删除'
+            ),
+          });
           status = `${result.skill.name}: ${updateStatus}`;
           transientStatus = updateStatus === 'updated' || updateStatus === 'unchanged';
         } catch (error) {
@@ -316,6 +352,11 @@ export async function interactiveList(
             quiet: true,
             agent: agents,
             copy: mode === 'copy',
+            confirmReplace: (target) => confirmInBrowser(
+              `目标已存在，替换 ${target} 吗？`,
+              [],
+              '替换目标'
+            ),
             ...(isGlobal ? { global: true } : {}),
           });
           status = `已通过${mode === 'copy' ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
@@ -328,9 +369,33 @@ export async function interactiveList(
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
+      if (result.type === 'remove') {
+        const names = result.skills.map((skill) => skill.name);
+        try {
+          for (const skill of result.skills) await removeFromCollection(skill.name, true, true);
+          status = names.length === 1
+            ? `已从收藏夹移除 ${names[0]}`
+            : `已从收藏夹移除 ${names.length} 个技能`;
+          transientStatus = true;
+          const removed = new Set(result.skills.map((skill) => skill.path));
+          selected = selected.filter((path) => !removed.has(path));
+        } catch (error) {
+          status = `移除失败 — ${errorMessage(error)}`;
+          transientStatus = false;
+        }
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
       if (result.type === 'import') {
         try {
-          const { count } = await importSkillsToCollection(result.skills, { quiet: true });
+          const { count } = await importSkillsToCollection(result.skills, {
+            quiet: true,
+            confirmReplace: (conflicts) => confirmInBrowser(
+              `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+              [],
+              '替换收藏'
+            ),
+          });
           status = `已导入 ${count} 个技能到收藏夹`;
           transientStatus = true;
         } catch (error) {

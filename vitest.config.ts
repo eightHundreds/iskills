@@ -18,10 +18,19 @@ export default defineConfig({
       },
       {
         test: {
-          name: 'serial',
-          include: ['test/git-tty.test.ts'],
+          name: 'git',
+          include: ['test/git.test.ts'],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
+          name: 'tty',
+          include: ['test/tty.test.ts'],
+          fileParallelism: false,
+          sequence: { groupOrder: 2 },
           testTimeout: 30_000,
         },
       },

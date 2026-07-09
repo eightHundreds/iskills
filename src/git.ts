@@ -28,6 +28,7 @@ import type {
   GitImportContext,
   GitSource,
   Skill,
+  SkillLink,
   SourceConflict,
   UpdateStatus,
 } from './types.js';
@@ -425,7 +426,16 @@ export async function backgroundCollectionSync(): Promise<void> {
   }
 }
 
-export async function updateGitSkill(skill: Skill, allowDelete: boolean): Promise<UpdateStatus> {
+interface UpdateGitSkillOptions {
+  confirmDelete?: (links: SkillLink[]) => Promise<boolean>;
+  quietDelete?: boolean;
+}
+
+export async function updateGitSkill(
+  skill: Skill,
+  allowDelete: boolean,
+  options: UpdateGitSkillOptions = {}
+): Promise<UpdateStatus> {
   const metadata = await readMetadata(skill.name);
   const source = metadata.source;
   if (source.type !== 'git' || !source.url || !source.refType || !source.path) return 'unmanaged';
@@ -476,11 +486,16 @@ export async function updateGitSkill(skill: Skill, allowDelete: boolean): Promis
       if (!allowDelete) {
         if (!process.stdin.isTTY) throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
-        console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
-        links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
-        if (!(await confirm('执行收藏夹移除流程吗？'))) return 'delete-skipped';
+        const confirmed = options.confirmDelete
+          ? await options.confirmDelete(links)
+          : await (async () => {
+              console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
+              links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
+              return confirm('执行收藏夹移除流程吗？');
+            })();
+        if (!confirmed) return 'delete-skipped';
       }
-      await removeFromCollection(skill.name, true);
+      await removeFromCollection(skill.name, true, options.quietDelete ?? false);
       return 'deleted';
     }
 

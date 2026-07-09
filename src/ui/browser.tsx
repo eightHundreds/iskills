@@ -20,6 +20,13 @@ interface BrowserState {
   agent: string;
   focus: BrowserFocus;
 }
+interface BrowserConfirmation {
+  title: string;
+  message: string;
+  details?: string[];
+  onConfirm: () => void;
+  onCancel: () => void;
+}
 export type BrowserResult =
   | { type: 'quit' }
   | (BrowserState & (
@@ -27,6 +34,7 @@ export type BrowserResult =
       | { type: 'tags'; skills: Skill[] }
       | { type: 'update'; skill: CollectedSkill }
       | { type: 'add'; skills: CollectedSkill[] }
+      | { type: 'remove'; skills: CollectedSkill[] }
       | { type: 'import'; skills: Skill[] }
       | { type: 'open'; skill: Skill; collection: boolean }
     ));
@@ -138,10 +146,18 @@ function selectableSkills(row: SkillRow, localOnly: boolean): Skill[] {
   return [row.skill];
 }
 
-function shortcutHelpLines(width: number): string[] {
+function framedLines(title: string, content: string[], width: number): string[] {
   const inner = width - 4;
-  const title = ' 完整快捷键 ';
   const titleWidth = textWidth(title);
+  const body = content.map((line) => padColumns(sliceColumns(line, 0, inner), inner));
+  return [
+    `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
+    ...body.map((line) => `│ ${line} │`),
+    `╰${'─'.repeat(width - 2)}╯`,
+  ];
+}
+
+function shortcutHelpLines(width: number): string[] {
   const content = [
     '↑/↓ 移动焦点或列表项',
     '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
@@ -153,18 +169,27 @@ function shortcutHelpLines(width: number): string[] {
     't 批量加标签（收藏夹已选择技能时）',
     's 同步 Git（收藏夹可同步时）',
     'u 更新当前技能（收藏夹有可更新 Git 技能时）',
+    'd/Delete 删除收藏夹已选技能；无选择时删除当前技能',
     'q 退出 · Esc 取消当前上下文',
     '',
     'Esc / q / ? 关闭',
   ];
-  return [
-    `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
-    ...content.map((line) => `│ ${padColumns(line, inner)} │`),
-    `╰${'─'.repeat(width - 2)}╯`,
-  ];
+  return framedLines(' 完整快捷键 ', content, width);
 }
 
-function ShortcutHelpLine({ line, index, last }: { line: string; index: number; last: number }) {
+function confirmationLines(confirmation: BrowserConfirmation, width: number): string[] {
+  return framedLines(
+    ` ${confirmation.title} `,
+    [
+      confirmation.message,
+      ...(confirmation.details?.length ? confirmation.details : []),
+      '(y/N)',
+    ],
+    width
+  );
+}
+
+function PopupLine({ line, index, last }: { line: string; index: number; last: number }) {
   if (index === 0 || index === last) {
     return <Text color={termcnColors.primary}>{line}</Text>;
   }
@@ -193,6 +218,7 @@ function SkillPane({
   showGroup = false,
   updates = new Set<string>(),
   updatingSkillName,
+  overlayLines,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -204,6 +230,7 @@ function SkillPane({
   showGroup?: boolean;
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
+  overlayLines?: string[] | undefined;
 }) {
   const { stdout } = useStdout();
   const spinner = useSpinner(Boolean(updatingSkillName));
@@ -211,13 +238,15 @@ function SkillPane({
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
-  const shortcutLines = shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)));
-  const shortcutHeight = shortcutLines.length;
-  const compositeHeight = showShortcuts ? Math.max(visible.length, shortcutHeight) : visible.length;
-  const shortcutTop = Math.max(0, Math.floor((compositeHeight - shortcutHeight) / 2));
+  const popupLines = overlayLines ?? (
+    showShortcuts ? shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))) : undefined
+  );
+  const popupHeight = popupLines?.length ?? 0;
+  const compositeHeight = popupLines ? Math.max(visible.length, popupHeight) : visible.length;
+  const popupTop = Math.max(0, Math.floor((compositeHeight - popupHeight) / 2));
   const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
-  const shortcutWidth = textWidth(shortcutLines[0] ?? '');
-  const shortcutLeft = Math.max(0, Math.floor((paneWidth - shortcutWidth) / 2));
+  const popupWidth = textWidth(popupLines?.[0] ?? '');
+  const popupLeft = Math.max(0, Math.floor((paneWidth - popupWidth) / 2));
   const rowText = (row: SkillRow, index: number): string => {
     if (row.type === 'group') {
       const groupSkills = showSource
@@ -294,27 +323,27 @@ function SkillPane({
     );
   };
   const renderRows = () => {
-    if (!showShortcuts) {
+    if (!popupLines) {
       return visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex));
     }
     return Array.from({ length: compositeHeight }, (_, visibleIndex) => {
       const row = visible[visibleIndex];
       const index = offset + visibleIndex;
-      const shortcutIndex = visibleIndex - shortcutTop;
-      const shortcutLine = shortcutLines[shortcutIndex];
-      if (shortcutLine === undefined) {
+      const popupIndex = visibleIndex - popupTop;
+      const popupLine = popupLines[popupIndex];
+      if (popupLine === undefined) {
         return row ? renderRow(row, index) : <Text key={`shortcut-empty:${visibleIndex}`}> </Text>;
       }
       const base = row ? rowText(row, index) : '';
-      const prefix = padColumns(sliceColumns(base, 0, shortcutLeft), shortcutLeft);
-      const suffix = sliceColumns(base, shortcutLeft + shortcutWidth, paneWidth);
+      const prefix = padColumns(sliceColumns(base, 0, popupLeft), popupLeft);
+      const suffix = sliceColumns(base, popupLeft + popupWidth, paneWidth);
       return (
         <Text key={`shortcut-overlay:${visibleIndex}`} wrap="truncate-end">
           {prefix}
-          <ShortcutHelpLine
-            line={shortcutLine}
-            index={shortcutIndex}
-            last={shortcutLines.length - 1}
+          <PopupLine
+            line={popupLine}
+            index={popupIndex}
+            last={popupLines.length - 1}
           />
           {suffix}
         </Text>
@@ -323,7 +352,7 @@ function SkillPane({
   };
   return (
     <Box flexDirection="column" minHeight={3}>
-      {rows.length ? (
+      {rows.length || popupLines ? (
         renderRows()
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
@@ -383,6 +412,7 @@ function Browser({
   status,
   transientStatus,
   updatingSkillName,
+  confirmation,
   finish,
 }: {
   projectGroups: SkillGroup[];
@@ -398,6 +428,7 @@ function Browser({
   status: string;
   transientStatus: boolean;
   updatingSkillName?: string | undefined;
+  confirmation?: BrowserConfirmation | undefined;
   finish: (result: BrowserResult) => void;
 }) {
   const [tab, setTab] = useState<BrowserTab>(initialTab);
@@ -449,6 +480,7 @@ function Browser({
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [removeConfirmation, setRemoveConfirmation] = useState<CollectedSkill[] | undefined>();
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
@@ -526,13 +558,48 @@ function Browser({
       skill,
       collection,
     });
+  const localConfirmation: BrowserConfirmation | undefined = removeConfirmation
+    ? {
+        title: '删除收藏',
+        message: removeConfirmation.length === 1
+          ? `从收藏夹移除 ${removeConfirmation[0]?.name ?? ''} 吗？`
+          : `从收藏夹移除 ${removeConfirmation.length} 个技能吗？`,
+        details: removeConfirmation.length > 1
+          ? [`技能：${removeConfirmation.map((skill) => skill.name).join(', ')}`]
+          : [],
+        onConfirm: () => finish({
+          ...browserState(),
+          type: 'remove',
+          skills: removeConfirmation,
+        }),
+        onCancel: () => setRemoveConfirmation(undefined),
+      }
+    : undefined;
+  const activeConfirmation = confirmation ?? localConfirmation;
+  const { stdout } = useStdout();
+  const overlayLines = activeConfirmation
+    ? confirmationLines(
+        activeConfirmation,
+        Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))
+      )
+    : undefined;
+  useInput(
+    (input, key) => {
+      const choice = input.trim().toLowerCase();
+      if (choice === 'y') return activeConfirmation?.onConfirm();
+      if (choice === 'n' || key.return || key.escape) {
+        return activeConfirmation?.onCancel();
+      }
+    },
+    { isActive: Boolean(activeConfirmation) }
+  );
   useInput(
     (input, key) => {
       if (key.escape || input === 'q' || input === '?') {
         setShowShortcuts(false);
       }
     },
-    { isActive: showShortcuts }
+    { isActive: showShortcuts && !activeConfirmation }
   );
   useInput(
     (input, key) => {
@@ -583,6 +650,17 @@ function Browser({
       if (input === 't' && tab === 'collection' && selectedCollection.length) {
         return finish({ ...browserState(), type: 'tags', skills: selectedCollection });
       }
+      const removableCollection = tab === 'collection'
+        ? selectedCollection.length
+          ? selectedCollection
+          : row?.type === 'skill'
+            ? [row.skill as CollectedSkill]
+            : []
+        : [];
+      if ((input === 'd' || key.delete) && removableCollection.length) {
+        setShowShortcuts(false);
+        return setRemoveConfirmation(removableCollection);
+      }
       const selectedLocal = tab === 'project' ? selectedProjectLocal : selectedGlobalLocal;
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
         return finish({ ...browserState(), type: 'import', skills: selectedLocal });
@@ -617,7 +695,14 @@ function Browser({
         }
       }
     },
-    { isActive: !searching && !choosingGroup && !showShortcuts && !updatingSkillName }
+    {
+      isActive:
+        !searching &&
+        !choosingGroup &&
+        !showShortcuts &&
+        !updatingSkillName &&
+        !activeConfirmation,
+    }
   );
   useInput(
     (input, key) => {
@@ -645,6 +730,7 @@ function Browser({
             selected={selected}
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
+            overlayLines={overlayLines}
             showSource
             showGroup={Boolean(query.trim())}
           />
@@ -667,6 +753,7 @@ function Browser({
             selected={selected}
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
+            overlayLines={overlayLines}
             showSource
           />
         </Box>
@@ -682,6 +769,7 @@ function Browser({
           selected={selected}
           isActive={focus === 'list'}
           showShortcuts={showShortcuts}
+          overlayLines={overlayLines}
           preferNote
           showGroup={Boolean(query.trim())}
           updates={updateCheck.updates}
@@ -715,10 +803,13 @@ function Browser({
     currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
   const canViewWithEnter =
     currentRow?.type === 'skill' && tab !== 'collection' && !canViewWithRightArrow;
+  const canRemoveCollection =
+    tab === 'collection' && (selectedCollection.length > 0 || currentRow?.type === 'skill');
   const actions = [
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
+    canRemoveCollection ? 'd 删除' : '',
     tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
       && !updatingSkillName
       ? 'u 更新当前技能'
@@ -765,6 +856,8 @@ function Browser({
           <Text color={termcnColors.muted} wrap="truncate-end">
             {updatingSkillName
               ? '正在更新 · 请稍候'
+              : activeConfirmation
+              ? '等待确认'
               : showShortcuts
               ? 'Esc / q / ? 关闭'
               : focus === 'tabs'
@@ -772,7 +865,7 @@ function Browser({
               : focus === 'agents'
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
                 : canViewWithRightArrow
-                  ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · ? 快捷键 · q 退出'
+                  ? '↑/↓ 移动 · Space 选择 · → 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
                     ? '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · ? 快捷键 · q 退出'
                     : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}
@@ -910,6 +1003,52 @@ export function browseSkills(
   ), false);
 }
 
+export function confirmBrowseAction(
+  projectGroups: SkillGroup[],
+  collection: CollectedSkill[],
+  globalGroups: SkillGroup[],
+  session: InkSession,
+  message: string,
+  details: string[] = [],
+  title = '确认',
+  initialQuery = '',
+  initialTab: BrowserTab = 'project',
+  canSync = false,
+  status = '',
+  initialCursor = 0,
+  initialSelected: string[] = [],
+  initialAgent = '',
+  initialFocus: BrowserFocus = 'tabs',
+  transientStatus = false,
+  updatingSkillName?: string
+): Promise<boolean> {
+  return session.show<boolean>(false, (finish) => (
+      <Browser
+        projectGroups={projectGroups}
+        collection={collection}
+        globalGroups={globalGroups}
+        initialQuery={initialQuery}
+        initialTab={initialTab}
+        initialAgent={initialAgent}
+        initialFocus={initialFocus}
+        initialCursor={initialCursor}
+        initialSelected={initialSelected}
+        canSync={canSync}
+        status={status}
+        transientStatus={transientStatus}
+        updatingSkillName={updatingSkillName}
+        confirmation={{
+          title,
+          message,
+          details,
+          onConfirm: () => finish(true),
+          onCancel: () => finish(false),
+        }}
+        finish={() => undefined}
+      />
+  ), false);
+}
+
 export function displayBrowseSkills(
   projectGroups: SkillGroup[],
   collection: CollectedSkill[],
@@ -924,7 +1063,8 @@ export function displayBrowseSkills(
   initialAgent = '',
   initialFocus: BrowserFocus = 'tabs',
   transientStatus = false,
-  updatingSkillName?: string
+  updatingSkillName?: string,
+  confirmation?: BrowserConfirmation
 ): void {
   session.display(
     <Browser
@@ -941,6 +1081,7 @@ export function displayBrowseSkills(
       status={status}
       transientStatus={transientStatus}
       updatingSkillName={updatingSkillName}
+      confirmation={confirmation}
       finish={() => undefined}
     />
   );

@@ -25,6 +25,7 @@ import {
   readMetadata,
   readState,
   removeFromCollection,
+  sameGitIdentity,
   sanitizeTerminal,
   validateSkillTree,
   writeMetadata,
@@ -38,6 +39,7 @@ import {
   chooseSkillMany,
   confirm,
   input,
+  reviewImport,
 } from '../prompts.js';
 import type {
   CollectedSkill,
@@ -52,31 +54,48 @@ function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string
     relative(gitContext.repository, skill.path).split(sep).join('/')
   );
   const ref = gitContext.source.ref ? `#${gitContext.source.ref}` : '';
-  return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}`;
+  const status = skill.collectionStatus === 'same-source'
+    ? ' · 已收藏自同一来源'
+    : skill.collectionStatus === 'same-name'
+      ? ' · 已收藏同名技能'
+      : '';
+  return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}${status}`;
 }
 
-function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata): boolean {
-  const normalize = (value: string): string => {
-    const scp = value.includes('://') ? null : value.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
-    const candidate = scp ? `ssh://${scp[1]}/${scp[2]}` : value;
-    try {
-      const url = new URL(candidate);
-      const host = url.hostname.toLowerCase();
-      const defaultPort = url.protocol === 'ssh:' ? '22' : url.protocol === 'git:' ? '9418' : '';
-      const port = url.port && url.port !== defaultPort ? `:${url.port}` : '';
-      let path = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
-      if (host === 'github.com') path = path.toLowerCase();
-      return `${host}${port}/${path}`;
-    } catch {
-      return value.replace(/\.git\/?$/i, '').replace(/\/$/, '').toLowerCase();
-    }
+function gitSkillMetadata(
+  skill: Skill,
+  gitContext: GitImportContext,
+  tags: string[] = []
+): SkillMetadata {
+  return {
+    name: skill.name,
+    description: skill.description,
+    tags,
+    note: '',
+    source: {
+      ...gitContext.source,
+      path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
+    },
   };
-  return current.source.type === 'git' &&
-    incoming.source.type === 'git' &&
-    !!current.source.url &&
-    !!incoming.source.url &&
-    normalize(current.source.url) === normalize(incoming.source.url) &&
-    (current.source.path || '.') === (incoming.source.path || '.');
+}
+
+function annotateGitCollectionStatus(
+  skills: Skill[],
+  gitContext: GitImportContext,
+  collection: CollectedSkill[]
+): Skill[] {
+  return skills.map((skill) => {
+    const sameName = collection.find(
+      (collected) => collected.name.toLowerCase() === skill.name.toLowerCase()
+    );
+    if (!sameName) return skill;
+    return {
+      ...skill,
+      collectionStatus: sameGitIdentity(sameName, gitSkillMetadata(skill, gitContext))
+        ? 'same-source'
+        : 'same-name',
+    };
+  });
 }
 
 interface ReplacementInput {
@@ -193,7 +212,11 @@ async function replaceCollectionSkill(input: ReplacementInput): Promise<void> {
   });
 }
 
-async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<boolean> {
+async function importLocalSkill(
+  skill: Skill,
+  allowReplace: boolean,
+  tags: string[] = []
+): Promise<boolean> {
   const paths = collectionPaths();
   const selectedPath = resolve(skill.path);
   const selectedStats = await lstat(selectedPath);
@@ -218,7 +241,7 @@ async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<bo
         metadata: {
           name: skill.name,
           description: skill.description,
-          tags: [],
+          tags,
           note: '',
           source: provenance,
         },
@@ -245,7 +268,7 @@ async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<bo
   await writeMetadata({
     name: skill.name,
     description: skill.description,
-    tags: [],
+    tags,
     note: '',
     source: provenance,
   });
@@ -266,12 +289,16 @@ async function importLocalSkill(skill: Skill, allowReplace: boolean): Promise<bo
 async function importRemoteSkill(
   skill: Skill,
   gitContext: GitImportContext,
-  allowReplace: boolean
+  allowReplace: boolean,
+  tags: string[] = []
 ): Promise<boolean> {
   const paths = collectionPaths();
   const target = join(paths.skills, assertSkillName(skill.name));
+  const metadata = gitSkillMetadata(skill, gitContext, tags);
   await validateSkillTree(skill.path);
   if (await pathPresent(target)) {
+    const current = await readMetadata(skill.name);
+    if (sameGitIdentity(current, metadata)) return false;
     if (!allowReplace) {
       throw new Error(`收藏夹已存在同名技能：${skill.name}，请确认后使用 --replace`);
     }
@@ -283,16 +310,7 @@ async function importRemoteSkill(
       await replaceCollectionSkill({
         name: skill.name,
         staged,
-        metadata: {
-          name: skill.name,
-          description: skill.description,
-          tags: [],
-          note: '',
-          source: {
-            ...gitContext.source,
-            path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
-          },
-        },
+        metadata,
       });
     } finally {
       await rm(transaction, { recursive: true, force: true });
@@ -301,21 +319,13 @@ async function importRemoteSkill(
   }
   await ensureCollection();
   await cp(skill.path, target, { recursive: true, errorOnExist: true });
-  await writeMetadata({
-    name: skill.name,
-    description: skill.description,
-    tags: [],
-    note: '',
-    source: {
-      ...gitContext.source,
-      path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
-    },
-  });
+  await writeMetadata(metadata);
   return true;
 }
 
 export interface RemoteImportOptions {
   replace?: boolean;
+  tags?: string[];
   confirmReplace?: (current: SkillMetadata, incoming: SkillMetadata) => Promise<boolean>;
 }
 
@@ -337,16 +347,7 @@ export async function importRemoteSkillToCollection(
     if (!found.length) throw new Error(`来源仓库中不存在技能：${skillName}`);
     if (found.length > 1) throw new Error(`来源仓库中存在多个同名技能：${skillName}`);
     const skill = found[0]!;
-    const incoming: SkillMetadata = {
-      name: skill.name,
-      description: skill.description,
-      tags: [],
-      note: '',
-      source: {
-        ...gitContext.source,
-        path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
-      },
-    };
+    const incoming = gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
     const replacing = await pathPresent(target);
     if (replacing) {
@@ -363,7 +364,7 @@ export async function importRemoteSkillToCollection(
         }
       }
     }
-    await importRemoteSkill(skill, gitContext, replacing);
+    await importRemoteSkill(skill, gitContext, replacing, options.tags ?? []);
     if (!replacing) await commitCollection(`import ${skill.name}`);
     return { name: skill.name, status: 'imported' };
   } finally {
@@ -375,6 +376,8 @@ interface ImportToCollectionOptions {
   replace?: boolean;
   yes?: boolean;
   quiet?: boolean;
+  tags?: string[];
+  confirmReplace?: (conflicts: string[]) => Promise<boolean>;
 }
 
 export async function importSkillsToCollection(
@@ -393,7 +396,9 @@ export async function importSkillsToCollection(
     if (!process.stdin.isTTY || options.yes) {
       throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
     }
-    allowReplace = await confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+    allowReplace = options.confirmReplace
+      ? await options.confirmReplace(conflicts)
+      : await confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
     if (!allowReplace) {
       selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
@@ -401,7 +406,7 @@ export async function importSkillsToCollection(
   if (!selected.length) return { count: 0 };
   let count = 0;
   for (const skill of selected) {
-    if (await importLocalSkill(skill, allowReplace)) count++;
+    if (await importLocalSkill(skill, allowReplace, options.tags ?? [])) count++;
   }
   await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
   if (!options.quiet) {
@@ -474,7 +479,12 @@ export async function commandImport(argv: string[]): Promise<void> {
     let skills: Skill[];
     let globalGroups: { agent: string; skills: Skill[] }[] | undefined;
     if (gitContext) {
-      skills = (await discoverSkills(gitContext.repository)).filter(isCollected);
+      const collection = await listCollection().catch(() => []);
+      skills = annotateGitCollectionStatus(
+        (await discoverSkills(gitContext.repository)).filter(isCollected),
+        gitContext,
+        collection
+      );
     } else if (values.global) {
       const groups = await globalSkillGroups(values.agent);
       globalGroups = groups
@@ -499,18 +509,23 @@ export async function commandImport(argv: string[]): Promise<void> {
     }
     if (!selected.length) return;
 
+    let importTags: string[] = [];
     if (!values.yes) {
       if (!process.stdin.isTTY) throw new Error('请使用 --yes 确认导入');
-      console.log(
-        gitContext
-          ? '\n即将把以下 Git 来源技能加入收藏夹：'
-          : '\n即将把技能移入收藏夹，并在原位置创建软链：'
+      const existingTags = [...new Set((await listCollection().catch(() => []))
+        .flatMap((skill) => skill.tags))]
+        .sort((a, b) => a.localeCompare(b));
+      const review = await reviewImport(
+        selected.map((skill) => ({
+          skill,
+          detail: gitContext
+            ? gitSkillDisplayPath(skill, gitContext)
+            : sanitizeTerminal(skill.path),
+        })),
+        existingTags
       );
-      selected.forEach((skill) => {
-        const displayPath = gitContext ? gitSkillDisplayPath(skill, gitContext) : skill.path;
-        console.log(`- ${skill.name}: ${displayPath}`);
-      });
-      if (!(await confirm('继续吗？'))) return;
+      if (!review) return;
+      importTags = review.tags;
     }
 
     let allowReplace = values.replace ?? false;
@@ -518,12 +533,18 @@ export async function commandImport(argv: string[]): Promise<void> {
       await importSkillsToCollection(selected, {
         replace: allowReplace,
         yes: values.yes ?? false,
+        tags: importTags,
       });
       return;
     }
     const conflicts: string[] = [];
     for (const skill of selected) {
-      if (await exists(join(paths.skills, skill.name))) conflicts.push(skill.name);
+      if (
+        await exists(join(paths.skills, skill.name)) &&
+        skill.collectionStatus !== 'same-source'
+      ) {
+        conflicts.push(skill.name);
+      }
     }
     if (conflicts.length && !allowReplace) {
       if (!process.stdin.isTTY) {
@@ -534,7 +555,7 @@ export async function commandImport(argv: string[]): Promise<void> {
     }
     let count = 0;
     for (const skill of selected) {
-      if (await importRemoteSkill(skill, gitContext, allowReplace)) count++;
+      if (await importRemoteSkill(skill, gitContext, allowReplace, importTags)) count++;
     }
     await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
     console.log(`已导入 ${count} 个技能。`);
@@ -551,6 +572,7 @@ interface AddValues {
   replace?: boolean;
   yes?: boolean;
   quiet?: boolean;
+  confirmReplace?: (target: string) => Promise<boolean>;
 }
 
 async function resolveTargets(values: AddValues): Promise<string[]> {
@@ -658,7 +680,9 @@ export async function addSkillsToProject(
         if (await isExactSymlink(target, skill.path)) continue;
         let replace = values.replace ?? false;
         if (!replace && process.stdin.isTTY && !values.yes) {
-          replace = await confirm(`目标已存在，替换 ${target} 吗？`);
+          replace = values.confirmReplace
+            ? await values.confirmReplace(target)
+            : await confirm(`目标已存在，替换 ${target} 吗？`);
         }
         if (!replace) {
           if (process.stdin.isTTY && !values.yes) continue;

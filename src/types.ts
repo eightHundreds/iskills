@@ -27,6 +27,7 @@ export interface Skill {
   note?: string;
   source?: SkillSource;
   fromCollection?: boolean;
+  collectionStatus?: 'same-source' | 'same-name';
 }
 
 export interface RemoteSkill {
