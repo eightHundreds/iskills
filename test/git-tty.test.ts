@@ -52,6 +52,31 @@ test('imports a Git source with repository provenance and no origin link', async
   }
 });
 
+test('TTY Git import confirmation shows repository identity instead of temporary paths', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const { repository } = await makeGitSkillRepo(context);
+  const source = `file://${repository}`;
+
+  try {
+    const result = await runInteractive(context, ['import', source], [
+      { wait: '即将把以下 Git 来源技能加入收藏夹：', send: '', enter: false },
+      { wait: `${source}#main · skills/remote-skill`, send: 'y', enter: false },
+      { wait: '已导入 1 个技能。', send: '', enter: false },
+    ]);
+    assert.match(result.stdout, /file:\/\/.*#main · skills\/remote-skill/);
+    assert.doesNotMatch(result.stdout, /iskills-source-|repository\/skills\/remote-skill/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('updates a branch source through a three-way Git merge', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);

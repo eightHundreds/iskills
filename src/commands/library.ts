@@ -25,6 +25,7 @@ import {
   readMetadata,
   readState,
   removeFromCollection,
+  sanitizeTerminal,
   validateSkillTree,
   writeMetadata,
   writeState,
@@ -45,6 +46,14 @@ import type {
   Skill,
   SkillMetadata,
 } from '../types.js';
+
+function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
+  const sourcePath = assertRelativePath(
+    relative(gitContext.repository, skill.path).split(sep).join('/')
+  );
+  const ref = gitContext.source.ref ? `#${gitContext.source.ref}` : '';
+  return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}`;
+}
 
 function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata): boolean {
   const normalize = (value: string): string => {
@@ -497,7 +506,10 @@ export async function commandImport(argv: string[]): Promise<void> {
           ? '\n即将把以下 Git 来源技能加入收藏夹：'
           : '\n即将把技能移入收藏夹，并在原位置创建软链：'
       );
-      selected.forEach((skill) => console.log(`- ${skill.name}: ${skill.path}`));
+      selected.forEach((skill) => {
+        const displayPath = gitContext ? gitSkillDisplayPath(skill, gitContext) : skill.path;
+        console.log(`- ${skill.name}: ${displayPath}`);
+      });
       if (!(await confirm('继续吗？'))) return;
     }
 
