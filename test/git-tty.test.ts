@@ -562,6 +562,38 @@ test('TTY import -g focuses tabs with arrows, multi-selects across agents and vi
   }
 });
 
+test('TTY import list gives long Skill names room before descriptions', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const root = join(context.project, 'skill-set');
+  const longName = 'imagegen-frontend-website-direction';
+  await makeSkill(join(root, longName), longName, 'Premium website design reference generation');
+  await makeSkill(join(root, 'short-skill'), 'short-skill', 'Short helper');
+
+  try {
+    const result = await runInteractive(
+      context,
+      ['import', root],
+      [
+        { wait: '发现以下技能', send: '', enter: false },
+        { wait: longName, send: '\u001b', enter: false },
+      ],
+      context.project,
+      { rows: 24, columns: 120 }
+    );
+    assert.match(result.stdout, new RegExp(longName));
+    assert.doesNotMatch(result.stdout, /imagegen-frontend-website…/);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('background collection sync records divergence without writing conflict markers into the collection', async () => {
   const context = await makeContext();
   context.env.SK_NO_BACKGROUND_SYNC = '1';
@@ -793,6 +825,41 @@ test('TTY entry opens collection browser directly', async (t) => {
   }
 });
 
+test('collection browser shows progress while updating a Skill', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const { repository, skill } = await makeGitSkillRepo(context);
+
+  try {
+    await run(context, ['import', `file://${repository}`, '--all', '--yes']);
+    await writeFile(join(skill, 'asset.txt'), 'browser update\n', 'utf8');
+    await exec('git', ['add', '.'], { cwd: repository });
+    await exec('git', ['commit', '-m', 'browser update'], { cwd: repository });
+
+    const result = await runInteractive(context, [], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: '› ○ 未分组', send: '\u001b[B', enter: false },
+      { wait: 'u 更新当前技能', send: 'u', enter: false },
+      { wait: '正在更新 remote-skill', send: '', enter: false },
+      { wait: 'remote-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
+    ]);
+    assert.match(result.stdout, /正在更新 remote-skill/);
+    assert.match(result.stdout, /remote-skill: updated/);
+    assert.equal(
+      await readFile(join(context.collection, 'skills/remote-skill/asset.txt'), 'utf8'),
+      'browser update\n'
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('TTY entry defaults to existing project Skill directories', async (t) => {
   try {
     await exec('python3', ['--version']);
@@ -927,7 +994,6 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
       { wait: 'agents (2)', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: '没有匹配的技能', send: '\u001b[D', enter: false, delayAfter: 100 },
       { wait: '本地 · local-only', send: '\u001b[B', enter: false },
       { wait: 'Enter 查看', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
@@ -937,6 +1003,10 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
     assert.match(result.stdout, /○ 本地 · local-only/);
     assert.doesNotMatch(result.stdout, /[○●] collected-skill/);
+    assert.doesNotMatch(result.stdout, /claude \(0\)/);
+    assert.doesNotMatch(result.stdout, /codex \(0\)/);
+    assert.doesNotMatch(result.stdout, /cursor \(0\)/);
+    assert.doesNotMatch(result.stdout, /opencode \(0\)/);
     assert.equal(
       await readFile(join(context.collection, 'skills/local-only/SKILL.md'), 'utf8').then(Boolean),
       true

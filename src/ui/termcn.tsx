@@ -30,6 +30,16 @@ function visibleOptionCount(rows: number, label?: string) {
   return Math.max(3, rows - (label ? 5 : 4));
 }
 
+function skillNameColumnWidth(options: { skill: Skill }[], columns: number): number {
+  const longestName = options.reduce(
+    (longest, option) => Math.max(longest, graphemes(option.skill.name).length),
+    0
+  );
+  const minimumDescriptionWidth = columns >= 90 ? 32 : columns >= 70 ? 24 : columns >= 50 ? 14 : 0;
+  const availableNameWidth = Math.max(12, columns - 4 - minimumDescriptionWidth);
+  return Math.max(12, Math.min(Math.max(20, longestName), availableNameWidth));
+}
+
 function toInkOptions<T>(options: Option<T>[], numbered = false) {
   return options.map((option, index) => ({
     value: String(index),
@@ -592,7 +602,7 @@ function SkillDetailPreview<T extends Skill>({
         <Text bold>备注：</Text>
         <Text>{note ?? '无'}</Text>
       </Box>
-      <Text color={colors.muted}>←/Esc 返回 · Space 选择 · Enter 确认导入</Text>
+      <Text color={colors.muted}>Esc 返回 · Space 选择 · Enter 确认导入</Text>
     </Box>
   );
 }
@@ -626,6 +636,7 @@ export function SkillMultiSelect<T extends Skill>({
   const total = groups.reduce((sum, group) => sum + group.options.length, 0);
   const singleAgent = groups.length <= 1;
 
+  const nameColumnWidth = skillNameColumnWidth(options, stdout.columns ?? 80);
   const height = Math.max(3, (stdout.rows ?? 24) - 9);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, options.length - 1)));
   const offset = Math.max(
@@ -787,7 +798,7 @@ export function SkillMultiSelect<T extends Skill>({
                 <Text {...(isCursor ? { color: colors.primary } : {})}>
                   {isSelected ? '●' : '○'}
                 </Text>
-                <Box width={20}>
+                <Box width={nameColumnWidth} flexShrink={0}>
                   <Text wrap="truncate-end" bold={isCursor}>
                     {option.skill.name}
                   </Text>

@@ -105,6 +105,15 @@ export class InkSession {
     });
   }
 
+  display(component: ReactNode): void {
+    const node = <Box key={this.screen++}>{component}</Box>;
+    if (this.instance) {
+      this.instance.rerender(node);
+    } else {
+      this.instance = render(node, { exitOnCtrlC: false });
+    }
+  }
+
   close(): void {
     this.instance?.unmount();
     this.instance?.cleanup();
