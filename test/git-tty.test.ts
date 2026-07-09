@@ -765,11 +765,13 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
 
     const result = await runInteractive(context, [], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
-      { wait: '→ 查看', send: '/', enter: false, delayAfter: 100 },
+      { wait: 'Space 选择 · / 搜索', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'alphax', enter: false, delayAfter: 100 },
       { wait: '没有匹配的技能', send: '\x7f', enter: false, delayAfter: 100 },
       { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: 'g 分组', send: 'g', enter: false, delayAfter: 100 },
+      { wait: '? 快捷键', send: '?', enter: false, delayAfter: 100 },
+      { wait: '完整快捷键', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: '› ○ frontend (2)', send: 'g', enter: false, delayAfter: 100 },
       { wait: '跳转到分组', send: '2', enter: false, delayAfter: 100 },
       { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
@@ -780,6 +782,8 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
 
     assert.match(result.stdout, /frontend · shared \/ /);
     assert.match(result.stdout, /● shared \(2\)/);
+    assert.match(result.stdout, /完整快捷键/);
+    assert.doesNotMatch(result.stdout, /g 分组/);
     const alpha = JSON.parse(
       await readFile(join(context.collection, 'metadata/alpha.json'), 'utf8')
     );
@@ -1046,12 +1050,15 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
       { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'Enter 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '→ 查看', send: '\u001b[C', enter: false, delayAfter: 100 },
+      { wait: '‹ collected-skill', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: '↑/↓ 移动 · Space 选择 · → 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
       { wait: '› ○ 本地 · local-only', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /本地 · local-only/);
+    assert.match(result.stdout, /‹ collected-skill/);
     assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
     assert.match(result.stdout, /○ 本地 · local-only/);
     assert.doesNotMatch(result.stdout, /[○●] collected-skill/);
@@ -1234,10 +1241,11 @@ test('collection browser sync establishes the first upstream and excludes machin
     await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
     await run(context, ['import', source, '--all', '--yes']);
 
-    await runInteractive(context, [], [
-      { wait: 's 同步 Git', send: 's', enter: false, delayAfter: 800 },
+    const result = await runInteractive(context, [], [
+      { wait: '? 快捷键', send: 's', enter: false, delayAfter: 800 },
       { wait: 'Git 同步完成', send: 'q', enter: false },
     ]);
+    assert.doesNotMatch(result.stdout, /s 同步 Git/);
     const upstream = await exec('git', ['rev-parse', '--abbrev-ref', '@{u}'], { cwd: collection });
     assert.equal(upstream.stdout.trim(), 'origin/main');
     const trackedLocalState = await exec('git', ['ls-files', '.local'], { cwd: collection });

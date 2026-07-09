@@ -37,6 +37,48 @@ type SkillRow =
 
 const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+function charWidth(char: string): number {
+  const code = char.codePointAt(0) ?? 0;
+  if (code === 0) return 0;
+  if (code < 0x20 || (code >= 0x7f && code < 0xa0)) return 0;
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    code === 0x2329 ||
+    code === 0x232a ||
+    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe10 && code <= 0xfe19) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x1f300 && code <= 0x1f64f) ||
+    (code >= 0x1f900 && code <= 0x1f9ff) ||
+    (code >= 0x20000 && code <= 0x3fffd)
+  ) ? 2 : 1;
+}
+
+function textWidth(value: string): number {
+  return [...value].reduce((width, char) => width + charWidth(char), 0);
+}
+
+function sliceColumns(value: string, start: number, end: number): string {
+  let column = 0;
+  let result = '';
+  for (const char of value) {
+    const width = charWidth(char);
+    const next = column + width;
+    if (next > start && column < end) result += char;
+    column = next;
+    if (column >= end) break;
+  }
+  return result;
+}
+
+function padColumns(value: string, width: number): string {
+  return `${value}${' '.repeat(Math.max(0, width - textWidth(value)))}`;
+}
+
 function useSpinner(active: boolean): string {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -96,11 +138,56 @@ function selectableSkills(row: SkillRow, localOnly: boolean): Skill[] {
   return [row.skill];
 }
 
+function shortcutHelpLines(width: number): string[] {
+  const inner = width - 4;
+  const title = ' 完整快捷键 ';
+  const titleWidth = textWidth(title);
+  const content = [
+    '↑/↓ 移动焦点或列表项',
+    '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
+    'Space 选择当前项或当前分组',
+    'Enter 查看、添加或提交当前选择',
+    '/ 搜索技能',
+    'g 跳转到分组（当前项目/收藏夹有分组时）',
+    'i 加入收藏夹（当前项目/全局已选择本地技能时）',
+    't 批量加标签（收藏夹已选择技能时）',
+    's 同步 Git（收藏夹可同步时）',
+    'u 更新当前技能（收藏夹有可更新 Git 技能时）',
+    'q 退出 · Esc 取消当前上下文',
+    '',
+    'Esc / q / ? 关闭',
+  ];
+  return [
+    `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
+    ...content.map((line) => `│ ${padColumns(line, inner)} │`),
+    `╰${'─'.repeat(width - 2)}╯`,
+  ];
+}
+
+function ShortcutHelpLine({ line, index, last }: { line: string; index: number; last: number }) {
+  if (index === 0 || index === last) {
+    return <Text color={termcnColors.primary}>{line}</Text>;
+  }
+  const content = line.slice(2, -2);
+  return (
+    <Text>
+      <Text color={termcnColors.primary}>│ </Text>
+      {index === last - 1 ? (
+        <Text color={termcnColors.muted}>{content}</Text>
+      ) : (
+        content
+      )}
+      <Text color={termcnColors.primary}> │</Text>
+    </Text>
+  );
+}
+
 function SkillPane({
   rows,
   cursor,
   selected,
   isActive,
+  showShortcuts = false,
   preferNote = false,
   showSource = false,
   showGroup = false,
@@ -111,6 +198,7 @@ function SkillPane({
   cursor: number;
   selected: Set<string>;
   isActive: boolean;
+  showShortcuts?: boolean;
   preferNote?: boolean;
   showSource?: boolean;
   showGroup?: boolean;
@@ -123,62 +211,120 @@ function SkillPane({
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
+  const shortcutLines = shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)));
+  const shortcutHeight = shortcutLines.length;
+  const compositeHeight = showShortcuts ? Math.max(visible.length, shortcutHeight) : visible.length;
+  const shortcutTop = Math.max(0, Math.floor((compositeHeight - shortcutHeight) / 2));
+  const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
+  const shortcutWidth = textWidth(shortcutLines[0] ?? '');
+  const shortcutLeft = Math.max(0, Math.floor((paneWidth - shortcutWidth) / 2));
+  const rowText = (row: SkillRow, index: number): string => {
+    if (row.type === 'group') {
+      const groupSkills = showSource
+        ? row.skills.filter((skill) => !skill.fromCollection)
+        : row.skills;
+      const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
+      const marker =
+        count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
+      return `${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`;
+    }
+    const skill = row.skill;
+    const summary = (preferNote && skill.note) || skill.description;
+    const selectable = !showSource || !skill.fromCollection;
+    const selectionMarker = selectable
+      ? selected.has(skill.path)
+        ? '●'
+        : '○'
+      : ' ';
+    const name = showSource && !skill.fromCollection ? `本地 · ${skill.name}` : skill.name;
+    const group = showGroup && row.group ? `${row.group} / ` : '';
+    const update = updatingSkillName === skill.name ? ` ${spinner}` : updates.has(skill.name) ? ' ↑' : '';
+    return `  ${isActive && index === active ? '›' : ' '} ${selectionMarker} ${group}${name}${update}${summary ? ` — ${summary}` : ''}`;
+  };
+  const renderRow = (row: SkillRow, index: number) => {
+    if (row.type === 'group') {
+      const groupSkills = showSource
+        ? row.skills.filter((skill) => !skill.fromCollection)
+        : row.skills;
+      const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
+      const marker =
+        count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
+      return (
+        <Text
+          key={`group:${row.name}:${index}`}
+          bold
+          {...(isActive && index === active ? { color: termcnColors.primary } : {})}
+        >
+          {`${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`}
+        </Text>
+      );
+    }
+    const skill = row.skill;
+    const summary = (preferNote && skill.note) || skill.description;
+    const selectable = !showSource || !skill.fromCollection;
+    const selectionMarker = selectable
+      ? selected.has(skill.path)
+        ? '●'
+        : '○'
+      : ' ';
+    return (
+      <Text
+        key={`${row.group}:${skill.path}:${index}`}
+        wrap="truncate-end"
+        {...(isActive && index === active ? { color: termcnColors.primary } : {})}
+      >
+        {`  ${isActive && index === active ? '›' : ' '} ${selectionMarker} `}
+        {showGroup && row.group && (
+          <Text color={termcnColors.muted}>{row.group} / </Text>
+        )}
+        {showSource && !skill.fromCollection ? (
+          `本地 · ${skill.name}`
+        ) : (
+          <Text bold={isActive && index === active}>{skill.name}</Text>
+        )}
+        {updatingSkillName === skill.name ? (
+          <Text color={termcnColors.primary}> {spinner}</Text>
+        ) : updates.has(skill.name) ? (
+          <Text color={termcnColors.primary}> ↑</Text>
+        ) : null}
+        {summary && (
+          <Text color={termcnColors.muted}> — {summary}</Text>
+        )}
+      </Text>
+    );
+  };
+  const renderRows = () => {
+    if (!showShortcuts) {
+      return visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex));
+    }
+    return Array.from({ length: compositeHeight }, (_, visibleIndex) => {
+      const row = visible[visibleIndex];
+      const index = offset + visibleIndex;
+      const shortcutIndex = visibleIndex - shortcutTop;
+      const shortcutLine = shortcutLines[shortcutIndex];
+      if (shortcutLine === undefined) {
+        return row ? renderRow(row, index) : <Text key={`shortcut-empty:${visibleIndex}`}> </Text>;
+      }
+      const base = row ? rowText(row, index) : '';
+      const prefix = padColumns(sliceColumns(base, 0, shortcutLeft), shortcutLeft);
+      const suffix = sliceColumns(base, shortcutLeft + shortcutWidth, paneWidth);
+      return (
+        <Text key={`shortcut-overlay:${visibleIndex}`} wrap="truncate-end">
+          {prefix}
+          <ShortcutHelpLine
+            line={shortcutLine}
+            index={shortcutIndex}
+            last={shortcutLines.length - 1}
+          />
+          {suffix}
+        </Text>
+      );
+    });
+  };
   return (
     <Box flexDirection="column" minHeight={3}>
       {rows.length ? (
-        visible.map((row, visibleIndex) => {
-          const index = offset + visibleIndex;
-          if (row.type === 'group') {
-            const groupSkills = showSource
-              ? row.skills.filter((skill) => !skill.fromCollection)
-              : row.skills;
-            const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
-            const marker =
-              count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
-            return (
-              <Text
-                key={`group:${row.name}`}
-                bold
-                {...(isActive && index === active ? { color: termcnColors.primary } : {})}
-              >
-                {`${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`}
-              </Text>
-            );
-          }
-          const skill = row.skill;
-          const summary = (preferNote && skill.note) || skill.description;
-          const selectable = !showSource || !skill.fromCollection;
-          const selectionMarker = selectable
-            ? selected.has(skill.path)
-              ? '●'
-              : '○'
-            : ' ';
-          return (
-            <Text
-              key={`${row.group}:${skill.path}`}
-              wrap="truncate-end"
-              {...(isActive && index === active ? { color: termcnColors.primary } : {})}
-            >
-              {`  ${isActive && index === active ? '›' : ' '} ${selectionMarker} `}
-              {showGroup && row.group && (
-                <Text color={termcnColors.muted}>{row.group} / </Text>
-              )}
-              {showSource && !skill.fromCollection ? (
-                `本地 · ${skill.name}`
-              ) : (
-                <Text bold={isActive && index === active}>{skill.name}</Text>
-              )}
-              {updatingSkillName === skill.name ? (
-                <Text color={termcnColors.primary}> {spinner}</Text>
-              ) : updates.has(skill.name) ? (
-                <Text color={termcnColors.primary}> ↑</Text>
-              ) : null}
-              {summary && (
-                <Text color={termcnColors.muted}> — {summary}</Text>
-              )}
-            </Text>
-          );
-        })
+        renderRows()
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
       )}
@@ -302,6 +448,7 @@ function Browser({
   cursorRef.current = cursor;
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
@@ -381,6 +528,15 @@ function Browser({
     });
   useInput(
     (input, key) => {
+      if (key.escape || input === 'q' || input === '?') {
+        setShowShortcuts(false);
+      }
+    },
+    { isActive: showShortcuts }
+  );
+  useInput(
+    (input, key) => {
+      if (input === '?') return setShowShortcuts(true);
       if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
         setQueryBeforeSearch(query);
@@ -448,20 +604,20 @@ function Browser({
           return next;
         });
       }
-      if (key.rightArrow && tab === 'collection' && row?.type === 'skill') {
-        return openDetail(row.skill, true);
+      if (key.rightArrow && row?.type === 'skill') {
+        if (tab === 'collection') return openDetail(row.skill, true);
+        if (row.skill.fromCollection) return openDetail(row.skill, true);
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {
         if (tab === 'collection' && selectedCollection.length) {
           return finish({ ...browserState(), type: 'add', skills: selectedCollection });
         }
         if (tab !== 'collection') {
-          const skill = row?.type === 'skill' ? row.skill : row?.skills[0];
-          if (skill) openDetail(skill, false);
+          if (row?.type === 'skill') openDetail(row.skill, false);
         }
       }
     },
-    { isActive: !searching && !choosingGroup && !updatingSkillName }
+    { isActive: !searching && !choosingGroup && !showShortcuts && !updatingSkillName }
   );
   useInput(
     (input, key) => {
@@ -488,6 +644,7 @@ function Browser({
             cursor={cursor}
             selected={selected}
             isActive={focus === 'list'}
+            showShortcuts={showShortcuts}
             showSource
             showGroup={Boolean(query.trim())}
           />
@@ -509,6 +666,7 @@ function Browser({
             cursor={cursor}
             selected={selected}
             isActive={focus === 'list'}
+            showShortcuts={showShortcuts}
             showSource
           />
         </Box>
@@ -523,6 +681,7 @@ function Browser({
           cursor={cursor}
           selected={selected}
           isActive={focus === 'list'}
+          showShortcuts={showShortcuts}
           preferNote
           showGroup={Boolean(query.trim())}
           updates={updateCheck.updates}
@@ -552,12 +711,14 @@ function Browser({
   }
 
   const currentRow = rows[cursor];
+  const canViewWithRightArrow =
+    currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
+  const canViewWithEnter =
+    currentRow?.type === 'skill' && tab !== 'collection' && !canViewWithRightArrow;
   const actions = [
-    tab !== 'global' && groups.length ? 'g 分组' : '',
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
-    tab === 'collection' && canSync ? 's 同步 Git' : '',
     tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
       && !updatingSkillName
       ? 'u 更新当前技能'
@@ -577,9 +738,9 @@ function Browser({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
-        isActive={!searching && focus === 'tabs'}
+        isActive={!searching && !showShortcuts && focus === 'tabs'}
         enableArrowNav={false}
-        focused={!searching && focus === 'tabs'}
+        focused={!searching && !showShortcuts && focus === 'tabs'}
       />
       {searching ? (
         <TextInput
@@ -604,18 +765,25 @@ function Browser({
           <Text color={termcnColors.muted} wrap="truncate-end">
             {updatingSkillName
               ? '正在更新 · 请稍候'
+              : showShortcuts
+              ? 'Esc / q / ? 关闭'
               : focus === 'tabs'
-              ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · q 退出'
+              ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
               : focus === 'agents'
-                ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · q 退出'
-                : tab === 'collection'
-                  ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · q 退出'
-                  : '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · q 退出'}
+                ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
+                : canViewWithRightArrow
+                  ? '↑/↓ 移动 · Space 选择 · → 查看 · / 搜索 · ? 快捷键 · q 退出'
+                  : canViewWithEnter
+                    ? '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · ? 快捷键 · q 退出'
+                    : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}
           </Text>
           {(selected.size > 0 || actions.length > 0) && (
-            <Text color={termcnColors.muted} wrap="truncate-end">
-              {[selected.size ? `已选 ${selected.size}` : '', ...actions].filter(Boolean).join(' · ')}
-            </Text>
+            <>
+              <Text> </Text>
+              <Text color={termcnColors.muted} wrap="truncate-end">
+                {[selected.size ? `已选 ${selected.size}` : '', ...actions].filter(Boolean).join(' · ')}
+              </Text>
+            </>
           )}
           {activity.length > 0 && (
             <Text color={updateCheck.failed ? termcnColors.error : termcnColors.muted} wrap="truncate-end">
