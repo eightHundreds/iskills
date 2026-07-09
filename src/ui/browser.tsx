@@ -35,6 +35,20 @@ type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
   | { type: 'skill'; group: string; skill: Skill };
 
+const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+function useSpinner(active: boolean): string {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => {
+      setIndex((value) => (value + 1) % spinnerFrames.length);
+    }, 80);
+    return () => clearInterval(timer);
+  }, [active]);
+  return spinnerFrames[index] ?? '⠋';
+}
+
 function skillGroups(skill: Skill): string[] {
   return [...new Set(skill.tags?.length ? skill.tags : ['未分组'])];
 }
@@ -88,6 +102,7 @@ function SkillPane({
   showSource = false,
   showGroup = false,
   updates = new Set<string>(),
+  updatingSkillName,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -97,8 +112,10 @@ function SkillPane({
   showSource?: boolean;
   showGroup?: boolean;
   updates?: Set<string>;
+  updatingSkillName?: string | undefined;
 }) {
   const { stdout } = useStdout();
+  const spinner = useSpinner(Boolean(updatingSkillName));
   const height = Math.max(3, (stdout.rows ?? 24) - 8);
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
@@ -148,7 +165,11 @@ function SkillPane({
               ) : (
                 <Text bold={isActive && index === active}>{skill.name}</Text>
               )}
-              {updates.has(skill.name) && <Text color={termcnColors.primary}> ↑</Text>}
+              {updatingSkillName === skill.name ? (
+                <Text color={termcnColors.primary}> {spinner}</Text>
+              ) : updates.has(skill.name) ? (
+                <Text color={termcnColors.primary}> ↑</Text>
+              ) : null}
               {summary && (
                 <Text color={termcnColors.muted}> — {summary}</Text>
               )}
@@ -195,6 +216,10 @@ function AgentTabs({
   );
 }
 
+function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {
+  return groups.filter((group) => group.skills.length > 0);
+}
+
 function Browser({
   projectGroups,
   collection,
@@ -207,6 +232,8 @@ function Browser({
   initialSelected,
   canSync,
   status,
+  transientStatus,
+  updatingSkillName,
   finish,
 }: {
   projectGroups: SkillGroup[];
@@ -220,25 +247,46 @@ function Browser({
   initialSelected: string[];
   canSync: boolean;
   status: string;
+  transientStatus: boolean;
+  updatingSkillName?: string | undefined;
   finish: (result: BrowserResult) => void;
 }) {
   const [tab, setTab] = useState<BrowserTab>(initialTab);
   const [query, setQuery] = useState(initialQuery);
-  const allAgents = [...new Set([...projectGroups, ...globalGroups].map((group) => group.agent))];
+  const [visibleStatus, setVisibleStatus] = useState(status);
+  const visibleProjectGroups = useMemo(() => visibleAgentGroups(projectGroups), [projectGroups]);
+  const visibleGlobalGroups = useMemo(() => visibleAgentGroups(globalGroups), [globalGroups]);
+  const allAgents = [
+    ...new Set([...visibleProjectGroups, ...visibleGlobalGroups].map((group) => group.agent)),
+  ];
   const [agent, setAgent] = useState(
     allAgents.includes(initialAgent)
       ? initialAgent
-      : projectGroups[0]?.agent ?? globalGroups[0]?.agent ?? ''
+      : visibleProjectGroups[0]?.agent ?? visibleGlobalGroups[0]?.agent ?? ''
   );
   const [focus, setFocus] = useState<BrowserFocus>(initialFocus);
+  const activeProjectAgent = visibleProjectGroups.some((group) => group.agent === agent)
+    ? agent
+    : visibleProjectGroups[0]?.agent ?? '';
+  const activeGlobalAgent = visibleGlobalGroups.some((group) => group.agent === agent)
+    ? agent
+    : visibleGlobalGroups[0]?.agent ?? '';
+  const activeAgent = tab === 'global' ? activeGlobalAgent : activeProjectAgent;
+  const currentAgentGroups =
+    tab === 'project' ? visibleProjectGroups : tab === 'global' ? visibleGlobalGroups : [];
+  const hasAgentTabs = currentAgentGroups.length > 0;
   const project = projectGroups.flatMap((group) => group.skills);
-  const projectGroup = projectGroups.find((group) => group.agent === agent) ?? projectGroups[0];
+  const projectGroup =
+    visibleProjectGroups.find((group) => group.agent === activeProjectAgent) ??
+    visibleProjectGroups[0];
   const projectRows = useMemo(
     () => groupedRows(projectGroup?.skills ?? [], query),
     [projectGroup, query]
   );
   const collectionRows = useMemo(() => groupedRows(collection, query), [collection, query]);
-  const globalGroup = globalGroups.find((group) => group.agent === agent) ?? globalGroups[0];
+  const globalGroup =
+    visibleGlobalGroups.find((group) => group.agent === activeGlobalAgent) ??
+    visibleGlobalGroups[0];
   const globalRows = useMemo(
     () => flatRows(globalGroup?.skills ?? [], query),
     [globalGroup, query]
@@ -259,6 +307,12 @@ function Browser({
     updates: Set<string>;
     failed: number;
   }>({ checking: false, updates: new Set(), failed: 0 });
+  useEffect(() => {
+    setVisibleStatus(status);
+    if (!status || !transientStatus) return undefined;
+    const timer = setTimeout(() => setVisibleStatus(''), 3500);
+    return () => clearTimeout(timer);
+  }, [status, transientStatus]);
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
   const selectedProjectLocal = project.filter(
     (skill) => selected.has(skill.path) && !skill.fromCollection
@@ -289,6 +343,9 @@ function Browser({
       previousAgent.current = agent;
     }
   }, [agent]);
+  useEffect(() => {
+    if (focus === 'agents' && !hasAgentTabs) setFocus('list');
+  }, [focus, hasAgentTabs]);
   const checkedUpdates = useRef(false);
   useEffect(() => {
     if (tab !== 'collection' || checkedUpdates.current) return;
@@ -308,7 +365,7 @@ function Browser({
     query,
     cursor: cursorRef.current,
     selected: [...selected],
-    agent,
+    agent: activeAgent,
     focus,
   });
 
@@ -334,7 +391,7 @@ function Browser({
         return finish({ ...browserState(), type: 'sync' });
       }
       if (focus === 'tabs') {
-        if (key.downArrow) return setFocus(tab === 'collection' ? 'list' : 'agents');
+        if (key.downArrow) return setFocus(hasAgentTabs ? 'agents' : 'list');
         if (key.leftArrow || key.rightArrow) {
           const order: BrowserTab[] = ['project', 'global', 'collection'];
           const index = order.indexOf(tab);
@@ -347,9 +404,8 @@ function Browser({
         if (key.upArrow) return setFocus('tabs');
         if (key.downArrow) return setFocus('list');
         if (key.leftArrow || key.rightArrow) {
-          const names = (tab === 'project' ? projectGroups : globalGroups)
-            .map((group) => group.agent);
-          const index = names.indexOf(agent);
+          const names = currentAgentGroups.map((group) => group.agent);
+          const index = names.indexOf(activeAgent);
           const next = names[index + (key.leftArrow ? -1 : 1)];
           if (next) setAgent(next);
         }
@@ -373,7 +429,7 @@ function Browser({
         return finish({ ...browserState(), type: 'import', skills: selectedLocal });
       }
       if (key.upArrow) {
-        if (cursorRef.current === 0) return setFocus(tab === 'collection' ? 'tabs' : 'agents');
+        if (cursorRef.current === 0) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
         return setCursor((index) => index - 1);
       }
       if (key.downArrow) {
@@ -402,7 +458,7 @@ function Browser({
         }
       }
     },
-    { isActive: !searching && !choosingGroup }
+    { isActive: !searching && !choosingGroup && !updatingSkillName }
   );
   useInput(
     (input, key) => {
@@ -419,7 +475,11 @@ function Browser({
       label: `当前项目 ${project.length}`,
       content: (
         <Box flexDirection="column">
-          <AgentTabs groups={projectGroups} agent={agent} focused={focus === 'agents'} />
+          <AgentTabs
+            groups={visibleProjectGroups}
+            agent={activeProjectAgent}
+            focused={focus === 'agents'}
+          />
           <SkillPane
             rows={projectRows}
             cursor={cursor}
@@ -436,7 +496,11 @@ function Browser({
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
         <Box flexDirection="column">
-          <AgentTabs groups={globalGroups} agent={agent} focused={focus === 'agents'} />
+          <AgentTabs
+            groups={visibleGlobalGroups}
+            agent={activeGlobalAgent}
+            focused={focus === 'agents'}
+          />
           <SkillPane
             rows={globalRows}
             cursor={cursor}
@@ -459,6 +523,7 @@ function Browser({
           preferNote
           showGroup={Boolean(query.trim())}
           updates={updateCheck.updates}
+          updatingSkillName={updatingSkillName}
         />
       ),
     },
@@ -491,13 +556,15 @@ function Browser({
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
     tab === 'collection' && canSync ? 's 同步 Git' : '',
     tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
+      && !updatingSkillName
       ? 'u 更新当前技能'
       : '',
   ].filter(Boolean);
   const activity = [
+    updatingSkillName ? `正在更新 ${updatingSkillName}…` : '',
     updateCheck.checking ? '正在检查更新…' : '',
     !updateCheck.checking && updateCheck.failed ? `${updateCheck.failed} 个技能检查失败` : '',
-    status,
+    visibleStatus,
     query ? `搜索：${query}` : '',
   ].filter(Boolean);
 
@@ -532,7 +599,9 @@ function Browser({
       ) : (
         <Box flexDirection="column">
           <Text color={termcnColors.muted} wrap="truncate-end">
-            {focus === 'tabs'
+            {updatingSkillName
+              ? '正在更新 · 请稍候'
+              : focus === 'tabs'
               ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · q 退出'
               : focus === 'agents'
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · q 退出'
@@ -610,7 +679,7 @@ function Detail({
         )}
       </Box>
       <Text color={termcnColors.muted}>
-        {collection ? 'n 备注 · t 标签 · s 来源 · ←/b/Esc 返回' : '←/b/Esc 返回'}
+        {collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}
       </Text>
     </Box>
   );
@@ -646,7 +715,9 @@ export function browseSkills(
   initialCursor = 0,
   initialSelected: string[] = [],
   initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs'
+  initialFocus: BrowserFocus = 'tabs',
+  transientStatus = false,
+  updatingSkillName?: string
 ): Promise<BrowserResult> {
   return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
       <Browser
@@ -661,7 +732,45 @@ export function browseSkills(
         initialSelected={initialSelected}
         canSync={canSync}
         status={status}
+        transientStatus={transientStatus}
+        updatingSkillName={updatingSkillName}
         finish={finish}
       />
   ), false);
+}
+
+export function displayBrowseSkills(
+  projectGroups: SkillGroup[],
+  collection: CollectedSkill[],
+  globalGroups: SkillGroup[],
+  session: InkSession,
+  initialQuery = '',
+  initialTab: BrowserTab = 'project',
+  canSync = false,
+  status = '',
+  initialCursor = 0,
+  initialSelected: string[] = [],
+  initialAgent = '',
+  initialFocus: BrowserFocus = 'tabs',
+  transientStatus = false,
+  updatingSkillName?: string
+): void {
+  session.display(
+    <Browser
+      projectGroups={projectGroups}
+      collection={collection}
+      globalGroups={globalGroups}
+      initialQuery={initialQuery}
+      initialTab={initialTab}
+      initialAgent={initialAgent}
+      initialFocus={initialFocus}
+      initialCursor={initialCursor}
+      initialSelected={initialSelected}
+      canSync={canSync}
+      status={status}
+      transientStatus={transientStatus}
+      updatingSkillName={updatingSkillName}
+      finish={() => undefined}
+    />
+  );
 }

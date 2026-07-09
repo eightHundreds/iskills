@@ -1,6 +1,7 @@
 import { cp, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import {
   AGENTS,
@@ -27,6 +28,7 @@ import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import {
   browseSkillDetail,
   browseSkills,
+  displayBrowseSkills,
   type BrowserFocus,
   type BrowserTab,
 } from '../ui/browser.js';
@@ -163,6 +165,7 @@ export async function interactiveList(
   let agent = '';
   let focus: BrowserFocus = 'tabs';
   let status = '';
+  let transientStatus = false;
   const session = new InkSession(true);
   process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
   try {
@@ -185,7 +188,8 @@ export async function interactiveList(
         cursor,
         selected,
         agent,
-        focus
+        focus,
+        transientStatus
       );
       if (result.type === 'quit') return;
       query = result.query;
@@ -194,22 +198,50 @@ export async function interactiveList(
       selected = result.selected;
       agent = result.agent;
       focus = result.focus;
+      if (transientStatus) {
+        status = '';
+        transientStatus = false;
+      }
       if (result.type === 'sync') {
         session.close();
         process.stdout.write(LEAVE_ALTERNATE_SCREEN);
         try {
           await syncCollection(false);
           status = 'Git 同步完成';
+          transientStatus = true;
         } finally {
           process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
         }
         continue;
       }
       if (result.type === 'update') {
+        status = '';
+        transientStatus = false;
+        session.close();
+        displayBrowseSkills(
+          projects,
+          collection,
+          globals,
+          session,
+          query,
+          tab,
+          canSync,
+          status,
+          cursor,
+          selected,
+          agent,
+          focus,
+          transientStatus,
+          result.skill.name
+        );
+        await delay(120);
         try {
-          status = `${result.skill.name}: ${await updateGitSkill(result.skill, false)}`;
+          const updateStatus = await updateGitSkill(result.skill, false);
+          status = `${result.skill.name}: ${updateStatus}`;
+          transientStatus = updateStatus === 'updated' || updateStatus === 'unchanged';
         } catch (error) {
           status = `${result.skill.name}: 更新失败 — ${errorMessage(error)}`;
+          transientStatus = false;
         }
         process.stdout.write(CLEAR_SCREEN);
         continue;
@@ -231,6 +263,7 @@ export async function interactiveList(
         }));
         await commitCollection(`tag ${result.skills.map((skill) => skill.name).join(', ')}`);
         status = `已为 ${result.skills.length} 个技能添加标签`;
+        transientStatus = true;
         continue;
       }
       if (result.type === 'add') {
@@ -286,9 +319,11 @@ export async function interactiveList(
             ...(isGlobal ? { global: true } : {}),
           });
           status = `已通过${mode === 'copy' ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
+          transientStatus = true;
           selected = [];
         } catch (error) {
           status = errorMessage(error);
+          transientStatus = false;
         }
         process.stdout.write(CLEAR_SCREEN);
         continue;
@@ -297,8 +332,10 @@ export async function interactiveList(
         try {
           const { count } = await importSkillsToCollection(result.skills, { quiet: true });
           status = `已导入 ${count} 个技能到收藏夹`;
+          transientStatus = true;
         } catch (error) {
           status = errorMessage(error);
+          transientStatus = false;
         }
         selected = [];
         process.stdout.write(CLEAR_SCREEN);
