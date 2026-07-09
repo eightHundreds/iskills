@@ -803,13 +803,12 @@ function Browser({
     currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
   const canViewWithEnter =
     currentRow?.type === 'skill' && tab !== 'collection' && !canViewWithRightArrow;
-  const canRemoveCollection =
+  const canDeleteCollection =
     tab === 'collection' && (selectedCollection.length > 0 || currentRow?.type === 'skill');
   const actions = [
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
-    canRemoveCollection ? 'd 删除' : '',
     tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
       && !updatingSkillName
       ? 'u 更新当前技能'
@@ -866,6 +865,8 @@ function Browser({
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
                 : canViewWithRightArrow
                   ? '↑/↓ 移动 · Space 选择 · → 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                  : canDeleteCollection
+                    ? '↑/↓ 移动 · Space 选择 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
                     ? '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · ? 快捷键 · q 退出'
                     : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}

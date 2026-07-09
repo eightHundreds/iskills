@@ -506,7 +506,9 @@ test('collection browser removes the current Skill with confirmation', async (t)
       { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
       { wait: '收藏夹 0', send: 'q', enter: false, delayAfter: 300 },
     ]);
+    const plainOutput = result.stdout.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
     assert.match(result.stdout, /d 删除/);
+    assert.doesNotMatch(plainOutput, /\n\nd 删除\n/);
     assert.match(result.stdout, /从收藏夹移除 entry-delete-skill 吗？/);
     assert.match(result.stdout, /\(y\/N\)/);
     assert.doesNotMatch(result.stdout, /n \/ Enter \/ Esc 取消/);
