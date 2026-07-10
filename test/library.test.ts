@@ -9,6 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { isGitSource, parseGitSource } from '../src/core.js';
 import {
   makeContext,
   makeSkill,
@@ -16,6 +17,13 @@ import {
   type JsonLink,
   type JsonSkill,
 } from './helpers.js';
+
+test('explicit relative paths are not GitHub shorthand', () => {
+  assert.equal(isGitSource('./skill'), false);
+  assert.equal(isGitSource('../skill'), false);
+  assert.equal(isGitSource('owner/repo'), true);
+  assert.deepEqual(parseGitSource('./skill'), { url: './skill' });
+});
 
 test('local import, add, list, project remove and collection restore form one complete flow', async () => {
   const context = await makeContext();
@@ -110,6 +118,24 @@ test('imports multiple Skills from one directory with --all', async () => {
       listed.collection.map((skill: JsonSkill) => skill.name),
       ['alpha', 'beta']
     );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('existing relative paths take precedence over GitHub shorthand during import', async () => {
+  const context = await makeContext();
+  const direct = join(context.project, 'direct-skill');
+  const nested = join(context.project, 'local-owner', 'nested-skill');
+  await makeSkill(direct, 'direct-skill');
+  await makeSkill(nested, 'nested-skill');
+
+  try {
+    await run(context, ['import', './direct-skill', '--all', '--yes']);
+    await run(context, ['import', 'local-owner/nested-skill', '--all', '--yes']);
+
+    assert.equal((await lstat(direct)).isSymbolicLink(), true);
+    assert.equal((await lstat(nested)).isSymbolicLink(), true);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
