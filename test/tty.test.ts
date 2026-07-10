@@ -524,6 +524,81 @@ test('collection browser removes the current Skill with confirmation', async (t)
   }
 });
 
+test('project browser deletes a local Skill with default-cancel confirmation', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const local = join(context.project, '.agents/skills/local-delete-skill');
+  await makeSkill(local, 'local-delete-skill');
+
+  try {
+    const result = await runInteractive(context, ['list'], [
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: 'local-delete-skill', send: 'd', enter: false },
+      { wait: '(y/N)', send: 'n', enter: false, delayAfter: 100 },
+      { wait: 'd 删除', send: 'd', enter: false, delayAfter: 100 },
+      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
+      { wait: '已删除 local-delete-skill 的当前位置', send: 'q', enter: false },
+    ]);
+    assert.match(result.stdout, /删除 local-delete-skill 的当前位置吗？/);
+    assert.match(result.stdout, /将永久删除以下位置；收藏夹内容（如有）保留。/);
+    assert.match(result.stdout, /\.agents\/skills\/local-delete-skill/);
+    assert.doesNotMatch(result.stdout, /错误：/);
+    await assert.rejects(lstat(local), { code: 'ENOENT' });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('global browser batch deletes collected and local Skill locations', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const linked = join(context.home, '.codex/skills/alpha-linked');
+  const local = join(context.home, '.codex/skills/beta-local');
+  await makeSkill(linked, 'alpha-linked');
+
+  try {
+    await run(context, ['import', '-g', '--agent', 'codex', '--all', '--yes']);
+    await makeSkill(local, 'beta-local');
+    const result = await runInteractive(context, ['list'], [
+      { wait: 'q 退出', send: '\u001b[C', enter: false },
+      { wait: '全局', send: '\u001b[B', enter: false },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: 'alpha-linked', send: ' ', enter: false },
+      { wait: '已选 1', send: '\u001b[B', enter: false },
+      { wait: 'beta-local', send: ' ', enter: false },
+      { wait: '已选 2', send: 'd', enter: false },
+      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
+      { wait: '已删除 2 个技能位置', send: 'q', enter: false },
+    ]);
+    assert.match(result.stdout, /d 删除/);
+    assert.match(result.stdout, /\/\.codex\/skills\/alpha-linked/);
+    assert.match(result.stdout, /\/\.codex\/skills\/beta-local/);
+    await assert.rejects(lstat(linked), { code: 'ENOENT' });
+    await assert.rejects(lstat(local), { code: 'ENOENT' });
+    assert.equal(
+      (await lstat(join(context.collection, 'skills/alpha-linked'))).isDirectory(),
+      true
+    );
+    const state = JSON.parse(await readFile(join(context.collection, '.local/state.json'), 'utf8'));
+    assert.equal(state.links.some((link: JsonLink) => link.path === linked), false);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('collection browser shows progress while updating a Skill', async (t) => {
   try {
     await exec('python3', ['--version']);
@@ -741,7 +816,7 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     assert.match(result.stdout, /‹ collected-skill/);
     assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
     assert.match(result.stdout, /○ 本地 · local-only/);
-    assert.doesNotMatch(result.stdout, /[○●] collected-skill/);
+    assert.match(result.stdout, /○ collected-skill/);
     assert.doesNotMatch(result.stdout, /claude \(0\)/);
     assert.doesNotMatch(result.stdout, /codex \(0\)/);
     assert.doesNotMatch(result.stdout, /cursor \(0\)/);

@@ -34,7 +34,8 @@ export type BrowserResult =
       | { type: 'tags'; skills: Skill[] }
       | { type: 'update'; skill: CollectedSkill }
       | { type: 'add'; skills: CollectedSkill[] }
-      | { type: 'remove'; skills: CollectedSkill[] }
+      | { type: 'removeCollection'; skills: CollectedSkill[] }
+      | { type: 'removeLocations'; skills: Skill[] }
       | { type: 'import'; skills: Skill[] }
       | { type: 'open'; skill: Skill; collection: boolean }
     ));
@@ -85,6 +86,25 @@ function sliceColumns(value: string, start: number, end: number): string {
 
 function padColumns(value: string, width: number): string {
   return `${value}${' '.repeat(Math.max(0, width - textWidth(value)))}`;
+}
+
+function wrapColumns(value: string, width: number): string[] {
+  if (!value) return [''];
+  const lines: string[] = [];
+  let line = '';
+  let columns = 0;
+  for (const char of value) {
+    const charColumns = charWidth(char);
+    if (line && columns + charColumns > width) {
+      lines.push(line);
+      line = '';
+      columns = 0;
+    }
+    line += char;
+    columns += charColumns;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function useSpinner(active: boolean): string {
@@ -138,18 +158,16 @@ function flatRows(skills: Skill[], query: string): SkillRow[] {
     .map((skill) => ({ type: 'skill', group: '', skill }));
 }
 
-function selectableSkills(row: SkillRow, localOnly: boolean): Skill[] {
-  if (row.type === 'group') {
-    return localOnly ? row.skills.filter((skill) => !skill.fromCollection) : row.skills;
-  }
-  if (localOnly && row.skill.fromCollection) return [];
-  return [row.skill];
+function selectableSkills(row: SkillRow): Skill[] {
+  return row.type === 'group' ? row.skills : [row.skill];
 }
 
 function framedLines(title: string, content: string[], width: number): string[] {
   const inner = width - 4;
   const titleWidth = textWidth(title);
-  const body = content.map((line) => padColumns(sliceColumns(line, 0, inner), inner));
+  const body = content
+    .flatMap((line) => wrapColumns(line, inner))
+    .map((line) => padColumns(line, inner));
   return [
     `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
     ...body.map((line) => `│ ${line} │`),
@@ -169,7 +187,7 @@ function shortcutHelpLines(width: number): string[] {
     't 批量加标签（收藏夹已选择技能时）',
     's 同步 Git（收藏夹可同步时）',
     'u 更新当前技能（收藏夹有可更新 Git 技能时）',
-    'd/Delete 删除收藏夹已选技能；无选择时删除当前技能',
+    'd/Delete 删除已选技能；无选择时删除当前技能',
     'q 退出 · Esc 取消当前上下文',
     '',
     'Esc / q / ? 关闭',
@@ -249,9 +267,7 @@ function SkillPane({
   const popupLeft = Math.max(0, Math.floor((paneWidth - popupWidth) / 2));
   const rowText = (row: SkillRow, index: number): string => {
     if (row.type === 'group') {
-      const groupSkills = showSource
-        ? row.skills.filter((skill) => !skill.fromCollection)
-        : row.skills;
+      const groupSkills = row.skills;
       const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
       const marker =
         count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
@@ -259,12 +275,7 @@ function SkillPane({
     }
     const skill = row.skill;
     const summary = (preferNote && skill.note) || skill.description;
-    const selectable = !showSource || !skill.fromCollection;
-    const selectionMarker = selectable
-      ? selected.has(skill.path)
-        ? '●'
-        : '○'
-      : ' ';
+    const selectionMarker = selected.has(skill.path) ? '●' : '○';
     const name = showSource && !skill.fromCollection ? `本地 · ${skill.name}` : skill.name;
     const group = showGroup && row.group ? `${row.group} / ` : '';
     const update = updatingSkillName === skill.name ? ` ${spinner}` : updates.has(skill.name) ? ' ↑' : '';
@@ -272,9 +283,7 @@ function SkillPane({
   };
   const renderRow = (row: SkillRow, index: number) => {
     if (row.type === 'group') {
-      const groupSkills = showSource
-        ? row.skills.filter((skill) => !skill.fromCollection)
-        : row.skills;
+      const groupSkills = row.skills;
       const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
       const marker =
         count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
@@ -290,12 +299,7 @@ function SkillPane({
     }
     const skill = row.skill;
     const summary = (preferNote && skill.note) || skill.description;
-    const selectable = !showSource || !skill.fromCollection;
-    const selectionMarker = selectable
-      ? selected.has(skill.path)
-        ? '●'
-        : '○'
-      : ' ';
+    const selectionMarker = selected.has(skill.path) ? '●' : '○';
     return (
       <Text
         key={`${row.group}:${skill.path}:${index}`}
@@ -480,7 +484,10 @@ function Browser({
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [removeConfirmation, setRemoveConfirmation] = useState<CollectedSkill[] | undefined>();
+  const [removeConfirmation, setRemoveConfirmation] = useState<{
+    scope: 'collection' | 'location';
+    skills: Skill[];
+  } | undefined>();
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
@@ -496,6 +503,10 @@ function Browser({
     return () => clearTimeout(timer);
   }, [status, transientStatus]);
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
+  const selectedProject = project.filter((skill) => selected.has(skill.path));
+  const selectedGlobal = globalGroups.flatMap((group) =>
+    group.skills.filter((skill) => selected.has(skill.path))
+  );
   const selectedProjectLocal = project.filter(
     (skill) => selected.has(skill.path) && !skill.fromCollection
   );
@@ -559,21 +570,38 @@ function Browser({
       collection,
     });
   const localConfirmation: BrowserConfirmation | undefined = removeConfirmation
-    ? {
-        title: '删除收藏',
-        message: removeConfirmation.length === 1
-          ? `从收藏夹移除 ${removeConfirmation[0]?.name ?? ''} 吗？`
-          : `从收藏夹移除 ${removeConfirmation.length} 个技能吗？`,
-        details: removeConfirmation.length > 1
-          ? [`技能：${removeConfirmation.map((skill) => skill.name).join(', ')}`]
-          : [],
-        onConfirm: () => finish({
-          ...browserState(),
-          type: 'remove',
-          skills: removeConfirmation,
-        }),
-        onCancel: () => setRemoveConfirmation(undefined),
-      }
+    ? removeConfirmation.scope === 'collection'
+      ? {
+          title: '删除收藏',
+          message: removeConfirmation.skills.length === 1
+            ? `从收藏夹移除 ${removeConfirmation.skills[0]?.name ?? ''} 吗？`
+            : `从收藏夹移除 ${removeConfirmation.skills.length} 个技能吗？`,
+          details: removeConfirmation.skills.length > 1
+            ? [`技能：${removeConfirmation.skills.map((skill) => skill.name).join(', ')}`]
+            : [],
+          onConfirm: () => finish({
+            ...browserState(),
+            type: 'removeCollection',
+            skills: removeConfirmation.skills as CollectedSkill[],
+          }),
+          onCancel: () => setRemoveConfirmation(undefined),
+        }
+      : {
+          title: '删除技能',
+          message: removeConfirmation.skills.length === 1
+            ? `删除 ${removeConfirmation.skills[0]?.name ?? ''} 的当前位置吗？`
+            : `删除所选 ${removeConfirmation.skills.length} 个技能位置吗？`,
+          details: [
+            '将永久删除以下位置；收藏夹内容（如有）保留。',
+            ...removeConfirmation.skills.map((skill) => skill.path),
+          ],
+          onConfirm: () => finish({
+            ...browserState(),
+            type: 'removeLocations',
+            skills: removeConfirmation.skills,
+          }),
+          onCancel: () => setRemoveConfirmation(undefined),
+        }
     : undefined;
   const activeConfirmation = confirmation ?? localConfirmation;
   const { stdout } = useStdout();
@@ -657,9 +685,26 @@ function Browser({
             ? [row.skill as CollectedSkill]
             : []
         : [];
+      const removableLocations = tab === 'project'
+        ? selectedProject.length
+          ? selectedProject
+          : row?.type === 'skill'
+            ? [row.skill]
+            : []
+        : tab === 'global'
+          ? selectedGlobal.length
+            ? selectedGlobal
+            : row?.type === 'skill'
+              ? [row.skill]
+              : []
+          : [];
       if ((input === 'd' || key.delete) && removableCollection.length) {
         setShowShortcuts(false);
-        return setRemoveConfirmation(removableCollection);
+        return setRemoveConfirmation({ scope: 'collection', skills: removableCollection });
+      }
+      if ((input === 'd' || key.delete) && removableLocations.length) {
+        setShowShortcuts(false);
+        return setRemoveConfirmation({ scope: 'location', skills: removableLocations });
       }
       const selectedLocal = tab === 'project' ? selectedProjectLocal : selectedGlobalLocal;
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
@@ -673,7 +718,7 @@ function Browser({
         return setCursor((index) => Math.min(Math.max(0, rows.length - 1), index + 1));
       }
       if (input === ' ' && row) {
-        const paths = selectableSkills(row, tab !== 'collection').map((skill) => skill.path);
+        const paths = selectableSkills(row).map((skill) => skill.path);
         if (!paths.length) return;
         return setSelected((previous) => {
           const next = new Set(previous);
@@ -803,8 +848,11 @@ function Browser({
     currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
   const canViewWithEnter =
     currentRow?.type === 'skill' && tab !== 'collection' && !canViewWithRightArrow;
-  const canDeleteCollection =
-    tab === 'collection' && (selectedCollection.length > 0 || currentRow?.type === 'skill');
+  const canDelete =
+    (tab === 'collection' && selectedCollection.length > 0) ||
+    (tab === 'project' && selectedProject.length > 0) ||
+    (tab === 'global' && selectedGlobal.length > 0) ||
+    currentRow?.type === 'skill';
   const actions = [
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
@@ -865,10 +913,10 @@ function Browser({
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
                 : canViewWithRightArrow
                   ? '↑/↓ 移动 · Space 选择 · → 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                  : canDeleteCollection
-                    ? '↑/↓ 移动 · Space 选择 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
-                    ? '↑/↓ 移动 · Space 选择 · Enter 查看 · / 搜索 · ? 快捷键 · q 退出'
+                    ? '↑/↓ 移动 · Space 选择 · Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                  : canDelete
+                    ? '↑/↓ 移动 · Space 选择 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                     : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}
           </Text>
           {(selected.size > 0 || actions.length > 0) && (

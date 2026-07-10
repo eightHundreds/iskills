@@ -588,3 +588,40 @@ export async function removeFromCollection(
     );
   }
 }
+
+export async function removeSkillLocations(skills: Skill[]): Promise<number> {
+  const paths = collectionPaths();
+  const collectionRoot = resolve(paths.root);
+  const unique = new Map<string, Skill>();
+  for (const skill of skills) unique.set(resolve(skill.path), skill);
+
+  for (const [path, skill] of unique) {
+    if (path === collectionRoot || path.startsWith(`${collectionRoot}${sep}`)) {
+      throw new Error(`不能通过位置删除收藏夹内容：${path}`);
+    }
+    if (!(await pathPresent(path))) throw new Error(`技能位置已不存在：${path}`);
+    let current: Skill;
+    try {
+      current = await readSkill(path);
+    } catch {
+      throw new Error(`技能位置已发生变化，未删除：${path}`);
+    }
+    if (current.name !== skill.name) {
+      throw new Error(`技能位置已发生变化，未删除：${path}`);
+    }
+    if (skill.fromCollection) {
+      const target = join(paths.skills, assertSkillName(skill.name));
+      if (!(await isExactSymlink(path, target))) {
+        throw new Error(`收藏夹链接已发生变化，未删除：${path}`);
+      }
+    }
+  }
+
+  for (const path of unique.keys()) await rm(path, { recursive: true });
+
+  const removed = new Set(unique.keys());
+  const state = await readState();
+  state.links = state.links.filter((link) => !removed.has(resolve(link.path)));
+  await writeState(state);
+  return unique.size;
+}
