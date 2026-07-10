@@ -21,6 +21,7 @@ import {
   readMetadata,
   readState,
   removeFromCollection,
+  removeSkillLocations,
   writeMetadata,
 } from '../core.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
@@ -369,7 +370,7 @@ export async function interactiveList(
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
-      if (result.type === 'remove') {
+      if (result.type === 'removeCollection') {
         const names = result.skills.map((skill) => skill.name);
         try {
           for (const skill of result.skills) await removeFromCollection(skill.name, true, true);
@@ -381,6 +382,22 @@ export async function interactiveList(
           selected = selected.filter((path) => !removed.has(path));
         } catch (error) {
           status = `移除失败 — ${errorMessage(error)}`;
+          transientStatus = false;
+        }
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'removeLocations') {
+        try {
+          const count = await removeSkillLocations(result.skills);
+          status = count === 1
+            ? `已删除 ${result.skills[0]?.name ?? ''} 的当前位置，收藏夹内容保留`
+            : `已删除 ${count} 个技能位置，收藏夹内容保留`;
+          transientStatus = true;
+          const removed = new Set(result.skills.map((skill) => skill.path));
+          selected = selected.filter((path) => !removed.has(path));
+        } catch (error) {
+          status = `删除失败 — ${errorMessage(error)}`;
           transientStatus = false;
         }
         process.stdout.write(CLEAR_SCREEN);
