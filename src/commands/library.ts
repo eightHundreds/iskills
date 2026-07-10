@@ -469,7 +469,10 @@ export async function commandImport(argv: string[]): Promise<void> {
   if (positionals.length > 1) throw new Error('一次只能指定一个导入根目录');
 
   const input = positionals[0];
-  const gitContext = input && isGitSource(input) ? await cloneGitSource(input) : undefined;
+  const localInput = input ? resolve(input) : undefined;
+  const gitContext = input && localInput && !(await exists(localInput)) && isGitSource(input)
+    ? await cloneGitSource(input)
+    : undefined;
   try {
     const paths = collectionPaths();
     const isCollected = (skill: Skill) =>
@@ -495,7 +498,7 @@ export async function commandImport(argv: string[]): Promise<void> {
         .filter((group) => group.skills.length > 0);
       skills = globalGroups.flatMap((group) => group.skills);
     } else {
-      skills = (await discoverSkills(resolve(input || '.'))).filter(isCollected);
+      skills = (await discoverSkills(localInput || resolve('.'))).filter(isCollected);
     }
     if (!skills.length) throw new Error('没有找到 SKILL.md');
 

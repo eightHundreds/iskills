@@ -308,7 +308,7 @@ export function isGitSource(input: string): boolean {
     input.startsWith('git@') ||
     input.startsWith('github:') ||
     input.startsWith('gitlab:') ||
-    /^[^/\s]+\/[^/\s]+(?:#.+)?$/.test(input)
+    /^(?!\.{1,2}\/)[^/\s]+\/[^/\s]+(?:#.+)?$/.test(input)
   );
 }
 
@@ -322,7 +322,9 @@ export function parseGitSource(input: string): ParsedGitSource {
   }
   if (value.startsWith('github:')) value = `https://github.com/${value.slice(7)}`;
   if (value.startsWith('gitlab:')) value = `https://gitlab.com/${value.slice(7)}`;
-  if (/^[^/:\s]+\/[^/\s]+$/.test(value)) value = `https://github.com/${value}`;
+  if (/^(?!\.{1,2}\/)[^/:\s]+\/[^/\s]+$/.test(value)) {
+    value = `https://github.com/${value}`;
+  }
   return ref ? { url: value, ref } : { url: value };
 }
 
