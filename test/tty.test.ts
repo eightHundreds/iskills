@@ -22,7 +22,7 @@ import {
   type JsonSkill,
 } from './helpers.js';
 
-test('TTY Git import review shows repository identity and saves selected tags', async (t) => {
+test('TTY Git import review shows repository identity and saves selected groups', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -36,8 +36,8 @@ test('TTY Git import review shows repository identity and saves selected tags', 
 
   try {
     const result = await runInteractive(context, ['import', source], [
-      { wait: '选择标签', send: 'remote', delayAfter: 100 },
-      { wait: '标签：remote', send: '', delayAfter: 100 },
+      { wait: '选择分组', send: 'remote', delayAfter: 100 },
+      { wait: '分组：remote', send: '', delayAfter: 100 },
       { wait: '已导入 1 个技能。', send: '', enter: false },
     ]);
     assert.match(result.stdout, /file:\/\/.*#main · skills\/remote-/);
@@ -46,6 +46,35 @@ test('TTY Git import review shows repository identity and saves selected tags', 
       await readFile(join(context.collection, 'metadata/remote-skill.json'), 'utf8')
     );
     assert.deepEqual(metadata.tags, ['remote']);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY import selects current repository skills before group and confirmation', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  await makeSkill(join(context.project, 'skills/current-skill'), 'current-skill');
+
+  try {
+    const result = await runInteractive(context, ['import'], [
+      { wait: '选择当前仓库技能', send: ' ', enter: false, delayAfter: 100 },
+      { wait: '已选 1', send: '', delayAfter: 100 },
+      { wait: '选择分组', send: 'frontend', delayAfter: 100 },
+      { wait: '分组：frontend', send: '', delayAfter: 100 },
+      { wait: '已导入 1 个技能。', send: '', enter: false },
+    ]);
+    assert.match(result.stdout, /选择当前仓库技能/);
+    const metadata = JSON.parse(
+      await readFile(join(context.collection, 'metadata/current-skill.json'), 'utf8')
+    );
+    assert.deepEqual(metadata.tags, ['frontend']);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -247,7 +276,7 @@ test('TTY import -g focuses tabs with arrows, multi-selects across agents and vi
       { send: '\u001b[C', enter: false, delay: 300 },
       { wait: '另一个 claude 技能', send: '\u001b[D', enter: false, delayAfter: 200 },
       { wait: 'Enter 确认', send: '', delayAfter: 200 },
-      { wait: '选择标签', send: '', delayAfter: 100 },
+      { wait: '选择分组', send: '', delayAfter: 100 },
       { wait: 'Enter 确认导入', send: '', delayAfter: 100 },
     ]);
     assert.match(result.stdout, /claude \(2\)/);
@@ -445,7 +474,7 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
       { wait: 'Esc 取消', send: '' },
       { wait: '路径或 Git 来源：', send: source, enter: false, delayAfter: 100 },
       { wait: 'first-skill', send: '', delayAfter: 100 },
-      { wait: '选择标签', send: '', delayAfter: 100 },
+      { wait: '选择分组', send: '', delayAfter: 100 },
       { wait: 'Enter 确认导入', send: '', delayAfter: 100 },
     ]);
     assert.match(result.stdout, /已添加/);

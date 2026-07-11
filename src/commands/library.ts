@@ -503,11 +503,15 @@ export async function commandImport(argv: string[]): Promise<void> {
     if (!skills.length) throw new Error('没有找到 SKILL.md');
 
     let selected = skills;
-    if (!values.all && skills.length > 1) {
-      if (!process.stdin.isTTY) throw new Error('找到多个技能，请使用 --all 或交互选择');
+    if (!values.all && (skills.length > 1 || !input)) {
+      if (!process.stdin.isTTY) throw new Error('请使用 --all 或交互选择要导入的技能');
       selected = await chooseSkillMany(
         globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }],
-        globalGroups ? '扫描全局 Skill 目录' : '发现以下技能'
+        globalGroups
+          ? '扫描全局 Skill 目录'
+          : !input
+            ? '选择当前仓库技能'
+            : '发现以下技能'
       );
     }
     if (!selected.length) return;
