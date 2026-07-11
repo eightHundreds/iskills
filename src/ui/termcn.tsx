@@ -955,7 +955,7 @@ export function ImportReview<T extends Skill>({
               bold={activeTab === tab}
               underline={activeTab === tab}
             >
-              {tab === 'tags' ? '选择标签' : '确认'}
+              {tab === 'tags' ? '选择分组' : '确认'}
             </Text>
             {index === 0 && <Text color={colors.border}> │ </Text>}
           </Box>
@@ -964,7 +964,7 @@ export function ImportReview<T extends Skill>({
       {activeTab === 'tags' ? (
         <Box flexDirection="column">
           <Text color={colors.muted}>
-            已选标签：{selectedTags.size ? [...selectedTags].join(', ') : '无'}
+            已选分组：{selectedTags.size ? [...selectedTags].join(', ') : '无'}
           </Text>
           <Box
             flexDirection="column"
@@ -983,24 +983,24 @@ export function ImportReview<T extends Skill>({
                 );
               })
             ) : (
-              <Text color={colors.muted}>暂无已有标签</Text>
+              <Text color={colors.muted}>暂无已有分组</Text>
             )}
           </Box>
           <TextInput
-            label="新增标签（逗号分隔）"
+            label="新增分组（逗号分隔）"
             isActive={tagFocus === 'input'}
             onSubmit={addTags}
           />
           <Text color={colors.muted}>
             {tagFocus === 'input'
-              ? 'Enter 完成标签 · Tab 返回已有标签 · Esc 取消'
-              : '↑/↓ 移动 · Space 选择 · Tab 切换输入 · Enter 完成标签 · → 确认 · Esc 取消'}
+              ? 'Enter 完成分组 · Tab 返回已有分组 · Esc 取消'
+              : '↑/↓ 移动 · Space 选择 · Tab 切换输入 · Enter 完成分组 · → 确认 · Esc 取消'}
           </Text>
         </Box>
       ) : (
         <Box flexDirection="column">
           <Text>
-            将导入 {items.length} 个技能；标签：
+            将导入 {items.length} 个技能；分组：
             {selectedTags.size ? [...selectedTags].join(', ') : '无'}
           </Text>
           <Box flexDirection="column" marginTop={1}>
@@ -1013,7 +1013,7 @@ export function ImportReview<T extends Skill>({
               <Text color={colors.muted}>… 还有 {items.length - visibleItems.length} 个</Text>
             )}
           </Box>
-          <Text color={colors.muted}>Enter 确认导入 · ← 返回标签 · n 取消 · Esc 取消</Text>
+          <Text color={colors.muted}>Enter 确认导入 · ← 返回分组 · n 取消 · Esc 取消</Text>
         </Box>
       )}
     </Box>
