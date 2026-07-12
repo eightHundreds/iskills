@@ -32,7 +32,7 @@ export type BrowserResult =
   | (BrowserState & (
       | { type: 'sync' }
       | { type: 'tags'; skills: Skill[] }
-      | { type: 'update'; skill: CollectedSkill }
+      | { type: 'update'; skills: CollectedSkill[] }
       | { type: 'add'; skills: CollectedSkill[] }
       | { type: 'removeCollection'; skills: CollectedSkill[] }
       | { type: 'removeLocations'; skills: Skill[] }
@@ -186,7 +186,7 @@ function shortcutHelpLines(width: number): string[] {
     'i 加入收藏夹（当前项目/全局已选择本地技能时）',
     't 批量加标签（收藏夹已选择技能时）',
     's 同步 Git（收藏夹可同步时）',
-    'u 更新当前技能（收藏夹有可更新 Git 技能时）',
+    'u 更新可更新的已选技能；无选择时更新当前技能',
     'd/Delete 删除已选技能；无选择时删除当前技能',
     'q 退出 · Esc 取消当前上下文',
     '',
@@ -251,7 +251,6 @@ function SkillPane({
   overlayLines?: string[] | undefined;
 }) {
   const { stdout } = useStdout();
-  const spinner = useSpinner(Boolean(updatingSkillName));
   const height = Math.max(3, (stdout.rows ?? 24) - 8);
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
@@ -278,7 +277,7 @@ function SkillPane({
     const selectionMarker = selected.has(skill.path) ? '●' : '○';
     const name = showSource && !skill.fromCollection ? `本地 · ${skill.name}` : skill.name;
     const group = showGroup && row.group ? `${row.group} / ` : '';
-    const update = updatingSkillName === skill.name ? ` ${spinner}` : updates.has(skill.name) ? ' ↑' : '';
+    const update = updatingSkillName === skill.name ? ' 更新中' : updates.has(skill.name) ? ' ↑' : '';
     return `  ${isActive && index === active ? '›' : ' '} ${selectionMarker} ${group}${name}${update}${summary ? ` — ${summary}` : ''}`;
   };
   const renderRow = (row: SkillRow, index: number) => {
@@ -316,7 +315,7 @@ function SkillPane({
           <Text bold={isActive && index === active}>{skill.name}</Text>
         )}
         {updatingSkillName === skill.name ? (
-          <Text color={termcnColors.primary}> {spinner}</Text>
+          <Text color={termcnColors.primary}> 更新中</Text>
         ) : updates.has(skill.name) ? (
           <Text color={termcnColors.primary}> ↑</Text>
         ) : null}
@@ -416,6 +415,7 @@ function Browser({
   status,
   transientStatus,
   updatingSkillName,
+  updatingProgress,
   confirmation,
   finish,
 }: {
@@ -432,6 +432,7 @@ function Browser({
   status: string;
   transientStatus: boolean;
   updatingSkillName?: string | undefined;
+  updatingProgress?: { current: number; total: number } | undefined;
   confirmation?: BrowserConfirmation | undefined;
   finish: (result: BrowserResult) => void;
 }) {
@@ -496,6 +497,7 @@ function Browser({
     updates: Set<string>;
     failed: number;
   }>({ checking: false, updates: new Set(), failed: 0 });
+  const updateSpinner = useSpinner(Boolean(updatingSkillName));
   useEffect(() => {
     setVisibleStatus(status);
     if (!status || !transientStatus) return undefined;
@@ -503,6 +505,7 @@ function Browser({
     return () => clearTimeout(timer);
   }, [status, transientStatus]);
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
+  const selectedUpdates = selectedCollection.filter((skill) => updateCheck.updates.has(skill.name));
   const selectedProject = project.filter((skill) => selected.has(skill.path));
   const selectedGlobal = globalGroups.flatMap((group) =>
     group.skills.filter((skill) => selected.has(skill.path))
@@ -666,14 +669,15 @@ function Browser({
         return;
       }
       const row = rows[cursorRef.current];
-      if (
-        input === 'u' &&
-        tab === 'collection' &&
-        row?.type === 'skill' &&
-        row.skill.source?.type === 'git' &&
-        row.skill.source.refType === 'branch'
-      ) {
-        return finish({ ...browserState(), type: 'update', skill: row.skill as CollectedSkill });
+      if (input === 'u' && tab === 'collection') {
+        const updateable = selectedCollection.length
+          ? selectedUpdates
+          : row?.type === 'skill' && updateCheck.updates.has(row.skill.name)
+            ? [row.skill as CollectedSkill]
+            : [];
+        if (updateable.length) {
+          return finish({ ...browserState(), type: 'update', skills: updateable });
+        }
       }
       if (input === 't' && tab === 'collection' && selectedCollection.length) {
         return finish({ ...browserState(), type: 'tags', skills: selectedCollection });
@@ -857,13 +861,19 @@ function Browser({
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
-    tab === 'collection' && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
-      && !updatingSkillName
+    tab === 'collection' && !updatingSkillName && selectedCollection.length && selectedUpdates.length
+      ? `u 更新可更新的已选技能 (${selectedUpdates.length})`
+      : tab === 'collection' && !updatingSkillName && !selectedCollection.length
+        && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
       ? 'u 更新当前技能'
       : '',
   ].filter(Boolean);
   const activity = [
-    updatingSkillName ? `正在更新 ${updatingSkillName}…` : '',
+    updatingSkillName
+      ? `${updateSpinner} 正在更新${updatingProgress && updatingProgress.total > 1
+        ? ` ${updatingProgress.current}/${updatingProgress.total}`
+        : ''}：${updatingSkillName}`
+      : '',
     updateCheck.checking ? '正在检查更新…' : '',
     !updateCheck.checking && updateCheck.failed ? `${updateCheck.failed} 个技能检查失败` : '',
     visibleStatus,
@@ -1113,6 +1123,7 @@ export function displayBrowseSkills(
   initialFocus: BrowserFocus = 'tabs',
   transientStatus = false,
   updatingSkillName?: string,
+  updatingProgress?: { current: number; total: number },
   confirmation?: BrowserConfirmation
 ): void {
   session.display(
@@ -1130,6 +1141,7 @@ export function displayBrowseSkills(
       status={status}
       transientStatus={transientStatus}
       updatingSkillName={updatingSkillName}
+      updatingProgress={updatingProgress}
       confirmation={confirmation}
       finish={() => undefined}
     />

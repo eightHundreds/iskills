@@ -244,42 +244,48 @@ export async function interactiveList(
       if (result.type === 'update') {
         status = '';
         transientStatus = false;
-        session.close();
-        displayBrowseSkills(
-          projects,
-          collection,
-          globals,
-          session,
-          query,
-          tab,
-          canSync,
-          status,
-          cursor,
-          selected,
-          agent,
-          focus,
-          transientStatus,
-          result.skill.name
-        );
-        await delay(120);
-        try {
-          const updateStatus = await updateGitSkill(result.skill, false, {
-            quietDelete: true,
-            confirmDelete: (links) => confirmInBrowser(
-              `上游已删除 ${result.skill.name}，执行收藏夹移除流程吗？`,
-              links.map((link) => {
-                const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
-                return `${kind}：${link.path}`;
-              }),
-              '上游删除'
-            ),
-          });
-          status = `${result.skill.name}: ${updateStatus}`;
-          transientStatus = updateStatus === 'updated' || updateStatus === 'unchanged';
-        } catch (error) {
-          status = `${result.skill.name}: 更新失败 — ${errorMessage(error)}`;
-          transientStatus = false;
+        const outcomes: string[] = [];
+        let failed = 0;
+        for (const [index, skill] of result.skills.entries()) {
+          session.close();
+          displayBrowseSkills(
+            projects,
+            collection,
+            globals,
+            session,
+            query,
+            tab,
+            canSync,
+            status,
+            cursor,
+            selected,
+            agent,
+            focus,
+            transientStatus,
+            skill.name,
+            { current: index + 1, total: result.skills.length }
+          );
+          await delay(120);
+          try {
+            const updateStatus = await updateGitSkill(skill, false, {
+              quietDelete: true,
+              confirmDelete: (links) => confirmInBrowser(
+                `上游已删除 ${skill.name}，执行收藏夹移除流程吗？`,
+                links.map((link) => {
+                  const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
+                  return `${kind}：${link.path}`;
+                }),
+                '上游删除'
+              ),
+            });
+            outcomes.push(`${skill.name}: ${updateStatus}`);
+          } catch (error) {
+            failed += 1;
+            outcomes.push(`${skill.name}: 更新失败 — ${errorMessage(error)}`);
+          }
         }
+        status = outcomes.join(' · ');
+        transientStatus = failed === 0;
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
