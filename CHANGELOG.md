@@ -1,0 +1,214 @@
+# 更新日志
+
+本文件记录 `iskills` 的重要变更。
+
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [0.2.21] - 2026-07-12
+
+### 新增
+
+- 收藏夹浏览器支持使用 `u` 批量更新已选技能中所有可更新的技能。
+
+### 变更
+
+- 升级 TypeScript 7，并显式加载 Node.js 与 React 类型定义。
+- 优化技能导入确认流程，统一确认界面的视觉和交互行为。
+- 优化技能更新进度展示，批量更新时显示当前项与总进度。
+- 使用 pnpm 锁文件记录依赖解析结果。
+
+## [0.2.20] - 2026-07-10
+
+### 修复
+
+- 修复相对路径或已存在的本地路径被误识别为 GitHub 仓库简写的问题。
+
+## [0.2.19] - 2026-07-10
+
+### 新增
+
+- 支持从项目技能浏览器删除项目技能。
+- 支持从全局 Agent 浏览器删除全局技能。
+
+## [0.2.18] - 2026-07-09
+
+### 修复
+
+- 避免技能浏览器底部重复显示删除操作提示。
+
+## [0.2.17] - 2026-07-09
+
+### 变更
+
+- 优化技能导入和浏览器操作的确认界面，使提示语义和选择行为更加一致。
+
+## [0.2.16] - 2026-07-09
+
+### 变更
+
+- 优化技能浏览器快捷键帮助和详情页导航。
+- 仅有一个未分组区域时隐藏冗余的分组标题。
+
+## [0.2.15] - 2026-07-09
+
+### 新增
+
+- Git 导入确认界面显示仓库来源标识。
+- 更新收藏技能时显示进度状态。
+
+### 变更
+
+- 优化长技能名称在浏览器中的展示。
+
+## [0.2.14] - 2026-07-08
+
+### 变更
+
+- 最低 Node.js 版本提升至 24。
+- 测试框架迁移至 Vitest，并调整集成测试超时配置。
+- 修复跨平台 npm 锁文件问题。
+
+## [0.2.13] - 2026-07-08
+
+### 新增
+
+- 收藏夹浏览器按 Agent 目录对项目技能进行分组。
+- 增加浏览器、Git 和交互终端集成测试。
+
+### 变更
+
+- 将测试拆分为可并行测试与串行敏感测试，提高测试稳定性。
+- 稳定收藏夹同步和直接打开收藏夹的 PTY 流程。
+
+## [0.2.12] - 2026-07-08
+
+### 新增
+
+- 收藏技能时可选择安装方式。
+
+## [0.2.11] - 2026-07-08
+
+### 新增
+
+- 新增 `iskills search` 命令，可从 skills.sh 搜索并收藏技能。
+
+### 变更
+
+- 统一搜索自动化路径、收藏替换事务和终端生命周期管理。
+- 增加仓库开发指南，移除过期的符合性报告。
+
+## [0.2.10] - 2026-07-07
+
+### 新增
+
+- 支持检查并更新来源为 Git 分支的收藏技能。
+
+## [0.2.9] - 2026-07-06
+
+### 变更
+
+- 优化收藏夹中的技能查找体验。
+
+## [0.2.8] - 2026-07-06
+
+### 变更
+
+- 改进 Skill 安装目标的选择流程。
+
+## [0.2.7] - 2026-07-06
+
+### 修复
+
+- 移除 `@inkjs/ui` 引发的多 React 副本问题，修复终端界面崩溃。
+
+## [0.2.6] - 2026-07-05
+
+### 变更
+
+- 将收藏夹添加流程的 PTY 测试改为集成测试，提高测试稳定性。
+
+## [0.2.5] - 2026-07-05
+
+### 变更
+
+- 将不稳定的 PTY 测试改为非交互集成测试。
+
+## [0.2.4] - 2026-07-05
+
+### 新增
+
+- 技能浏览器新增全局 Agent 标签页。
+- 支持将全局 Agent 技能批量加入收藏夹。
+
+### 修复
+
+- 修正三标签页浏览器 PTY 测试的导航步骤。
+
+## [0.2.3] - 2026-07-05
+
+### 新增
+
+- 无子命令启动时直接进入收藏夹浏览器，并可从界面添加技能。
+- 技能浏览器支持按标签分组、多选和批量添加标签。
+- 新增可视化标签编辑器。
+- 项目技能页标记本地技能，并支持一键导入收藏夹。
+
+### 变更
+
+- 收藏夹列表优先展示技能备注。
+
+## [0.2.2] - 2026-07-04
+
+### 变更
+
+- 改进导入流程中的技能选择体验。
+
+## [0.2.1] - 2026-07-04
+
+### 修复
+
+- 精简并修正 CLI 帮助和初始化命令输出。
+
+## [0.2.0] - 2026-07-04
+
+### 新增
+
+- 初始化收藏夹 Git 仓库，为技能收藏的版本控制和同步提供基础能力。
+
+## [0.1.0] - 2026-07-04
+
+### 新增
+
+- 首次发布 `iskills` CLI。
+- 支持技能的导入、安装、列出、删除和收藏夹管理。
+- 提供基于 Ink 的终端技能浏览器和交互式提示。
+- 集成 Git 收藏夹同步能力。
+- 配置 npm 自动发布和跨平台 CI 测试。
+
+### 修复
+
+- 确保 npm 发布包保留 CLI 可执行权限。
+
+[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.20...HEAD
+[0.2.20]: https://github.com/eightHundreds/iskills/compare/v0.2.19...v0.2.20
+[0.2.19]: https://github.com/eightHundreds/iskills/compare/v0.2.18...v0.2.19
+[0.2.18]: https://github.com/eightHundreds/iskills/compare/v0.2.17...v0.2.18
+[0.2.17]: https://github.com/eightHundreds/iskills/compare/v0.2.16...v0.2.17
+[0.2.16]: https://github.com/eightHundreds/iskills/compare/v0.2.15...v0.2.16
+[0.2.15]: https://github.com/eightHundreds/iskills/compare/v0.2.14...v0.2.15
+[0.2.14]: https://github.com/eightHundreds/iskills/compare/v0.2.13...v0.2.14
+[0.2.13]: https://github.com/eightHundreds/iskills/compare/v0.2.12...v0.2.13
+[0.2.12]: https://github.com/eightHundreds/iskills/compare/v0.2.11...v0.2.12
+[0.2.11]: https://github.com/eightHundreds/iskills/compare/v0.2.10...v0.2.11
+[0.2.10]: https://github.com/eightHundreds/iskills/compare/v0.2.9...v0.2.10
+[0.2.9]: https://github.com/eightHundreds/iskills/compare/v0.2.8...v0.2.9
+[0.2.8]: https://github.com/eightHundreds/iskills/compare/v0.2.7...v0.2.8
+[0.2.7]: https://github.com/eightHundreds/iskills/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/eightHundreds/iskills/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/eightHundreds/iskills/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/eightHundreds/iskills/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/eightHundreds/iskills/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/eightHundreds/iskills/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/eightHundreds/iskills/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/eightHundreds/iskills/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/eightHundreds/iskills/releases/tag/v0.1.0
