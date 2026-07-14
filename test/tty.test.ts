@@ -6,9 +6,10 @@ import {
   mkdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import {
   exec,
@@ -893,7 +894,7 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
     assert.match(result.stdout, /‹ collected-skill/);
     assert.doesNotMatch(result.stdout, /本地 · collected-skill/);
     assert.match(result.stdout, /○ 本地 · local-only/);
-    assert.match(result.stdout, /○ collected-skill/);
+    assert.match(result.stdout, /引用 ·/);
     assert.doesNotMatch(result.stdout, /claude \(0\)/);
     assert.doesNotMatch(result.stdout, /codex \(0\)/);
     assert.doesNotMatch(result.stdout, /cursor \(0\)/);
@@ -903,6 +904,166 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
       true
     );
     assert.equal((await lstat(local)).isSymbolicLink(), true);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY project tab materializes the current Skill reference from the more-actions menu', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.root, 'sources/menu-reference');
+  const reference = join(context.project, '.agents/skills/menu-reference');
+  await makeSkill(source, 'menu-reference');
+  await mkdir(join(context.project, '.agents/skills'), { recursive: true });
+  await symlink(source, reference);
+
+  try {
+    const result = await runInteractive(context, ['list'], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: 'm 更多操作', send: 'm', enter: false, delayAfter: 100 },
+      { wait: '更多操作', send: '', enter: false },
+      { wait: '技能：menu-reference', send: '', enter: false },
+      { wait: '将引用转为副本', send: '', delayAfter: 100 },
+      { wait: '正在转换 1/1：menu-reference', send: '', enter: false },
+      { wait: '已将 menu-reference 转为副本', send: 'q', enter: false },
+    ], context.project, { rows: 10, columns: 40 });
+
+    assert.match(result.stdout, /引用 ·/);
+    assert.match(result.stdout, /m 更多操作/);
+    assert.doesNotMatch(result.stdout, /转换.*\(y\/N\)/);
+    assert.equal((await lstat(reference)).isDirectory(), true);
+    assert.equal((await lstat(reference)).isSymbolicLink(), false);
+    assert.equal(await readFile(join(reference, 'asset.txt'), 'utf8'), 'keep me\n');
+    assert.equal(await readFile(join(source, 'asset.txt'), 'utf8'), 'keep me\n');
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY project more-actions menu materializes all selected Skill references', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const skillRoot = join(context.project, '.agents/skills');
+  const alphaSource = join(context.root, 'sources/alpha-reference');
+  const betaSource = join(context.root, 'sources/beta-reference');
+  const alpha = join(skillRoot, 'alpha-reference');
+  const beta = join(skillRoot, 'beta-reference');
+  await makeSkill(alphaSource, 'alpha-reference');
+  await makeSkill(betaSource, 'beta-reference');
+  await mkdir(skillRoot, { recursive: true });
+  await symlink(alphaSource, alpha);
+  await symlink(betaSource, beta);
+
+  try {
+    const result = await runInteractive(context, ['list'], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: 'm 更多操作', send: ' ', enter: false },
+      { wait: '已选 1', send: '\u001b[B', enter: false },
+      { wait: 'beta-reference', send: ' ', enter: false },
+      { wait: '已选 2 · m 更多操作', send: 'm', enter: false },
+      { wait: '已选择 2 个技能', send: '', enter: false },
+      { wait: '将引用转为副本', send: '' },
+      { wait: '正在转换 1/2：alpha-reference', send: '', enter: false },
+      { wait: '正在转换 2/2：beta-reference', send: '', enter: false },
+      { wait: '已将 2 个引用转为副本', send: 'q', enter: false },
+    ]);
+
+    assert.doesNotMatch(result.stdout, /转换.*\(y\/N\)/);
+    assert.equal((await lstat(alpha)).isDirectory(), true);
+    assert.equal((await lstat(beta)).isDirectory(), true);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY project more-actions menu stays unavailable for a mixed selection', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const skillRoot = join(context.project, '.agents/skills');
+  const source = join(context.root, 'sources/alpha-reference');
+  const reference = join(skillRoot, 'alpha-reference');
+  const local = join(skillRoot, 'beta-local');
+  await makeSkill(source, 'alpha-reference');
+  await makeSkill(local, 'beta-local');
+  await symlink(source, reference);
+
+  try {
+    const result = await runInteractive(context, ['list'], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: 'm 更多操作', send: ' ', enter: false },
+      { wait: '已选 1', send: '\u001b[B', enter: false },
+      { wait: 'beta-local', send: ' ', enter: false },
+      { wait: '已选 2 · i 加入收藏夹', send: 'm', enter: false, delayAfter: 150 },
+      { send: 'q', enter: false },
+    ]);
+
+    assert.doesNotMatch(result.stdout, /╭─ 更多操作/);
+    assert.equal((await lstat(reference)).isSymbolicLink(), true);
+    assert.equal((await lstat(local)).isDirectory(), true);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('Ctrl+C during reference conversion exits 130 and preserves the reference', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.root, 'sources/interrupted-reference');
+  const reference = join(context.project, '.agents/skills/interrupted-reference');
+  await makeSkill(source, 'interrupted-reference');
+  await mkdir(dirname(reference), { recursive: true });
+  await symlink(source, reference);
+
+  try {
+    try {
+      await runInteractive(context, ['list'], [
+        { wait: '↓ 进入', send: '\u001b[B', enter: false },
+        { wait: '切换 Agent', send: '\u001b[B', enter: false },
+        { wait: 'm 更多操作', send: 'm', enter: false },
+        { wait: '将引用转为副本', send: '' },
+        {
+          wait: '正在转换 1/1：interrupted-reference',
+          send: '\u0003',
+          enter: false,
+          delayAfter: 100,
+        },
+      ]);
+      assert.fail('Ctrl+C should interrupt reference conversion');
+    } catch (error) {
+      const failure = error as Error & { code?: number; stdout?: string };
+      assert.equal(failure.code, 130);
+      assert.doesNotMatch(failure.stdout || '', /错误：/);
+    }
+    assert.equal((await lstat(reference)).isSymbolicLink(), true);
+    assert.equal(await readFile(join(reference, 'asset.txt'), 'utf8'), 'keep me\n');
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

@@ -6,10 +6,18 @@ import {
   readFile,
   readlink,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { isGitSource, parseGitSource } from '../src/core.js';
+import {
+  ensureCollection,
+  isGitSource,
+  materializeSkillReferences,
+  parseGitSource,
+  readState,
+  writeState,
+} from '../src/core.js';
 import {
   makeContext,
   makeSkill,
@@ -17,6 +25,25 @@ import {
   type JsonLink,
   type JsonSkill,
 } from './helpers.js';
+
+async function withCollectionEnvironment<T>(
+  context: Awaited<ReturnType<typeof makeContext>>,
+  action: () => Promise<T>
+): Promise<T> {
+  const previousHome = process.env.HOME;
+  const previousConfig = process.env.XDG_CONFIG_HOME;
+  process.env.HOME = context.home;
+  process.env.XDG_CONFIG_HOME = context.config;
+  try {
+    await ensureCollection();
+    return await action();
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousConfig;
+  }
+}
 
 test('explicit relative paths are not GitHub shorthand', () => {
   assert.equal(isGitSource('./skill'), false);
@@ -79,6 +106,144 @@ test('copy leaves collection management immediately', async () => {
 
     const state = JSON.parse(await readFile(join(context.collection, '.local/state.json'), 'utf8'));
     assert.equal(state.links.some((link: JsonLink) => link.path === copied), false);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('materializes an arbitrary local Skill reference without changing its source', async () => {
+  const context = await makeContext();
+  const source = join(context.root, 'source', 'referenced-skill');
+  const reference = join(context.project, '.agents/skills/referenced-skill');
+  await makeSkill(source, 'referenced-skill');
+  await mkdir(join(source, 'docs'), { recursive: true });
+  await writeFile(join(source, '.hidden'), 'hidden\n', 'utf8');
+  await symlink('../asset.txt', join(source, 'docs/current'));
+  await mkdir(dirname(reference), { recursive: true });
+  await symlink(source, reference);
+
+  try {
+    await withCollectionEnvironment(context, async () => {
+      await materializeSkillReferences([
+        { name: 'referenced-skill', description: 'Demo skill', path: reference },
+      ]);
+      assert.equal((await lstat(reference)).isDirectory(), true);
+      assert.equal((await lstat(reference)).isSymbolicLink(), false);
+      assert.equal((await lstat(join(reference, 'docs/current'))).isSymbolicLink(), false);
+      assert.equal(await readFile(join(reference, 'docs/current'), 'utf8'), 'keep me\n');
+      assert.equal(await readFile(join(reference, '.hidden'), 'utf8'), 'hidden\n');
+      assert.equal((await lstat(source)).isDirectory(), true);
+      assert.equal((await lstat(join(source, 'docs/current'))).isSymbolicLink(), true);
+      assert.deepEqual((await readState()).links, []);
+    });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('rejects an escaping nested symlink without materializing any selected reference', async () => {
+  const context = await makeContext();
+  const alphaSource = join(context.root, 'sources/alpha');
+  const betaSource = join(context.root, 'sources/beta');
+  const alpha = join(context.project, '.agents/skills/alpha');
+  const beta = join(context.project, '.agents/skills/beta');
+  await makeSkill(alphaSource, 'alpha');
+  await makeSkill(betaSource, 'beta');
+  await writeFile(join(context.root, 'outside.txt'), 'outside\n', 'utf8');
+  await symlink(join(context.root, 'outside.txt'), join(betaSource, 'escape'));
+  await mkdir(dirname(alpha), { recursive: true });
+  await symlink(alphaSource, alpha);
+  await symlink(betaSource, beta);
+
+  try {
+    await withCollectionEnvironment(context, async () => {
+      await assert.rejects(
+        materializeSkillReferences([
+          { name: 'alpha', description: 'Demo skill', path: alpha },
+          { name: 'beta', description: 'Demo skill', path: beta },
+        ]),
+        /技能包含指向目录外的软链/
+      );
+      assert.equal((await lstat(alpha)).isSymbolicLink(), true);
+      assert.equal((await lstat(beta)).isSymbolicLink(), true);
+    });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('materializing a collection origin removes dependent state but retains usage links', async () => {
+  const context = await makeContext();
+  const collected = join(context.collection, 'skills/managed-skill');
+  const origin = join(context.project, '.agents/skills/managed-skill');
+  const dependent = join(context.project, '.claude/skills/managed-skill');
+  const usage = join(context.project, '.codex/skills/managed-skill');
+
+  try {
+    await withCollectionEnvironment(context, async () => {
+      await makeSkill(collected, 'managed-skill');
+      await mkdir(dirname(origin), { recursive: true });
+      await mkdir(dirname(dependent), { recursive: true });
+      await mkdir(dirname(usage), { recursive: true });
+      await symlink(collected, origin);
+      await symlink(origin, dependent);
+      await symlink(collected, usage);
+      await writeState({
+        links: [
+          { skill: 'managed-skill', path: origin, kind: 'origin' },
+          { skill: 'managed-skill', path: dependent, kind: 'dependent' },
+          { skill: 'managed-skill', path: usage, kind: 'usage' },
+        ],
+        conflicts: [],
+      });
+
+      await materializeSkillReferences([
+        { name: 'managed-skill', description: 'Demo skill', path: origin },
+      ]);
+
+      assert.equal((await lstat(origin)).isDirectory(), true);
+      assert.equal((await lstat(dependent)).isSymbolicLink(), true);
+      const state = await readState();
+      assert.deepEqual(state.links, [
+        { skill: 'managed-skill', path: usage, kind: 'usage' },
+      ]);
+    });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('materializing a collection usage removes only that usage state', async () => {
+  const context = await makeContext();
+  const collected = join(context.collection, 'skills/usage-skill');
+  const converted = join(context.project, '.agents/skills/usage-skill');
+  const retained = join(context.project, '.claude/skills/usage-skill');
+
+  try {
+    await withCollectionEnvironment(context, async () => {
+      await makeSkill(collected, 'usage-skill');
+      await mkdir(dirname(converted), { recursive: true });
+      await mkdir(dirname(retained), { recursive: true });
+      await symlink(collected, converted);
+      await symlink(collected, retained);
+      await writeState({
+        links: [
+          { skill: 'usage-skill', path: converted, kind: 'usage' },
+          { skill: 'usage-skill', path: retained, kind: 'usage' },
+        ],
+        conflicts: [],
+      });
+
+      await materializeSkillReferences([
+        { name: 'usage-skill', description: 'Demo skill', path: converted },
+      ]);
+
+      assert.deepEqual((await readState()).links, [
+        { skill: 'usage-skill', path: retained, kind: 'usage' },
+      ]);
+      assert.equal((await lstat(converted)).isDirectory(), true);
+      assert.equal((await lstat(retained)).isSymbolicLink(), true);
+    });
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

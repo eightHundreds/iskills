@@ -23,6 +23,7 @@ export interface Skill {
   name: string;
   description: string;
   path: string;
+  isReference?: boolean;
   tags?: string[];
   note?: string;
   source?: SkillSource;

@@ -36,6 +36,7 @@ export type BrowserResult =
       | { type: 'add'; skills: CollectedSkill[] }
       | { type: 'removeCollection'; skills: CollectedSkill[] }
       | { type: 'removeLocations'; skills: Skill[] }
+      | { type: 'materialize'; skills: Skill[] }
       | { type: 'import'; skills: Skill[] }
       | { type: 'open'; skill: Skill; collection: boolean }
     ));
@@ -188,11 +189,16 @@ function shortcutHelpLines(width: number): string[] {
     's 同步 Git（收藏夹可同步时）',
     'u 更新可更新的已选技能；无选择时更新当前技能',
     'd/Delete 删除已选技能；无选择时删除当前技能',
+    'm 更多操作（当前项目引用可转换时）',
     'q 退出 · Esc 取消当前上下文',
     '',
     'Esc / q / ? 关闭',
   ];
   return framedLines(' 完整快捷键 ', content, width);
+}
+
+function moreActionLines(scope: string, width: number): string[] {
+  return framedLines(' 更多操作 ', [scope, '', '› 将引用转为副本'], width);
 }
 
 function confirmationLines(confirmation: BrowserConfirmation, width: number): string[] {
@@ -207,7 +213,17 @@ function confirmationLines(confirmation: BrowserConfirmation, width: number): st
   );
 }
 
-function PopupLine({ line, index, last }: { line: string; index: number; last: number }) {
+function PopupLine({
+  line,
+  index,
+  last,
+  muteLastContent,
+}: {
+  line: string;
+  index: number;
+  last: number;
+  muteLastContent: boolean;
+}) {
   if (index === 0 || index === last) {
     return <Text color={termcnColors.primary}>{line}</Text>;
   }
@@ -215,7 +231,7 @@ function PopupLine({ line, index, last }: { line: string; index: number; last: n
   return (
     <Text>
       <Text color={termcnColors.primary}>│ </Text>
-      {index === last - 1 ? (
+      {muteLastContent && index === last - 1 ? (
         <Text color={termcnColors.muted}>{content}</Text>
       ) : (
         content
@@ -233,10 +249,12 @@ function SkillPane({
   showShortcuts = false,
   preferNote = false,
   showSource = false,
+  showReferences = false,
   showGroup = false,
   updates = new Set<string>(),
   updatingSkillName,
   overlayLines,
+  overlayMuteLastContent = true,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -245,10 +263,12 @@ function SkillPane({
   showShortcuts?: boolean;
   preferNote?: boolean;
   showSource?: boolean;
+  showReferences?: boolean;
   showGroup?: boolean;
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
   overlayLines?: string[] | undefined;
+  overlayMuteLastContent?: boolean;
 }) {
   const { stdout } = useStdout();
   const height = Math.max(3, (stdout.rows ?? 24) - 8);
@@ -275,7 +295,11 @@ function SkillPane({
     const skill = row.skill;
     const summary = (preferNote && skill.note) || skill.description;
     const selectionMarker = selected.has(skill.path) ? '●' : '○';
-    const name = showSource && !skill.fromCollection ? `本地 · ${skill.name}` : skill.name;
+    const name = showReferences && skill.isReference
+      ? `引用 · ${skill.name}`
+      : showSource && !skill.fromCollection
+        ? `本地 · ${skill.name}`
+        : skill.name;
     const group = showGroup && row.group ? `${row.group} / ` : '';
     const update = updatingSkillName === skill.name ? ' 更新中' : updates.has(skill.name) ? ' ↑' : '';
     return `  ${isActive && index === active ? '›' : ' '} ${selectionMarker} ${group}${name}${update}${summary ? ` — ${summary}` : ''}`;
@@ -309,7 +333,12 @@ function SkillPane({
         {showGroup && row.group && (
           <Text color={termcnColors.muted}>{row.group} / </Text>
         )}
-        {showSource && !skill.fromCollection ? (
+        {showReferences && skill.isReference ? (
+          <>
+            <Text color={termcnColors.muted}>引用 · </Text>
+            <Text bold={isActive && index === active}>{skill.name}</Text>
+          </>
+        ) : showSource && !skill.fromCollection ? (
           `本地 · ${skill.name}`
         ) : (
           <Text bold={isActive && index === active}>{skill.name}</Text>
@@ -347,6 +376,7 @@ function SkillPane({
             line={popupLine}
             index={popupIndex}
             last={popupLines.length - 1}
+            muteLastContent={overlayLines ? overlayMuteLastContent : true}
           />
           {suffix}
         </Text>
@@ -416,6 +446,7 @@ function Browser({
   transientStatus,
   updatingSkillName,
   updatingProgress,
+  workingAction = '更新',
   confirmation,
   finish,
 }: {
@@ -433,6 +464,7 @@ function Browser({
   transientStatus: boolean;
   updatingSkillName?: string | undefined;
   updatingProgress?: { current: number; total: number } | undefined;
+  workingAction?: '更新' | '转换';
   confirmation?: BrowserConfirmation | undefined;
   finish: (result: BrowserResult) => void;
 }) {
@@ -485,6 +517,7 @@ function Browser({
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showActions, setShowActions] = useState(false);
   const [removeConfirmation, setRemoveConfirmation] = useState<{
     scope: 'collection' | 'location';
     skills: Skill[];
@@ -516,6 +549,19 @@ function Browser({
   const selectedGlobalLocal = globalGroups.flatMap((group) =>
     group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
   );
+  const currentRow = rows[cursor];
+  const actionSkills = tab === 'project'
+    ? selectedProject.length
+      ? selectedProject
+      : currentRow?.type === 'skill'
+        ? [currentRow.skill]
+        : []
+    : [];
+  const canOpenActions =
+    !updatingSkillName &&
+    focus === 'list' &&
+    actionSkills.length > 0 &&
+    actionSkills.every((skill) => skill.isReference);
   const groupRows = useMemo(
     () => groupedRows(tab === 'project' ? project : collection, ''),
     [collection, project, tab]
@@ -613,7 +659,14 @@ function Browser({
         activeConfirmation,
         Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))
       )
-    : undefined;
+    : showActions
+      ? moreActionLines(
+          selectedProject.length
+            ? `已选择 ${actionSkills.length} 个技能`
+            : `技能：${actionSkills[0]?.name ?? ''}`,
+          Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6))
+        )
+      : undefined;
   useInput(
     (input, key) => {
       const choice = input.trim().toLowerCase();
@@ -623,6 +676,15 @@ function Browser({
       }
     },
     { isActive: Boolean(activeConfirmation) }
+  );
+  useInput(
+    (input, key) => {
+      if (key.escape) return setShowActions(false);
+      if (key.return || input.includes('\r') || input.includes('\n')) {
+        return finish({ ...browserState(), type: 'materialize', skills: actionSkills });
+      }
+    },
+    { isActive: showActions && !activeConfirmation }
   );
   useInput(
     (input, key) => {
@@ -669,6 +731,7 @@ function Browser({
         return;
       }
       const row = rows[cursorRef.current];
+      if (input === 'm' && canOpenActions) return setShowActions(true);
       if (input === 'u' && tab === 'collection') {
         const updateable = selectedCollection.length
           ? selectedUpdates
@@ -749,6 +812,7 @@ function Browser({
         !searching &&
         !choosingGroup &&
         !showShortcuts &&
+        !showActions &&
         !updatingSkillName &&
         !activeConfirmation,
     }
@@ -780,7 +844,9 @@ function Browser({
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
+            overlayMuteLastContent={Boolean(activeConfirmation)}
             showSource
+            showReferences
             showGroup={Boolean(query.trim())}
           />
         </Box>
@@ -803,6 +869,7 @@ function Browser({
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
+            overlayMuteLastContent={Boolean(activeConfirmation)}
             showSource
           />
         </Box>
@@ -819,6 +886,7 @@ function Browser({
           isActive={focus === 'list'}
           showShortcuts={showShortcuts}
           overlayLines={overlayLines}
+          overlayMuteLastContent={Boolean(activeConfirmation)}
           preferNote
           showGroup={Boolean(query.trim())}
           updates={updateCheck.updates}
@@ -847,7 +915,6 @@ function Browser({
     );
   }
 
-  const currentRow = rows[cursor];
   const canViewWithRightArrow =
     currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
   const canViewWithEnter =
@@ -857,7 +924,8 @@ function Browser({
     (tab === 'project' && selectedProject.length > 0) ||
     (tab === 'global' && selectedGlobal.length > 0) ||
     currentRow?.type === 'skill';
-  const actions = [
+  const actions = updatingSkillName ? [] : [
+    canOpenActions ? 'm 更多操作' : '',
     tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
     tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
     tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
@@ -870,7 +938,8 @@ function Browser({
   ].filter(Boolean);
   const activity = [
     updatingSkillName
-      ? `${updateSpinner} 正在更新${updatingProgress && updatingProgress.total > 1
+      ? `${updateSpinner} 正在${workingAction}${updatingProgress &&
+        (workingAction === '转换' || updatingProgress.total > 1)
         ? ` ${updatingProgress.current}/${updatingProgress.total}`
         : ''}：${updatingSkillName}`
       : '',
@@ -886,7 +955,7 @@ function Browser({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
-        isActive={!searching && !showShortcuts && focus === 'tabs'}
+        isActive={!searching && !showShortcuts && !showActions && focus === 'tabs'}
         enableArrowNav={false}
         focused={!searching && !showShortcuts && focus === 'tabs'}
       />
@@ -912,9 +981,11 @@ function Browser({
         <Box flexDirection="column">
           <Text color={termcnColors.muted} wrap="truncate-end">
             {updatingSkillName
-              ? '正在更新 · 请稍候'
+              ? `正在${workingAction} · 请稍候`
               : activeConfirmation
               ? '等待确认'
+              : showActions
+              ? '↑/↓ 移动 · Enter 执行 · Esc 返回'
               : showShortcuts
               ? 'Esc / q / ? 关闭'
               : focus === 'tabs'
@@ -1124,7 +1195,9 @@ export function displayBrowseSkills(
   transientStatus = false,
   updatingSkillName?: string,
   updatingProgress?: { current: number; total: number },
-  confirmation?: BrowserConfirmation
+  confirmation?: BrowserConfirmation,
+  workingAction: '更新' | '转换' = '更新',
+  onInterrupt?: () => void
 ): void {
   session.display(
     <Browser
@@ -1142,8 +1215,10 @@ export function displayBrowseSkills(
       transientStatus={transientStatus}
       updatingSkillName={updatingSkillName}
       updatingProgress={updatingProgress}
+      workingAction={workingAction}
       confirmation={confirmation}
       finish={() => undefined}
-    />
+    />,
+    onInterrupt
   );
 }
