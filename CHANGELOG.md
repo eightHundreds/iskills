@@ -4,6 +4,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.22] - 2026-07-14
+
+### 新增
+
+- 收藏夹浏览器支持将技能链接转换为本地副本（`c` 快捷键），便于在不脱离版本控制的前提下自定义修改技能。
+
 ## [0.2.21] - 2026-07-12
 
 ### 新增
@@ -189,7 +195,9 @@
 
 - 确保 npm 发布包保留 CLI 可执行权限。
 
-[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.20...HEAD
+[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.22...HEAD
+[0.2.22]: https://github.com/eightHundreds/iskills/compare/v0.2.21...v0.2.22
+[0.2.21]: https://github.com/eightHundreds/iskills/compare/v0.2.20...v0.2.21
 [0.2.20]: https://github.com/eightHundreds/iskills/compare/v0.2.19...v0.2.20
 [0.2.19]: https://github.com/eightHundreds/iskills/compare/v0.2.18...v0.2.19
 [0.2.18]: https://github.com/eightHundreds/iskills/compare/v0.2.17...v0.2.18
