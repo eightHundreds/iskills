@@ -16,6 +16,7 @@ import {
   listCollection,
   listProject,
   listProjectGroups,
+  materializeSkillReferences,
   matches,
   parseGitSource,
   readMetadata,
@@ -35,7 +36,7 @@ import {
   type BrowserFocus,
   type BrowserTab,
 } from '../ui/browser.js';
-import { InkSession } from '../ui/session.js';
+import { InkSession, InterruptError } from '../ui/session.js';
 import {
   addSkillsToProject,
   globalSkillGroups,
@@ -404,6 +405,50 @@ export async function interactiveList(
           selected = selected.filter((path) => !removed.has(path));
         } catch (error) {
           status = `删除失败 — ${errorMessage(error)}`;
+          transientStatus = false;
+        }
+        process.stdout.write(CLEAR_SCREEN);
+        continue;
+      }
+      if (result.type === 'materialize') {
+        const controller = new AbortController();
+        try {
+          await materializeSkillReferences(result.skills, {
+            signal: controller.signal,
+            onProgress: async (skill, current, total) => {
+              displayBrowseSkills(
+                projects,
+                collection,
+                globals,
+                session,
+                query,
+                tab,
+                canSync,
+                status,
+                cursor,
+                selected,
+                agent,
+                focus,
+                transientStatus,
+                skill.name,
+                { current, total },
+                undefined,
+                '转换',
+                () => controller.abort()
+              );
+              await delay(120);
+            },
+          });
+          status = result.skills.length === 1
+            ? `已将 ${result.skills[0]?.name ?? ''} 转为副本`
+            : `已将 ${result.skills.length} 个引用转为副本`;
+          transientStatus = true;
+          selected = [];
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw new InterruptError();
+          }
+          status = `转换失败 — ${errorMessage(error)}`;
           transientStatus = false;
         }
         process.stdout.write(CLEAR_SCREEN);

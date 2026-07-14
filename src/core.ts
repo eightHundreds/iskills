@@ -5,6 +5,7 @@ import {
   cp,
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   readlink,
@@ -195,6 +196,7 @@ export async function readSkill(path: string): Promise<Skill> {
     name,
     description: sanitizeTerminal(fields.description || ''),
     path: resolve(path),
+    isReference: (await lstat(path)).isSymbolicLink(),
   };
 }
 
@@ -210,6 +212,47 @@ export async function validateSkillTree(root: string, current = root): Promise<v
     } else if (entry.isDirectory() && entry.name !== '.git') {
       await validateSkillTree(root, path);
     }
+  }
+}
+
+async function validateMaterializableSkillTree(
+  root: string,
+  current = root,
+  ancestors = new Set<string>()
+): Promise<void> {
+  const currentReal = await realpath(current);
+  if (ancestors.has(currentReal)) {
+    throw new Error(`技能包含循环软链：${current}`);
+  }
+  const nextAncestors = new Set(ancestors).add(currentReal);
+  for (const entry of await readdir(current, { withFileTypes: true })) {
+    const path = join(current, entry.name);
+    if (entry.isSymbolicLink()) {
+      let target: string;
+      try {
+        target = await realpath(path);
+      } catch {
+        throw new Error(`技能包含无法解析的软链：${path}`);
+      }
+      if (target !== root && !target.startsWith(`${root}${sep}`)) {
+        throw new Error(`技能包含指向目录外的软链：${path}`);
+      }
+      if ((await lstat(target)).isDirectory()) {
+        await validateMaterializableSkillTree(root, target, nextAncestors);
+      }
+    } else if (entry.isDirectory()) {
+      await validateMaterializableSkillTree(root, path, nextAncestors);
+    }
+  }
+}
+
+async function assertMaterializedTree(current: string): Promise<void> {
+  for (const entry of await readdir(current, { withFileTypes: true })) {
+    const path = join(current, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`副本仍包含软链：${path}`);
+    }
+    if (entry.isDirectory()) await assertMaterializedTree(path);
   }
 }
 
@@ -495,7 +538,12 @@ export async function listProjectGroups(cwd = process.cwd()): Promise<
         try {
           const collected = collectedByPath.get(await realpath(skill.path));
           return collected
-            ? { ...collected, path: skill.path, fromCollection: true }
+            ? {
+                ...collected,
+                path: skill.path,
+                fromCollection: true,
+                isReference: Boolean(skill.isReference),
+              }
             : { ...skill, fromCollection: false };
         } catch {
           return { ...skill, fromCollection: false };
@@ -591,26 +639,195 @@ export async function removeFromCollection(
   }
 }
 
-export async function removeSkillLocations(skills: Skill[]): Promise<number> {
-  const paths = collectionPaths();
-  const collectionRoot = resolve(paths.root);
+async function validateSkillLocations(
+  skills: Skill[],
+  operation: '删除' | '转换'
+): Promise<Map<string, Skill>> {
+  const collectionRoot = resolve(collectionPaths().root);
   const unique = new Map<string, Skill>();
   for (const skill of skills) unique.set(resolve(skill.path), skill);
 
   for (const [path, skill] of unique) {
     if (path === collectionRoot || path.startsWith(`${collectionRoot}${sep}`)) {
-      throw new Error(`不能通过位置删除收藏夹内容：${path}`);
+      throw new Error(`不能通过位置${operation}收藏夹内容：${path}`);
     }
     if (!(await pathPresent(path))) throw new Error(`技能位置已不存在：${path}`);
     let current: Skill;
     try {
       current = await readSkill(path);
     } catch {
-      throw new Error(`技能位置已发生变化，未删除：${path}`);
+      throw new Error(`技能位置已发生变化${operation === '删除' ? '，未删除' : ''}：${path}`);
     }
     if (current.name !== skill.name) {
-      throw new Error(`技能位置已发生变化，未删除：${path}`);
+      throw new Error(`技能位置已发生变化${operation === '删除' ? '，未删除' : ''}：${path}`);
     }
+  }
+  return unique;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error('操作已中断');
+  error.name = 'AbortError';
+  throw error;
+}
+
+interface MaterializeSkillReferencesOptions {
+  signal?: AbortSignal;
+  onProgress?: (skill: Skill, current: number, total: number) => void | Promise<void>;
+}
+
+interface PreparedMaterialization {
+  skill: Skill;
+  path: string;
+  source: string;
+  workspace: string;
+  staged: string;
+  backup: string;
+  replaced: boolean;
+}
+
+export async function materializeSkillReferences(
+  skills: Skill[],
+  options: MaterializeSkillReferencesOptions = {}
+): Promise<number> {
+  if (!skills.length) return 0;
+  const unique = await validateSkillLocations(skills, '转换');
+  const preflight: Array<{ skill: Skill; path: string; source: string }> = [];
+  for (const [path, skill] of unique) {
+    throwIfAborted(options.signal);
+    if (!(await lstat(path)).isSymbolicLink()) {
+      throw new Error(`技能位置不是引用：${path}`);
+    }
+    let source: string;
+    try {
+      source = await realpath(path);
+    } catch {
+      throw new Error(`技能引用无法解析：${path}`);
+    }
+    if (!(await lstat(source)).isDirectory()) {
+      throw new Error(`技能引用目标不是目录：${path}`);
+    }
+    await validateMaterializableSkillTree(source);
+    preflight.push({ skill, path, source });
+  }
+
+  const prepared: PreparedMaterialization[] = [];
+  let committed = false;
+  try {
+    for (const [index, input] of preflight.entries()) {
+      throwIfAborted(options.signal);
+      await options.onProgress?.(input.skill, index + 1, preflight.length);
+      throwIfAborted(options.signal);
+      const workspace = await mkdtemp(
+        join(dirname(input.path), `.iskills-materialize-${basename(input.path)}-`)
+      );
+      const staged = join(workspace, 'tree');
+      const item: PreparedMaterialization = {
+        ...input,
+        workspace,
+        staged,
+        backup: join(workspace, 'reference'),
+        replaced: false,
+      };
+      prepared.push(item);
+      await cp(input.source, staged, {
+        recursive: true,
+        dereference: true,
+        errorOnExist: true,
+      });
+      throwIfAborted(options.signal);
+      await assertMaterializedTree(staged);
+      const copied = await readSkill(staged);
+      if (copied.name !== input.skill.name) {
+        throw new Error(`复制结果中的技能名称已发生变化：${input.path}`);
+      }
+    }
+
+    const state = await readState();
+    const convertedPaths = new Set(prepared.map((item) => resolve(item.path)));
+    const convertedOrigins = new Set(
+      state.links
+        .filter(
+          (link) => link.kind === 'origin' && convertedPaths.has(resolve(link.path))
+        )
+        .map((link) => link.skill)
+    );
+    const nextLinks = state.links.filter(
+      (link) =>
+        !convertedPaths.has(resolve(link.path)) &&
+        !(link.kind === 'dependent' && convertedOrigins.has(link.skill))
+    );
+    const stateChanged = nextLinks.length !== state.links.length;
+    let stateWriteAttempted = false;
+
+    try {
+      for (const item of prepared) {
+        throwIfAborted(options.signal);
+        await rename(item.path, item.backup);
+        try {
+          await rename(item.staged, item.path);
+          item.replaced = true;
+        } catch (error) {
+          try {
+            await rename(item.backup, item.path);
+          } catch (rollbackError) {
+            throw new Error(
+              `转换失败：${errorMessage(error)}；回滚失败：${item.path}: ${errorMessage(rollbackError)}`
+            );
+          }
+          throw error;
+        }
+      }
+      throwIfAborted(options.signal);
+      if (stateChanged) {
+        stateWriteAttempted = true;
+        await writeState({ ...state, links: nextLinks });
+      }
+      committed = true;
+    } catch (error) {
+      const rollbackErrors: string[] = [];
+      for (const item of [...prepared].reverse()) {
+        if (!item.replaced) continue;
+        try {
+          await rm(item.path, { recursive: true, force: true });
+          await rename(item.backup, item.path);
+          item.replaced = false;
+        } catch (rollbackError) {
+          rollbackErrors.push(`${item.path}: ${errorMessage(rollbackError)}`);
+        }
+      }
+      if (stateWriteAttempted) {
+        try {
+          await writeState(state);
+        } catch (rollbackError) {
+          rollbackErrors.push(`状态：${errorMessage(rollbackError)}`);
+        }
+      }
+      if (rollbackErrors.length) {
+        throw new Error(
+          `转换失败：${errorMessage(error)}；回滚失败：${rollbackErrors.join('；')}`
+        );
+      }
+      throw error;
+    }
+  } finally {
+    for (const item of prepared) {
+      if (committed || !(await pathPresent(item.backup))) {
+        await rm(item.workspace, { recursive: true, force: true }).catch((error) => {
+          console.error(`警告：转换临时目录清理失败：${errorMessage(error)}`);
+        });
+      }
+    }
+  }
+  return prepared.length;
+}
+
+export async function removeSkillLocations(skills: Skill[]): Promise<number> {
+  const paths = collectionPaths();
+  const unique = await validateSkillLocations(skills, '删除');
+
+  for (const [path, skill] of unique) {
     if (skill.fromCollection) {
       const target = join(paths.skills, assertSkillName(skill.name));
       if (!(await isExactSymlink(path, target))) {

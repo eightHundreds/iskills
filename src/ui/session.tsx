@@ -40,6 +40,19 @@ function CancelBoundary({
   return <Box display={ready ? 'flex' : 'none'}>{children}</Box>;
 }
 
+function DisplayInterruptBoundary({
+  interrupt,
+  children,
+}: {
+  interrupt: () => void;
+  children: ReactNode;
+}) {
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') interrupt();
+  });
+  return <>{children}</>;
+}
+
 export class InkSession {
   private instance: Instance | undefined;
   private screen = 0;
@@ -105,8 +118,11 @@ export class InkSession {
     });
   }
 
-  display(component: ReactNode): void {
-    const node = <Box key={this.screen++}>{component}</Box>;
+  display(component: ReactNode, interrupt?: () => void): void {
+    const content = interrupt
+      ? <DisplayInterruptBoundary interrupt={interrupt}>{component}</DisplayInterruptBoundary>
+      : component;
+    const node = <Box key={this.screen++}>{content}</Box>;
     if (this.instance) {
       this.instance.rerender(node);
     } else {
