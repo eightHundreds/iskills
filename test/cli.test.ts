@@ -74,6 +74,20 @@ test('subcommand --help and -h print command-specific help', async () => {
   }
 });
 
+test('prints the package version with -v and --version', async () => {
+  const context = await makeContext();
+  const packageVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+  try {
+    for (const args of [['-v'], ['--version']]) {
+      const result = await run(context, args);
+      assert.equal(result.stdout.trim(), packageVersion);
+      assert.equal(result.stderr, '');
+    }
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('search requires a TTY unless a non-interactive mode is selected', async () => {
   const context = await makeContext();
   try {
