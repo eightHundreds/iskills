@@ -656,6 +656,11 @@ test('collection browser shows progress while updating a Skill', async (t) => {
     assert.match(result.stdout, /正在更新：remote-skill/);
     assert.match(result.stdout, /remote-skill: updated/);
     assert.equal(
+      result.stdout.split('\u001B[2J\u001B[H').length - 1,
+      1,
+      '更新结束后不得绕过 Ink 再次清屏，否则其行数和光标状态会失效'
+    );
+    assert.equal(
       await readFile(join(context.collection, 'skills/remote-skill/asset.txt'), 'utf8'),
       'browser update\n'
     );
@@ -664,7 +669,7 @@ test('collection browser shows progress while updating a Skill', async (t) => {
   }
 });
 
-test('collection browser updates all selected Skills with available updates', async (t) => {
+test('collection browser updates all selected Skills without shifting the browser', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -675,15 +680,18 @@ test('collection browser updates all selected Skills with available updates', as
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
   const second = join(repository, 'skills/second-skill');
+  const third = join(repository, 'skills/third-skill');
 
   try {
     await makeSkill(second, 'second-skill');
+    await makeSkill(third, 'third-skill');
     await exec('git', ['add', '.'], { cwd: repository });
     await exec('git', ['commit', '-m', 'add second skill'], { cwd: repository });
     await run(context, ['import', `file://${repository}`, '--all', '--yes']);
 
     await writeFile(join(skill, 'asset.txt'), 'first browser update\n', 'utf8');
     await writeFile(join(second, 'asset.txt'), 'second browser update\n', 'utf8');
+    await writeFile(join(third, 'asset.txt'), 'third browser update\n', 'utf8');
     await exec('git', ['add', '.'], { cwd: repository });
     await exec('git', ['commit', '-m', 'update selected skills'], { cwd: repository });
 
@@ -692,13 +700,17 @@ test('collection browser updates all selected Skills with available updates', as
       { wait: 'remote-skill', send: ' ', enter: false },
       { wait: '已选 1', send: '\u001b[B', enter: false },
       { wait: 'second-skill', send: ' ', enter: false },
-      { wait: 'u 更新可更新的已选技能 (2)', send: 'u', enter: false },
-      { wait: '正在更新 1/2：remote-skill', send: '', enter: false },
-      { wait: '正在更新 2/2：second-skill', send: '', enter: false },
-      { wait: 'second-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
+      { wait: '已选 2', send: '\u001b[B', enter: false },
+      { wait: 'third-skill', send: ' ', enter: false },
+      { wait: 'u 更新可更新的已选技能 (3)', send: 'u', enter: false },
+      { wait: '正在更新 1/3：remote-skill', send: '', enter: false },
+      { wait: '正在更新 2/3：second-skill', send: '', enter: false },
+      { wait: '正在更新 3/3：third-skill', send: '', enter: false },
+      { wait: 'third-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
     ]);
-    assert.match(result.stdout, /正在更新 1\/2：remote-skill/);
-    assert.match(result.stdout, /正在更新 2\/2：second-skill/);
+    assert.match(result.stdout, /正在更新 1\/3：remote-skill/);
+    assert.match(result.stdout, /正在更新 2\/3：second-skill/);
+    assert.match(result.stdout, /正在更新 3\/3：third-skill/);
     assert.equal(
       await readFile(join(context.collection, 'skills/remote-skill/asset.txt'), 'utf8'),
       'first browser update\n'
@@ -706,6 +718,10 @@ test('collection browser updates all selected Skills with available updates', as
     assert.equal(
       await readFile(join(context.collection, 'skills/second-skill/asset.txt'), 'utf8'),
       'second browser update\n'
+    );
+    assert.equal(
+      await readFile(join(context.collection, 'skills/third-skill/asset.txt'), 'utf8'),
+      'third browser update\n'
     );
   } finally {
     await rm(context.root, { recursive: true, force: true });

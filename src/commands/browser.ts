@@ -247,8 +247,8 @@ export async function interactiveList(
         transientStatus = false;
         const outcomes: string[] = [];
         let failed = 0;
+        session.close();
         for (const [index, skill] of result.skills.entries()) {
-          session.close();
           displayBrowseSkills(
             projects,
             collection,
@@ -287,7 +287,6 @@ export async function interactiveList(
         }
         status = outcomes.join(' · ');
         transientStatus = failed === 0;
-        process.stdout.write(CLEAR_SCREEN);
         continue;
       }
       if (result.type === 'tags') {
