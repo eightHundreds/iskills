@@ -1056,7 +1056,7 @@ test('Ctrl+C during reference conversion exits 130 and preserves the reference',
           wait: '正在转换 1/1：interrupted-reference',
           send: '\u0003',
           enter: false,
-          delayAfter: 100,
+          delayAfter: 0,
         },
       ]);
       assert.fail('Ctrl+C should interrupt reference conversion');
