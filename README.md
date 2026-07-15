@@ -21,8 +21,10 @@ iskills search [关键词]          # 实时搜索 skills.sh，选择后保存�
 iskills list                    # 当前项目 / 全局 / 收藏夹列表，全局按 Agent 分 Tab
 iskills import [路径或 Git URL]  # 导入到收藏夹，原本地位置保留软链
 iskills import -g               # 扫描常见 Agent 全局目录
+iskills import -g --agent pi    # 扫描 Pi 专属全局目录 ~/.pi/agent/skills
 iskills add <技能>               # 从收藏夹添加到当前项目
 iskills add <技能> -g            # 从收藏夹添加到一个或多个 Agent 全局目录
+iskills add <技能> -g --agent pi # 添加到 Pi 专属全局目录 ~/.pi/agent/skills
 iskills add <技能> --copy        # 复制并脱离收藏夹
 iskills remove <技能>            # 从当前项目移除
 iskills remove <技能> -g         # 从收藏夹移除或还回原始位置

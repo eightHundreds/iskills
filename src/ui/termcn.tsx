@@ -595,8 +595,8 @@ export interface ImportReviewResult {
 
 export interface InstallReviewTarget {
   value: string;
-  projectLabel: string;
-  globalLabel: string;
+  projectLabel?: string;
+  globalLabel?: string;
 }
 
 export interface InstallReviewResult {
@@ -632,9 +632,12 @@ export function InstallReview({
     })
   );
   const activeAgents = agentsByDestination[destination];
+  const availableTargets = targets.filter((target) =>
+    destination === 'global' ? Boolean(target.globalLabel) : Boolean(target.projectLabel)
+  );
   const activeTargetLabel = (target: InstallReviewTarget): string =>
-    destination === 'global' ? target.globalLabel : target.projectLabel;
-  const selectedTargetLabels = targets
+    destination === 'global' ? target.globalLabel! : target.projectLabel!;
+  const selectedTargetLabels = availableTargets
     .filter((target) => activeAgents.has(target.value))
     .map(activeTargetLabel);
   const tabOrder: TabKey[] = ['destination', 'mode', 'targets', 'confirm'];
@@ -668,6 +671,7 @@ export function InstallReview({
     if (activeTab === 'destination') {
       if (key.upArrow || key.downArrow) {
         setDestination((current) => current === 'project' ? 'global' : 'project');
+        setTargetCursor(0);
         return;
       }
       if (isReturn(input, key.return)) return moveTab(1);
@@ -687,11 +691,11 @@ export function InstallReview({
       return;
     }
     if (key.downArrow) {
-      setTargetCursor((current) => Math.min(Math.max(0, targets.length - 1), current + 1));
+      setTargetCursor((current) => Math.min(Math.max(0, availableTargets.length - 1), current + 1));
       return;
     }
     if (input === ' ') {
-      const target = targets[targetCursor];
+      const target = availableTargets[targetCursor];
       if (!target) return;
       setAgentsByDestination((previous) => {
         const next = new Set(previous[destination]);
@@ -742,7 +746,7 @@ export function InstallReview({
       label: '目标目录',
       content: (
         <Box flexDirection="column">
-          {targets.map((target, index) => {
+          {availableTargets.map((target, index) => {
             const selected = activeAgents.has(target.value);
             const active = index === targetCursor;
             return (

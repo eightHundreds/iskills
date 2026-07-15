@@ -610,6 +610,9 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
         requestedAgents.map((name) => {
           const agent = AGENTS[name];
           if (!agent) throw new Error(`未知 Agent：${name}`);
+          if (!agent.project) {
+            throw new Error(`Agent ${name} 只支持全局 Skill 目录，请使用 --global`);
+          }
           return resolve(agent.project);
         })
       ),

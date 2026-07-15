@@ -10,11 +10,13 @@
 | Cursor | 是 | 是 | 是 | 标准目录 |
 | OpenCode | 是 | 是 | 是 | 标准目录 |
 | Claude Code | 是 | 官方文档未列出 | 官方文档未列出 | `.claude/skills` |
+| Pi | 是 | -- | 是 | `~/.pi/agent/skills`（仅全局） |
 
 因此，交互式安装不应分别列出 Codex、Cursor 和 OpenCode，而应只列出实际目标目录：
 
 - 标准 Agent Skills：项目 `.agents/skills`，全局 `~/.agents/skills`。
 - Claude Code：项目 `.claude/skills`，全局 `~/.claude/skills`。
+- Pi：全局 `~/.pi/agent/skills`。Pi 同时兼容标准全局目录，但 `iskills` 保留该专属目录作为独立安装、导入和浏览目标。
 
 ## 官方依据
 
@@ -52,6 +54,7 @@ Claude Code 官方文档说明其 Skill 格式遵循 Agent Skills 开放标准�
 
 ## 实现决策
 
-- 项目和全局安装都只显示“标准 Agent Skills”和实际不兼容该目录的 Agent 目标。
+- 项目和全局安装都显示“标准 Agent Skills”和实际需要专属目录的 Agent 目标；Pi 只在全局安装目标中显示。
 - 已存在的目标目录默认选中；不存在则默认不选中。
 - `.cursor/skills`、`.opencode/skills` 等厂商目录可继续用于扫描和旧数据兼容，但不作为新的交互式安装目标。
+- `--agent pi` 只可与 `--global` 一起使用；项目级标准目录仍使用 `--agent agents`。

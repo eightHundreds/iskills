@@ -49,6 +49,7 @@ export const AGENTS: Record<string, AgentConfig> = {
     project: '.opencode/skills',
     global: (home) => join(home, '.config/opencode/skills'),
   },
+  pi: { global: (home) => join(home, '.pi/agent/skills') },
 };
 
 export function collectionPaths(): CollectionPaths {

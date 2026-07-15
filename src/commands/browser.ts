@@ -322,6 +322,10 @@ export async function interactiveList(
             projectLabel: 'Claude Code (.claude/skills)',
             globalLabel: 'Claude Code (~/.claude/skills)',
           },
+          {
+            value: 'pi',
+            globalLabel: 'Pi (~/.pi/agent/skills)',
+          },
         ];
         const defaultProjectAgents: string[] = [];
         const defaultGlobalAgents: string[] = [];

@@ -108,7 +108,7 @@ const COMMAND_HELP: Record<string, string> = {
 从收藏夹添加技能到当前项目或 Agent 全局目录。
 
 选项：
-  --agent <名称>     限定 Agent，可重复使用
+  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
   -g, --global       添加到 Agent 全局 Skill 目录
   --to <目录>        指定目标目录
   --copy             复制而非创建软链
@@ -123,7 +123,7 @@ const COMMAND_HELP: Record<string, string> = {
 
 选项：
   -g, --global       扫描 Agent 全局 Skill 目录
-  --agent <名称>     限定 Agent，可重复使用
+  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
   --all              导入发现的全部技能
   --replace          替换收藏夹中的同名技能
   -y, --yes          跳过确认

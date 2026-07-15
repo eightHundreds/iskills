@@ -140,6 +140,32 @@ test('scans a selected common global Agent directory with import -g', async () =
   }
 });
 
+test('supports Pi dedicated global Skill directory for import and install', async () => {
+  const context = await makeContext();
+  const piSkill = join(context.home, '.pi/agent/skills/pi-imported');
+  const localSkill = join(context.project, 'pi-installed');
+  await makeSkill(piSkill, 'pi-imported');
+  await makeSkill(localSkill, 'pi-installed');
+
+  try {
+    await run(context, ['import', '-g', '--agent', 'pi', '--all', '--yes']);
+    assert.equal((await lstat(piSkill)).isSymbolicLink(), true);
+    assert.equal(
+      (await lstat(join(context.collection, 'skills/pi-imported'))).isDirectory(),
+      true
+    );
+
+    await run(context, ['import', localSkill, '--all', '--yes']);
+    await run(context, ['add', 'pi-installed', '-g', '--agent', 'pi', '--yes']);
+    assert.equal(
+      (await lstat(join(context.home, '.pi/agent/skills/pi-installed'))).isSymbolicLink(),
+      true
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
 test('indexes a multiline YAML description without a YAML runtime dependency', async () => {
   const context = await makeContext();
   const source = join(context.project, 'multiline-skill');
