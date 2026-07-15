@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { listCollection } from './core.js';
 import {
   Confirm,
+  InstallReview,
   ImportReview,
   MultiSelect,
   Select,
@@ -11,6 +12,8 @@ import {
   TextInput,
   type ImportReviewItem,
   type ImportReviewResult,
+  type InstallReviewResult,
+  type InstallReviewTarget,
 } from './ui/termcn.js';
 import { InkSession } from './ui/session.js';
 import type { Choice, Skill } from './types.js';
@@ -161,6 +164,24 @@ export function reviewImport<T extends Skill>(
     <ImportReview<T>
       items={items}
       existingTags={existingTags}
+      onSubmit={(result) => finish(result.confirmed ? result : undefined)}
+    />
+  ), session);
+}
+
+export function reviewInstall(
+  skills: Skill[],
+  targets: InstallReviewTarget[],
+  defaultProjectAgents: string[],
+  defaultGlobalAgents: string[],
+  session: InkSession
+): Promise<InstallReviewResult | undefined> {
+  return runPrompt<InstallReviewResult | undefined>(undefined, (finish) => (
+    <InstallReview
+      skills={skills}
+      targets={targets}
+      defaultProjectAgents={defaultProjectAgents}
+      defaultGlobalAgents={defaultGlobalAgents}
       onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
   ), session);

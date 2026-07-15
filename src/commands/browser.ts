@@ -26,7 +26,7 @@ import {
   writeMetadata,
 } from '../core.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
-import { chooseOne, chooseOptionsMany, editInput, editTags } from '../prompts.js';
+import { chooseOne, editInput, editTags, reviewInstall } from '../prompts.js';
 import type { GitSource, Skill, SkillMetadata } from '../types.js';
 import {
   browseSkillDetail,
@@ -311,63 +311,49 @@ export async function interactiveList(
         continue;
       }
       if (result.type === 'add') {
-        const destination = await chooseOne(
-          [
-            { label: '当前项目', value: 'project' },
-            { label: '全局', value: 'global' },
-          ],
-          '添加到：',
-          false,
-          session
-        );
-        if (!destination) continue;
-        const mode = await chooseOne(
-          [
-            { label: '软链（推荐）', value: 'link' },
-            { label: '复制', value: 'copy' },
-          ],
-          '添加方式：',
-          false,
-          session
-        );
-        if (!mode) continue;
-        const isGlobal = destination === 'global';
         const targetOptions = [
           {
-            label: `标准 Agent Skills (${isGlobal ? '~/.agents/skills' : '.agents/skills'})`,
             value: 'agents',
+            projectLabel: '标准 Agent Skills (.agents/skills)',
+            globalLabel: '标准 Agent Skills (~/.agents/skills)',
           },
           {
-            label: `Claude Code (${isGlobal ? '~/.claude/skills' : '.claude/skills'})`,
             value: 'claude',
+            projectLabel: 'Claude Code (.claude/skills)',
+            globalLabel: 'Claude Code (~/.claude/skills)',
           },
         ];
-        const defaultAgents: string[] = [];
+        const defaultProjectAgents: string[] = [];
+        const defaultGlobalAgents: string[] = [];
         for (const option of targetOptions) {
           const agent = AGENTS[option.value];
-          const path = isGlobal ? agent?.global(homedir()) : agent?.project;
-          if (path && await exists(path)) defaultAgents.push(option.value);
+          if (agent?.project && await exists(agent.project)) defaultProjectAgents.push(option.value);
+          const globalPath = agent?.global(homedir());
+          if (globalPath && await exists(globalPath)) {
+            defaultGlobalAgents.push(option.value);
+          }
         }
-        const agents = await chooseOptionsMany(
+        const install = await reviewInstall(
+          result.skills,
           targetOptions,
-          destination === 'global' ? '选择全局 Skill 目录：' : '选择项目 Skill 目录：',
+          defaultProjectAgents,
+          defaultGlobalAgents,
           session,
-          defaultAgents
         );
-        if (!agents.length) continue;
+        if (!install) continue;
         try {
           const { count, targetCount } = await addSkillsToProject(result.skills, {
             quiet: true,
-            agent: agents,
-            copy: mode === 'copy',
+            agent: install.agents,
+            copy: install.copy,
             confirmReplace: (target) => confirmInBrowser(
               `目标已存在，替换 ${target} 吗？`,
               [],
               '替换目标'
             ),
-            ...(isGlobal ? { global: true } : {}),
+            ...(install.destination === 'global' ? { global: true } : {}),
           });
-          status = `已通过${mode === 'copy' ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
+          status = `已通过${install.copy ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
           transientStatus = true;
           selected = [];
         } catch (error) {

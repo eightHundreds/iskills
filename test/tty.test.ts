@@ -731,15 +731,17 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'Space 选择', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '添加到：', send: '' },
-      { wait: '添加方式：', send: '' },
-      { wait: '选择项目 Skill 目录：', send: '', enter: false },
-      { wait: '○', send: '', enter: false },
-      { wait: '标准 Agent Skills (.agents/skills)', send: '', enter: false },
-      { wait: '●', send: '', enter: false },
-      { wait: 'Claude Code (.claude/skills)', send: '', delayAfter: 150 },
+      { wait: '● 当前项目', send: '', delayAfter: 100 },
+      { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
+      { wait: '› ○ 标准 Agent Skills (.agents/skills)', send: '', delayAfter: 100 },
+      { wait: '技能：entry-agent-skill', send: '', delayAfter: 150 },
       { wait: '已通过软链添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
+    assert.match(result.stdout, /安装位置/);
+    assert.match(result.stdout, /添加方式/);
+    assert.match(result.stdout, /目标目录/);
+    assert.match(result.stdout, /确认/);
+    assert.doesNotMatch(result.stdout, /添加到：|选择项目 Skill 目录：/);
     assert.doesNotMatch(result.stdout, /错误：/);
     assert.equal(
       (await lstat(join(context.project, '.claude/skills/entry-agent-skill'))).isSymbolicLink(),
@@ -771,12 +773,13 @@ test('TTY entry can copy a selected collection Skill into a global Agent directo
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'Space 选择', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '添加到：', send: '\u001b[B', enter: false },
-      { wait: '全局', send: '' },
-      { wait: '添加方式：', send: '\u001b[B', enter: false },
-      { wait: '复制', send: '' },
-      { wait: '选择全局 Skill 目录：', send: ' ', enter: false },
-      { wait: '●', send: '' },
+      { wait: '● 当前项目', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '● 全局', send: '', delayAfter: 100 },
+      { wait: '● 软链（推荐）', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '● 复制', send: '', delayAfter: 100 },
+      { wait: '› ○ 标准 Agent Skills (~/.agents/skills)', send: ' ', enter: false, delayAfter: 100 },
+      { wait: '› ● 标准 Agent Skills (~/.agents/skills)', send: '', delayAfter: 100 },
+      { wait: '技能：entry-copy-skill', send: '' },
       { wait: '已通过复制添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
     const target = join(context.home, '.agents/skills/entry-copy-skill');
@@ -789,7 +792,7 @@ test('TTY entry can copy a selected collection Skill into a global Agent directo
   }
 });
 
-test('TTY entry cancels add mode selection without creating a target', async (t) => {
+test('TTY entry cancels installation configuration without creating a target', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -807,8 +810,7 @@ test('TTY entry cancels add mode selection without creating a target', async (t)
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'Space 选择', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '添加到：', send: '' },
-      { wait: '添加方式：', send: '\u001b', enter: false },
+      { wait: '● 当前项目', send: '\u001b', enter: false },
       { wait: 'q 退出', send: 'q', enter: false },
     ]);
     assert.doesNotMatch(result.stdout, /错误：/);
@@ -839,9 +841,10 @@ test('collection browser confirms replacing an existing add target in a popup', 
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'Space 选择', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '添加到：', send: '' },
-      { wait: '添加方式：', send: '' },
-      { wait: '选择项目 Skill 目录：', send: '' },
+      { wait: '● 当前项目', send: '', delayAfter: 100 },
+      { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
+      { wait: '› ● 标准 Agent Skills (.agents/skills)', send: '', delayAfter: 100 },
+      { wait: '技能：entry-replace-skill', send: '' },
       { wait: '替换目标', send: '', enter: false, delayAfter: 100 },
       { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
       { wait: '已通过软链添加 1 个技能到 1 个目录', send: 'q', enter: false },
