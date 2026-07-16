@@ -19,6 +19,10 @@ import {
   browserSelectionAtom,
   createBrowserStore,
 } from '../src/ui/browser-state.js';
+import {
+  browserFrameDimensions,
+  detailFrameDimensions,
+} from '../src/ui/browser.js';
 
 test('browser state stores are isolated between screens', () => {
   const first = createBrowserStore({
@@ -48,6 +52,28 @@ test('browser state stores are isolated between screens', () => {
   assert.deepEqual([...second.get(browserSelectionAtom)], ['beta']);
   assert.equal(first.get(browserNavigationAtom).query, 'updated');
   assert.equal(second.get(browserNavigationAtom).query, 'beta');
+});
+
+test('browser and detail frames preserve the same dimensions', () => {
+  const browserFrame = browserFrameDimensions({
+    rows: 30,
+    columns: 100,
+    projectRows: 7,
+    globalRows: 28,
+    collectionRows: 56,
+    hasProjectAgents: true,
+    hasGlobalAgents: true,
+  });
+  assert.deepEqual(browserFrame, {
+    frameHeight: 24,
+    frameWidth: 100,
+    listViewportHeight: 20,
+  });
+  assert.deepEqual(
+    detailFrameDimensions(browserFrame.frameHeight, browserFrame.frameWidth, 30),
+    { height: 24, width: 100 }
+  );
+  assert.deepEqual(detailFrameDimensions(7, 40, 10), { height: 6, width: 40 });
 });
 
 test('imports through an existing Agent symlink without losing its canonical directory', async () => {

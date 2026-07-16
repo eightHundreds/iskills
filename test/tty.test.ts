@@ -17,11 +17,97 @@ import {
   makeContext,
   makeGitSkillRepo,
   makeSkill,
+  renderTerminalScreen,
   run,
   runInteractive,
   type JsonLink,
   type JsonSkill,
 } from './helpers.js';
+
+function frameBounds(screen: string[]): { height: number; width: number; x: number; y: number } {
+  const y = screen.findIndex((line) => line.startsWith('╭'));
+  assert.notEqual(y, -1, 'screen must contain a frame top');
+  const top = screen[y] ?? '';
+  const x = top.indexOf('╭');
+  const right = top.indexOf('╮', x);
+  assert.notEqual(right, -1, 'frame top must have a right border');
+  const bottom = screen.findIndex((line, index) =>
+    index > y && line.startsWith(`${' '.repeat(x)}╰`)
+  );
+  assert.notEqual(bottom, -1, 'screen must contain a frame bottom');
+  const bottomLine = screen[bottom] ?? '';
+  assert.equal(bottomLine.indexOf('╯', x), right, 'frame sides must align');
+  return { height: bottom - y + 1, width: right - x + 1, x, y };
+}
+
+test('TTY detail frame matches the selected browser frame', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'frame-skills');
+  const names = Array.from({ length: 31 }, (_, index) => `frame-skill-${String(index).padStart(2, '0')}`);
+  await Promise.all(names.map((name, index) =>
+    makeSkill(join(source, name), name, index === 0 ? 'x'.repeat(140) : undefined)
+  ));
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    await writeFile(
+      join(context.collection, 'metadata/frame-skill-00.json'),
+      `${JSON.stringify({
+        name: 'frame-skill-00',
+        description: 'x'.repeat(140),
+        tags: [],
+        note: '',
+        source: { type: 'unknown', path: 'very-long-source-path/'.repeat(18) },
+      })}\n`,
+      'utf8'
+    );
+    const size = { rows: 16, columns: 100 };
+    const result = await runInteractive(context, [], [
+      { wait: '收藏夹 31', send: '\u001b[B', enter: false },
+      { wait: '→ 查看', capture: 'list', send: '\u001b[C', enter: false },
+      {
+        wait: '↑/↓ 滚动',
+        capture: 'detail',
+        send: '\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B',
+        enter: false,
+        delayAfter: 300,
+      },
+      { delay: 300, capture: 'detailScrolled', send: 'q', enter: false },
+      { wait: '→ 查看', send: 'q', enter: false },
+    ], context.project, size);
+    const listOutput = result.screens?.list;
+    const detailOutput = result.screens?.detail;
+    const detailScrolledOutput = result.screens?.detailScrolled;
+    assert.ok(listOutput, 'selected list screen must be captured');
+    assert.ok(detailOutput, 'detail screen must be captured');
+    assert.ok(detailScrolledOutput, 'scrolled detail screen must be captured');
+    const listFrame = frameBounds(await renderTerminalScreen(listOutput, size));
+    const detailScreen = await renderTerminalScreen(detailOutput, size);
+    const detailFrame = frameBounds(detailScreen);
+    assert.deepEqual(
+      { height: detailFrame.height, width: detailFrame.width, x: detailFrame.x },
+      { height: listFrame.height, width: listFrame.width, x: listFrame.x }
+    );
+    assert.equal(detailFrame.y, listFrame.y);
+    assert.match(
+      detailScreen.slice(detailFrame.y + 1, detailFrame.y + detailFrame.height - 1).join('\n'),
+      /描述.*x/,
+      'the long description must be rendered inside the stable detail frame'
+    );
+    assert.doesNotMatch(detailScreen.join('\n'), /…/, 'description must wrap instead of truncating');
+    const scrolledFrame = frameBounds(await renderTerminalScreen(detailScrolledOutput, size));
+    assert.deepEqual(scrolledFrame, detailFrame, 'scrolling detail content must not change the frame');
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
 
 test('TTY Git import review shows repository identity and saves selected groups', async (t) => {
   try {
@@ -416,6 +502,8 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
     assert.match(result.stdout, /frontend · shared \/ /);
     assert.match(result.stdout, /● shared \(2\)/);
     assert.match(result.stdout, /完整快捷键/);
+    assert.match(result.stdout, /Esc 关闭/);
+    assert.doesNotMatch(result.stdout, /Esc \/ q \/ \? 关闭/);
     assert.doesNotMatch(result.stdout, /g 分组/);
     const alpha = JSON.parse(
       await readFile(join(context.collection, 'metadata/alpha.json'), 'utf8')

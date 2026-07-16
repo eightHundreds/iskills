@@ -3,10 +3,12 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { Terminal } from '@xterm/headless';
 
 export interface ExecResult {
   stdout: string;
   stderr: string;
+  screens?: Record<string, string>;
 }
 
 export interface TestContext {
@@ -25,6 +27,7 @@ export interface InteractiveStep {
   delay?: number;
   delayAfter?: number;
   enter?: boolean;
+  capture?: string;
 }
 
 export interface TerminalSize {
@@ -53,6 +56,19 @@ const cli = resolve('bin/iskills.js');
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export async function renderTerminalScreen(
+  output: string,
+  { rows, columns }: TerminalSize
+): Promise<string[]> {
+  const terminal = new Terminal({ allowProposedApi: true, cols: columns, rows });
+  await new Promise<void>((resolve) => terminal.write(output, resolve));
+  const screen = Array.from({ length: rows }, (_, row) =>
+    terminal.buffer.active.getLine(row)?.translateToString(true) ?? ''
+  );
+  terminal.dispose();
+  return screen;
 }
 
 export async function makeContext(): Promise<TestContext> {
@@ -108,7 +124,7 @@ export async function runInteractive(
   size: TerminalSize = { rows: 40, columns: 120 }
 ): Promise<ExecResult> {
   const driver = String.raw`
-import fcntl, json, os, pty, select, struct, sys, termios, time
+import base64, fcntl, json, os, pty, select, struct, sys, termios, time
 
 command = json.loads(os.environ.pop("SK_PTY_COMMAND"))
 steps = json.loads(os.environ.pop("SK_PTY_STEPS"))
@@ -121,6 +137,7 @@ fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
 
 output = bytearray()
 cursor = 0
+captures = {}
 
 def read_once(timeout=0.1):
     ready, _, _ = select.select([fd], [], [], timeout)
@@ -149,6 +166,14 @@ for step in steps:
     else:
         time.sleep(step.get("delay", 150) / 1000)
     time.sleep(step.get("delayAfter", 50) / 1000)
+    capture = step.get("capture")
+    if capture:
+        settle_deadline = time.time() + 1
+        idle_deadline = time.time() + 0.1
+        while time.time() < settle_deadline and time.time() < idle_deadline:
+            if read_once(0.02):
+                idle_deadline = time.time() + 0.1
+        captures[capture] = base64.b64encode(output).decode("ascii")
     try:
         payload = step["send"].encode("utf-8")
         if step.get("enter", True):
@@ -172,10 +197,13 @@ if status is None:
     os.kill(pid, 9)
     _, status = os.waitpid(pid, 0)
 sys.stdout.buffer.write(output)
+if captures:
+    sys.stdout.buffer.write(b"\n__ISKILLS_SCREEN_CAPTURES__")
+    sys.stdout.buffer.write(json.dumps(captures).encode("ascii"))
 exit_code = os.waitstatus_to_exitcode(status)
 sys.exit(128 - exit_code if exit_code < 0 else exit_code)
 `;
-  return exec('python3', ['-c', driver], {
+  const result = await exec('python3', ['-c', driver], {
     cwd,
     env: {
       ...context.env,
@@ -185,6 +213,17 @@ sys.exit(128 - exit_code if exit_code < 0 else exit_code)
       SK_PTY_COLUMNS: String(size.columns),
     },
   });
+  const marker = '\n__ISKILLS_SCREEN_CAPTURES__';
+  const markerIndex = result.stdout.lastIndexOf(marker);
+  if (markerIndex === -1) return result;
+  const captures = JSON.parse(result.stdout.slice(markerIndex + marker.length)) as Record<string, string>;
+  return {
+    ...result,
+    stdout: result.stdout.slice(0, markerIndex),
+    screens: Object.fromEntries(
+      Object.entries(captures).map(([name, output]) => [name, Buffer.from(output, 'base64').toString('utf8')])
+    ),
+  };
 }
 
 export async function makeGitSkillRepo(

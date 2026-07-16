@@ -79,6 +79,8 @@ async function bindMetadataSource(
 async function skillDetail(
   skill: Skill,
   collection: boolean,
+  frameHeight: number,
+  frameWidth: number,
   session: InkSession
 ): Promise<void> {
   while (true) {
@@ -93,7 +95,15 @@ async function skillDetail(
     };
     const state = await readState();
     const links = state.links.filter((link) => link.skill === skill.name);
-    const action = await browseSkillDetail(skill, metadata, links, collection, session);
+    const action = await browseSkillDetail(
+      skill,
+      metadata,
+      links,
+      collection,
+      frameHeight,
+      frameWidth,
+      session
+    );
     if (action === 'back') return;
     if (action === 'note') {
       const note = await editInput('编辑备注（Enter 保存，Esc 取消）', metadata.note, session);
@@ -436,7 +446,13 @@ export async function interactiveList(
         continue;
       }
       if (result.type === 'open') {
-        await skillDetail(result.skill, result.collection, session);
+        await skillDetail(
+          result.skill,
+          result.collection,
+          result.frameHeight,
+          result.frameWidth,
+          session
+        );
       }
     }
   } finally {

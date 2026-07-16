@@ -1,6 +1,6 @@
 {
   "name": "iskills",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "Personal Skill library CLI for AI coding agents",
   "repository": {
     "type": "git",
@@ -44,6 +44,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
+    "@xterm/headless": "^6.0.0",
     "typescript": "^7.0.0",
     "vitest": "^4.1.10"
   }

@@ -158,6 +158,112 @@ function selectableSkills(row: SkillRow): Skill[] {
   return row.type === 'group' ? row.skills : [row.skill];
 }
 
+function paneHeight(rowCount: number, viewportHeight: number): number {
+  const visibleRows = Math.max(3, Math.min(rowCount, viewportHeight));
+  return visibleRows + (rowCount > viewportHeight ? 1 : 0);
+}
+
+export interface BrowserFrameDimensions {
+  frameHeight: number;
+  frameWidth: number;
+  listViewportHeight: number;
+}
+
+export function browserFrameDimensions({
+  rows,
+  columns,
+  projectRows,
+  globalRows,
+  collectionRows,
+  hasProjectAgents,
+  hasGlobalAgents,
+}: {
+  rows: number | undefined;
+  columns: number | undefined;
+  projectRows: number;
+  globalRows: number;
+  collectionRows: number;
+  hasProjectAgents: boolean;
+  hasGlobalAgents: boolean;
+}): BrowserFrameDimensions {
+  const listViewportHeight = Math.max(3, (rows ?? 24) - 10);
+  const tabContentHeight = Math.max(
+    paneHeight(projectRows, listViewportHeight) + (hasProjectAgents ? 1 : 0),
+    paneHeight(globalRows, listViewportHeight) + (hasGlobalAgents ? 1 : 0),
+    paneHeight(collectionRows, listViewportHeight)
+  );
+  return {
+    frameHeight: tabContentHeight + 2,
+    frameWidth: columns ?? 80,
+    listViewportHeight,
+  };
+}
+
+export function detailFrameDimensions(
+  frameHeight: number,
+  frameWidth: number,
+  terminalRows: number | undefined
+): { height: number; width: number } {
+  return {
+    height: Math.min(frameHeight, Math.max(5, (terminalRows ?? 24) - 4)),
+    width: frameWidth,
+  };
+}
+
+interface DetailContentLine {
+  label?: string;
+  value: string;
+  muted?: boolean;
+}
+
+function detailFieldLines(
+  label: string,
+  value: string,
+  width: number,
+  muted = false
+): DetailContentLine[] {
+  const labelText = `${label}  `;
+  const indentation = ' '.repeat(textWidth(labelText));
+  const valueWidth = Math.max(1, width - textWidth(labelText));
+  return value
+    .split(/\r?\n/)
+    .flatMap((paragraph) => wrapColumns(paragraph, valueWidth))
+    .map((line, index) => index === 0
+      ? { label: labelText, value: line, muted }
+      : { value: `${indentation}${line}`, muted });
+}
+
+function detailContentLines(
+  skill: Skill,
+  metadata: SkillMetadata,
+  links: SkillLink[],
+  collection: boolean,
+  source: string,
+  frameWidth: number
+): DetailContentLine[] {
+  const width = Math.max(1, frameWidth - 4);
+  const lines = detailFieldLines('描述', skill.description || '无描述', width, true);
+  if (!collection) return [...lines, ...detailFieldLines('位置', skill.path, width)];
+
+  lines.push(
+    ...detailFieldLines('标签', metadata.tags.length ? metadata.tags.join(', ') : '无', width),
+    ...detailFieldLines('备注', metadata.note || '无', width),
+    ...detailFieldLines('来源', source, width)
+  );
+  if (metadata.source.path) lines.push(...detailFieldLines('路径', metadata.source.path, width));
+  lines.push({ label: '关联位置', value: '' });
+  if (!links.length) return [...lines, { value: '  无', muted: true }];
+  return [
+    ...lines,
+    ...links.flatMap((link) => detailFieldLines(
+      link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖',
+      link.path,
+      width,
+      true
+    )),
+  ];
+}
+
 function framedLines(title: string, content: string[], width: number): string[] {
   const inner = width - 4;
   const titleWidth = textWidth(title);
@@ -187,7 +293,7 @@ function shortcutHelpLines(width: number): string[] {
     'm 更多操作（当前项目引用可转换时）',
     'q 退出 · Esc 取消当前上下文',
     '',
-    'Esc / q / ? 关闭',
+    'Esc 关闭',
   ];
   return framedLines(' 完整快捷键 ', content, width);
 }
@@ -249,6 +355,7 @@ function SkillPane({
   updatingSkillName,
   overlayLines,
   overlayMuteLastContent = true,
+  viewportHeight,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -262,10 +369,11 @@ function SkillPane({
   updatingSkillName?: string | undefined;
   overlayLines?: string[] | undefined;
   overlayMuteLastContent?: boolean;
+  viewportHeight?: number | undefined;
 }) {
   const { stdout } = useStdout();
   const selected = useAtomValue(browserSelectionAtom);
-  const height = Math.max(3, (stdout.rows ?? 24) - 8);
+  const height = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
@@ -604,6 +712,8 @@ function BrowserContent({
       type: 'open',
       skill,
       collection,
+      frameHeight: frame.frameHeight,
+      frameWidth: frame.frameWidth,
     });
   const localConfirmation: BrowserConfirmation | undefined = removeConfirmation
     ? removeConfirmation.scope === 'collection'
@@ -641,6 +751,15 @@ function BrowserContent({
     : undefined;
   const activeConfirmation = confirmation ?? localConfirmation;
   const { stdout } = useStdout();
+  const frame = browserFrameDimensions({
+    rows: stdout.rows,
+    columns: stdout.columns,
+    projectRows: projectRows.length,
+    globalRows: globalRows.length,
+    collectionRows: collectionRows.length,
+    hasProjectAgents: visibleProjectGroups.length > 0,
+    hasGlobalAgents: visibleGlobalGroups.length > 0,
+  });
   const overlayLines = activeConfirmation
     ? confirmationLines(
         activeConfirmation,
@@ -675,7 +794,7 @@ function BrowserContent({
   );
   useInput(
     (input, key) => {
-      if (key.escape || input === 'q' || input === '?') {
+      if (key.escape) {
         setShowShortcuts(false);
       }
     },
@@ -818,7 +937,7 @@ function BrowserContent({
       key: 'project',
       label: `当前项目 ${project.length}`,
       content: (
-        <Box flexDirection="column">
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
           <AgentTabs
             groups={visibleProjectGroups}
             agent={activeProjectAgent}
@@ -828,6 +947,7 @@ function BrowserContent({
             rows={projectRows}
             cursor={cursor}
             isActive={focus === 'list'}
+            viewportHeight={frame.listViewportHeight}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
             overlayMuteLastContent={Boolean(activeConfirmation)}
@@ -842,7 +962,7 @@ function BrowserContent({
       key: 'global',
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
-        <Box flexDirection="column">
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
           <AgentTabs
             groups={visibleGlobalGroups}
             agent={activeGlobalAgent}
@@ -852,6 +972,7 @@ function BrowserContent({
             rows={globalRows}
             cursor={cursor}
             isActive={focus === 'list'}
+            viewportHeight={frame.listViewportHeight}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
             overlayMuteLastContent={Boolean(activeConfirmation)}
@@ -864,18 +985,21 @@ function BrowserContent({
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
-        <SkillPane
-          rows={collectionRows}
-          cursor={cursor}
-          isActive={focus === 'list'}
-          showShortcuts={showShortcuts}
-          overlayLines={overlayLines}
-          overlayMuteLastContent={Boolean(activeConfirmation)}
-          preferNote
-          showGroup={Boolean(query.trim())}
-          updates={updateCheck.updates}
-          updatingSkillName={updatingSkillName}
-        />
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
+          <SkillPane
+            rows={collectionRows}
+            cursor={cursor}
+            isActive={focus === 'list'}
+            viewportHeight={frame.listViewportHeight}
+            showShortcuts={showShortcuts}
+            overlayLines={overlayLines}
+            overlayMuteLastContent={Boolean(activeConfirmation)}
+            preferNote
+            showGroup={Boolean(query.trim())}
+            updates={updateCheck.updates}
+            updatingSkillName={updatingSkillName}
+          />
+        </Box>
       ),
     },
   ];
@@ -971,7 +1095,7 @@ function BrowserContent({
               : showActions
               ? 'Enter 执行 · Esc 返回'
               : showShortcuts
-              ? 'Esc / q / ? 关闭'
+              ? 'Esc 关闭'
               : focus === 'tabs'
               ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
               : focus === 'agents'
@@ -1025,15 +1149,38 @@ function Detail({
   metadata,
   links,
   collection,
+  frameHeight,
+  frameWidth,
   finish,
 }: {
   skill: Skill;
   metadata: SkillMetadata;
   links: SkillLink[];
   collection: boolean;
+  frameHeight: number;
+  frameWidth: number;
   finish: (action: DetailAction) => void;
 }) {
+  const { stdout } = useStdout();
+  const detailFrame = detailFrameDimensions(frameHeight, frameWidth, stdout.rows);
+  const [detailOffset, setDetailOffset] = useState(0);
+  const source = metadata.source.url
+    ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
+    : metadata.source.type;
+  const lines = detailContentLines(skill, metadata, links, collection, source, detailFrame.width);
+  const viewportHeight = Math.max(1, detailFrame.height - 2);
+  const maxOffset = Math.max(0, lines.length - viewportHeight);
+  const offset = Math.min(detailOffset, maxOffset);
+  const visibleLines = lines.slice(offset, offset + viewportHeight);
   useInput((input, key) => {
+    if (key.upArrow && maxOffset) {
+      setDetailOffset((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (key.downArrow && maxOffset) {
+      setDetailOffset((current) => Math.min(maxOffset, current + 1));
+      return;
+    }
     if (
       key.escape ||
       key.leftArrow ||
@@ -1046,33 +1193,29 @@ function Detail({
     if (collection && input === 't') return finish('tags');
     if (collection && input === 's') return finish('source');
   });
-  const source = metadata.source.url
-    ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
-    : metadata.source.type;
   return (
     <Box flexDirection="column">
       <Text color={termcnColors.primary} bold>‹ {skill.name}</Text>
-      <Text color={termcnColors.muted}>{skill.description || '无描述'}</Text>
-      <Box flexDirection="column" borderStyle="round" borderColor={termcnColors.border} paddingX={1} marginTop={1}>
-        {collection ? (
-          <>
-            <Text><Text bold>标签  </Text>{metadata.tags.length ? metadata.tags.join(', ') : '无'}</Text>
-            <Text><Text bold>备注  </Text>{metadata.note || '无'}</Text>
-            <Text><Text bold>来源  </Text>{source}</Text>
-            {metadata.source.path && <Text><Text bold>路径  </Text>{metadata.source.path}</Text>}
-            <Text bold>关联位置</Text>
-            {links.length ? links.map((link) => (
-              <Text key={`${link.kind}:${link.path}`} color={termcnColors.muted}>
-                {link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖'}  {link.path}
-              </Text>
-            )) : <Text color={termcnColors.muted}>  无</Text>}
-          </>
-        ) : (
-          <Text><Text bold>位置  </Text>{skill.path}</Text>
-        )}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={termcnColors.border}
+        paddingX={1}
+        height={detailFrame.height}
+        width={detailFrame.width}
+        overflow="hidden"
+      >
+        {visibleLines.map((line, index) => (
+          <Text
+            key={`${offset + index}:${line.label ?? ''}:${line.value}`}
+            {...(line.muted ? { color: termcnColors.muted } : {})}
+          >
+            {line.label && <Text bold>{line.label}</Text>}{line.value}
+          </Text>
+        ))}
       </Box>
       <Text color={termcnColors.muted}>
-        {collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}
+        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}${collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}`}
       </Text>
     </Box>
   );
@@ -1083,6 +1226,8 @@ export function browseSkillDetail(
   metadata: SkillMetadata,
   links: SkillLink[],
   collection: boolean,
+  frameHeight: number,
+  frameWidth: number,
   session: InkSession
 ): Promise<DetailAction> {
   return session.show<DetailAction>('back', (finish) => (
@@ -1091,6 +1236,8 @@ export function browseSkillDetail(
         metadata={metadata}
         links={links}
         collection={collection}
+        frameHeight={frameHeight}
+        frameWidth={frameWidth}
         finish={finish}
       />
   ), false);

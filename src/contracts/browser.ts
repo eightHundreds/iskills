@@ -28,7 +28,13 @@ export type BrowserResult =
       | { type: 'removeLocations'; skills: Skill[] }
       | { type: 'materialize'; skills: Skill[] }
       | { type: 'import'; skills: Skill[] }
-      | { type: 'open'; skill: Skill; collection: boolean }
+      | {
+          type: 'open';
+          skill: Skill;
+          collection: boolean;
+          frameHeight: number;
+          frameWidth: number;
+        }
     ));
 
 export interface BrowserUpdateCheck {
