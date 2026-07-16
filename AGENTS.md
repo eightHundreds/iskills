@@ -2,7 +2,7 @@
 
 ## 项目结构
 
-`src/` 是严格模式的 TypeScript 源码。`src/cli.ts` 负责命令入口，`src/core.ts` 和 `src/git.ts` 处理存储与 Git 逻辑，`src/commands/` 放各子命令，`src/ui/` 放 Ink 界面和 termcn 相关组件。`bin/iskills.js` 是可执行入口。集成测试在 `test/cli.test.ts`，补充说明在 `docs/`，构建产物输出到 `dist/`，不要手改或提交。
+`src/` 是严格模式的 TypeScript 源码。`src/cli.ts` 负责命令入口；`src/domain/` 放收藏存储、Git 逻辑、领域类型和查询；`src/contracts/` 放命令层与 UI 层之间的无框架接口；`src/commands/` 放各子命令；`src/ui/` 放 Ink 界面、Prompt adapter 和 termcn 相关组件。`bin/iskills.js` 是可执行入口。集成测试在 `test/cli.test.ts`，补充说明在 `docs/`，构建产物输出到 `dist/`，不要手改或提交。
 
 ## 构建、测试与开发
 

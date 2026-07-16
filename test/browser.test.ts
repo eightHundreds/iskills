@@ -14,6 +14,41 @@ import {
   run,
   type JsonSkill,
 } from './helpers.js';
+import {
+  browserNavigationAtom,
+  browserSelectionAtom,
+  createBrowserStore,
+} from '../src/ui/browser-state.js';
+
+test('browser state stores are isolated between screens', () => {
+  const first = createBrowserStore({
+    tab: 'collection',
+    query: 'alpha',
+    cursor: 1,
+    selected: ['alpha'],
+    agent: 'codex',
+    focus: 'list',
+  });
+  const second = createBrowserStore({
+    tab: 'project',
+    query: 'beta',
+    cursor: 0,
+    selected: ['beta'],
+    agent: 'claude',
+    focus: 'tabs',
+  });
+
+  first.set(browserSelectionAtom, new Set(['alpha', 'gamma']));
+  first.set(browserNavigationAtom, {
+    ...first.get(browserNavigationAtom),
+    query: 'updated',
+  });
+
+  assert.deepEqual([...first.get(browserSelectionAtom)], ['alpha', 'gamma']);
+  assert.deepEqual([...second.get(browserSelectionAtom)], ['beta']);
+  assert.equal(first.get(browserNavigationAtom).query, 'updated');
+  assert.equal(second.get(browserNavigationAtom).query, 'beta');
+});
 
 test('imports through an existing Agent symlink without losing its canonical directory', async () => {
   const context = await makeContext();

@@ -1,22 +1,22 @@
 import type { ReactNode } from 'react';
-import { realpath } from 'node:fs/promises';
-import { listCollection } from './core.js';
 import {
   Confirm,
-  InstallReview,
-  ImportReview,
   MultiSelect,
   Select,
-  SkillMultiSelect,
   TagEditor,
   TextInput,
+} from './termcn.js';
+import {
+  InstallReview,
+  ImportReview,
+  SkillMultiSelect,
   type ImportReviewItem,
   type ImportReviewResult,
   type InstallReviewResult,
   type InstallReviewTarget,
-} from './ui/termcn.js';
-import { InkSession } from './ui/session.js';
-import type { Choice, Skill } from './types.js';
+} from './reviews.js';
+import { InkSession } from './session.js';
+import type { Choice, Skill } from '../domain/types.js';
 
 const defaultSession = new InkSession();
 
@@ -87,30 +87,11 @@ export function chooseMany<T extends Skill>(skills: T[], title: string): Promise
 export async function chooseSkillMany<T extends Skill>(
   groups: { agent: string; skills: T[] }[],
   title: string,
-  session?: InkSession
+  options: {
+    collectionNote?: (skill: T) => string | undefined;
+    session?: InkSession;
+  } = {}
 ): Promise<T[]> {
-  const collection = await listCollection().catch(() => []);
-  const noteByPath = new Map<string, string>();
-  for (const skill of collection) {
-    if (skill.note) noteByPath.set(skill.path, skill.note);
-  }
-  const realpathBySkillPath = new Map<string, string>();
-  await Promise.all(
-    groups.flatMap((group) =>
-      group.skills.map(async (skill) => {
-        try {
-          realpathBySkillPath.set(skill.path, await realpath(skill.path));
-        } catch {
-          // ignore unresolved symlinks
-        }
-      })
-    )
-  );
-  const collectionNote = (skill: T): string | undefined => {
-    const real = realpathBySkillPath.get(skill.path);
-    if (!real) return undefined;
-    return noteByPath.get(real);
-  };
   return runPrompt<T[]>(
     [],
     (finish) => (
@@ -120,11 +101,11 @@ export async function chooseSkillMany<T extends Skill>(
           options: group.skills.map((skill) => ({ skill, agent: group.agent })),
         }))}
         label={title}
-        collectionNote={collectionNote}
+        {...(options.collectionNote ? { collectionNote: options.collectionNote } : {})}
         onSubmit={finish}
       />
     ),
-    session
+    options.session
   );
 }
 

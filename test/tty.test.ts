@@ -398,7 +398,7 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
 
     const result = await runInteractive(context, [], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
-      { wait: 'Space 选择 · / 搜索', send: '/', enter: false, delayAfter: 100 },
+      { wait: '/ 搜索 · ? 快捷键', send: '/', enter: false, delayAfter: 100 },
       { wait: '搜索技能', send: 'alphax', enter: false, delayAfter: 100 },
       { wait: '没有匹配的技能', send: '\x7f', enter: false, delayAfter: 100 },
       { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
@@ -745,7 +745,7 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
-      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '→ 查看 · d 删除', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
       { wait: '● 当前项目', send: '', delayAfter: 100 },
       { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
@@ -787,7 +787,7 @@ test('TTY entry can copy a selected collection Skill into a global Agent directo
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
-      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '→ 查看 · d 删除', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
       { wait: '● 当前项目', send: '\u001b[B', enter: false, delayAfter: 100 },
       { wait: '● 全局', send: '', delayAfter: 100 },
@@ -824,7 +824,7 @@ test('TTY entry cancels installation configuration without creating a target', a
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
-      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '→ 查看 · d 删除', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
       { wait: '● 当前项目', send: '\u001b', enter: false },
       { wait: 'q 退出', send: 'q', enter: false },
@@ -855,7 +855,7 @@ test('collection browser confirms replacing an existing add target in a popup', 
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
-      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '→ 查看 · d 删除', send: ' ', enter: false },
       { wait: '已选 1', send: '', delayAfter: 100 },
       { wait: '● 当前项目', send: '', delayAfter: 100 },
       { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
@@ -904,7 +904,7 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
       { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
       { wait: '→ 查看', send: '\u001b[C', enter: false, delayAfter: 100 },
       { wait: '‹ collected-skill', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '↑/↓ 移动 · Space 选择 · → 查看', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '→ 查看 · d 删除', send: '\u001b[B', enter: false, delayAfter: 100 },
       { wait: '› ○ 本地 · local-only', send: ' ', enter: false, delayAfter: 200 },
       { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },

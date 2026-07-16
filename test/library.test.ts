@@ -17,7 +17,7 @@ import {
   parseGitSource,
   readState,
   writeState,
-} from '../src/core.js';
+} from '../src/domain/core.js';
 import {
   makeContext,
   makeSkill,

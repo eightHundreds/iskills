@@ -1,14 +1,8 @@
 import { Box, render, useApp, useInput, type Instance } from 'ink';
 import { useEffect, useState, type ReactNode } from 'react';
+import { InterruptError } from '../contracts/terminal.js';
 
-export class InterruptError extends Error {
-  readonly exitCode = 130;
-
-  constructor() {
-    super('操作已中断');
-    this.name = 'InterruptError';
-  }
-}
+export { InterruptError } from '../contracts/terminal.js';
 
 function CancelBoundary({
   cancel,

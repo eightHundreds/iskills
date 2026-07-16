@@ -1,6 +1,6 @@
 {
   "name": "iskills",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "description": "Personal Skill library CLI for AI coding agents",
   "repository": {
     "type": "git",
@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "ink": "^6.5.1",
+    "jotai": "^2.20.2",
     "react": "^19.2.0"
   },
   "devDependencies": {

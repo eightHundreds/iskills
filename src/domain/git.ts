@@ -23,7 +23,6 @@ import {
   writeMetadata,
   writeState,
 } from './core.js';
-import { confirm } from './prompts.js';
 import type {
   GitImportContext,
   GitSource,
@@ -426,7 +425,7 @@ export async function backgroundCollectionSync(): Promise<void> {
   }
 }
 
-interface UpdateGitSkillOptions {
+export interface UpdateGitSkillOptions {
   confirmDelete?: (links: SkillLink[]) => Promise<boolean>;
   quietDelete?: boolean;
 }
@@ -484,15 +483,11 @@ export async function updateGitSkill(
       : gitSource.path;
     if (!gitObjectExists(repository, `${latestCommit}:${sourceSkillFile(newPath ?? '.')}`)) {
       if (!allowDelete) {
-        if (!process.stdin.isTTY) throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
-        const confirmed = options.confirmDelete
-          ? await options.confirmDelete(links)
-          : await (async () => {
-              console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
-              links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
-              return confirm('执行收藏夹移除流程吗？');
-            })();
+        if (!options.confirmDelete) {
+          throw new Error(`上游已删除 ${skill.name}；调用方必须确认或显式允许移除`);
+        }
+        const confirmed = await options.confirmDelete(links);
         if (!confirmed) return 'delete-skipped';
       }
       await removeFromCollection(skill.name, true, options.quietDelete ?? false);

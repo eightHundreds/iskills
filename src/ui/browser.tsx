@@ -1,25 +1,34 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { matches } from '../core.js';
-import { checkGitSkillUpdates } from '../git.js';
-import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../types.js';
+import { Provider, useAtom, useAtomValue } from 'jotai';
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
+import type {
+  BrowserFocus,
+  BrowserResult,
+  BrowserState,
+  BrowserTab,
+  BrowserViewInput,
+  SkillGroup,
+} from '../contracts/browser.js';
+import { matchesSkill } from '../domain/skill-query.js';
+import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../domain/types.js';
+import {
+  browserNavigationAtom,
+  browserSelectionAtom,
+  createBrowserStore,
+} from './browser-state.js';
 import { InkSession } from './session.js';
 import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
 
-export type BrowserTab = 'project' | 'collection' | 'global';
-export type BrowserFocus = 'tabs' | 'agents' | 'list';
-export interface SkillGroup {
-  agent: string;
-  skills: Skill[];
-}
-interface BrowserState {
-  tab: BrowserTab;
-  query: string;
-  cursor: number;
-  selected: string[];
-  agent: string;
-  focus: BrowserFocus;
-}
+export type {
+  BrowserFocus,
+  BrowserResult,
+  BrowserState,
+  BrowserTab,
+  BrowserUpdateCheck,
+  BrowserUpdateChecker,
+  BrowserViewInput,
+  SkillGroup,
+} from '../contracts/browser.js';
 interface BrowserConfirmation {
   title: string;
   message: string;
@@ -27,20 +36,6 @@ interface BrowserConfirmation {
   onConfirm: () => void;
   onCancel: () => void;
 }
-export type BrowserResult =
-  | { type: 'quit' }
-  | (BrowserState & (
-      | { type: 'sync' }
-      | { type: 'tags'; skills: Skill[] }
-      | { type: 'update'; skills: CollectedSkill[] }
-      | { type: 'add'; skills: CollectedSkill[] }
-      | { type: 'removeCollection'; skills: CollectedSkill[] }
-      | { type: 'removeLocations'; skills: Skill[] }
-      | { type: 'materialize'; skills: Skill[] }
-      | { type: 'import'; skills: Skill[] }
-      | { type: 'open'; skill: Skill; collection: boolean }
-    ));
-
 type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
   | { type: 'skill'; group: string; skill: Skill };
@@ -127,7 +122,7 @@ function skillGroups(skill: Skill): string[] {
 function groupedRows(skills: Skill[], query: string): SkillRow[] {
   if (query.trim()) {
     return skills
-      .filter((skill) => matches(skill, query))
+      .filter((skill) => matchesSkill(skill, query))
       .map((skill) => ({ type: 'skill', group: skillGroups(skill).join(' · '), skill }));
   }
   const groups = new Map<string, Skill[]>();
@@ -155,7 +150,7 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
 
 function flatRows(skills: Skill[], query: string): SkillRow[] {
   return skills
-    .filter((skill) => matches(skill, query))
+    .filter((skill) => matchesSkill(skill, query))
     .map((skill) => ({ type: 'skill', group: '', skill }));
 }
 
@@ -244,7 +239,6 @@ function PopupLine({
 function SkillPane({
   rows,
   cursor,
-  selected,
   isActive,
   showShortcuts = false,
   preferNote = false,
@@ -258,7 +252,6 @@ function SkillPane({
 }: {
   rows: SkillRow[];
   cursor: number;
-  selected: Set<string>;
   isActive: boolean;
   showShortcuts?: boolean;
   preferNote?: boolean;
@@ -271,6 +264,7 @@ function SkillPane({
   overlayMuteLastContent?: boolean;
 }) {
   const { stdout } = useStdout();
+  const selected = useAtomValue(browserSelectionAtom);
   const height = Math.max(3, (stdout.rows ?? 24) - 8);
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
@@ -431,57 +425,30 @@ function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {
   return groups.filter((group) => group.skills.length > 0);
 }
 
-function Browser({
+interface BrowserProps extends BrowserViewInput {
+  confirmation?: BrowserConfirmation | undefined;
+  finish: (result: BrowserResult) => void;
+}
+
+function BrowserContent({
   projectGroups,
   collection,
   globalGroups,
-  initialQuery,
-  initialTab,
-  initialAgent,
-  initialFocus,
-  initialCursor,
-  initialSelected,
   canSync,
   status,
   transientStatus,
+  checkUpdates,
   updatingSkillName,
   updatingProgress,
   workingAction = '更新',
   confirmation,
   finish,
-}: {
-  projectGroups: SkillGroup[];
-  collection: CollectedSkill[];
-  globalGroups: SkillGroup[];
-  initialQuery: string;
-  initialTab: BrowserTab;
-  initialAgent: string;
-  initialFocus: BrowserFocus;
-  initialCursor: number;
-  initialSelected: string[];
-  canSync: boolean;
-  status: string;
-  transientStatus: boolean;
-  updatingSkillName?: string | undefined;
-  updatingProgress?: { current: number; total: number } | undefined;
-  workingAction?: '更新' | '转换';
-  confirmation?: BrowserConfirmation | undefined;
-  finish: (result: BrowserResult) => void;
-}) {
-  const [tab, setTab] = useState<BrowserTab>(initialTab);
-  const [query, setQuery] = useState(initialQuery);
+}: Omit<BrowserProps, 'state'>) {
+  const [navigation, setNavigation] = useAtom(browserNavigationAtom);
+  const { tab, query, cursor, agent, focus } = navigation;
   const [visibleStatus, setVisibleStatus] = useState(status);
   const visibleProjectGroups = useMemo(() => visibleAgentGroups(projectGroups), [projectGroups]);
   const visibleGlobalGroups = useMemo(() => visibleAgentGroups(globalGroups), [globalGroups]);
-  const allAgents = [
-    ...new Set([...visibleProjectGroups, ...visibleGlobalGroups].map((group) => group.agent)),
-  ];
-  const [agent, setAgent] = useState(
-    allAgents.includes(initialAgent)
-      ? initialAgent
-      : visibleProjectGroups[0]?.agent ?? visibleGlobalGroups[0]?.agent ?? ''
-  );
-  const [focus, setFocus] = useState<BrowserFocus>(initialFocus);
   const activeProjectAgent = visibleProjectGroups.some((group) => group.agent === agent)
     ? agent
     : visibleProjectGroups[0]?.agent ?? '';
@@ -509,11 +476,27 @@ function Browser({
     [globalGroup, query]
   );
   const rows = tab === 'project' ? projectRows : tab === 'global' ? globalRows : collectionRows;
-  const [cursor, setCursor] = useState(() =>
-    Math.min(initialCursor, Math.max(0, rows.length - 1))
-  );
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setTab = (value: BrowserTab): void => {
+    setNavigation((current) => ({ ...current, tab: value }));
+  };
+  const setQuery = (value: string): void => {
+    setNavigation((current) => ({ ...current, query: value }));
+  };
+  const setAgent = (value: string): void => {
+    setNavigation((current) => ({ ...current, agent: value }));
+  };
+  const setFocus = (value: BrowserFocus): void => {
+    setNavigation((current) => ({ ...current, focus: value }));
+  };
+  const setCursor = (value: SetStateAction<number>): void => {
+    setNavigation((current) => {
+      const cursor = typeof value === 'function' ? value(current.cursor) : value;
+      cursorRef.current = cursor;
+      return { ...current, cursor };
+    });
+  };
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -522,9 +505,9 @@ function Browser({
     scope: 'collection' | 'location';
     skills: Skill[];
   } | undefined>();
-  const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
+  const [queryBeforeSearch, setQueryBeforeSearch] = useState(query);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const [selected, setSelected] = useAtom(browserSelectionAtom);
   const [updateCheck, setUpdateCheck] = useState<{
     checking: boolean;
     updates: Set<string>;
@@ -594,13 +577,17 @@ function Browser({
     checkedUpdates.current = true;
     let active = true;
     setUpdateCheck((current) => ({ ...current, checking: true }));
-    void checkGitSkillUpdates(collection).then(({ updates, failed }) => {
-      if (active) setUpdateCheck({ checking: false, updates, failed });
-    });
+    void checkUpdates(collection)
+      .then(({ updates, failed }) => {
+        if (active) setUpdateCheck({ checking: false, updates, failed });
+      })
+      .catch(() => {
+        if (active) setUpdateCheck({ checking: false, updates: new Set(), failed: collection.length });
+      });
     return () => {
       active = false;
     };
-  }, [collection, tab]);
+  }, [checkUpdates, collection, tab]);
 
   const browserState = (): BrowserState => ({
     tab,
@@ -840,7 +827,6 @@ function Browser({
           <SkillPane
             rows={projectRows}
             cursor={cursor}
-            selected={selected}
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
@@ -865,7 +851,6 @@ function Browser({
           <SkillPane
             rows={globalRows}
             cursor={cursor}
-            selected={selected}
             isActive={focus === 'list'}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
@@ -882,7 +867,6 @@ function Browser({
         <SkillPane
           rows={collectionRows}
           cursor={cursor}
-          selected={selected}
           isActive={focus === 'list'}
           showShortcuts={showShortcuts}
           overlayLines={overlayLines}
@@ -985,7 +969,7 @@ function Browser({
               : activeConfirmation
               ? '等待确认'
               : showActions
-              ? '↑/↓ 移动 · Enter 执行 · Esc 返回'
+              ? 'Enter 执行 · Esc 返回'
               : showShortcuts
               ? 'Esc / q / ? 关闭'
               : focus === 'tabs'
@@ -993,12 +977,12 @@ function Browser({
               : focus === 'agents'
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
                 : canViewWithRightArrow
-                  ? '↑/↓ 移动 · Space 选择 · → 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                  ? '→ 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
-                    ? '↑/↓ 移动 · Space 选择 · Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                    ? 'Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canDelete
-                    ? '↑/↓ 移动 · Space 选择 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                    : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}
+                    ? 'd 删除 · / 搜索 · ? 快捷键 · q 退出'
+                    : '/ 搜索 · ? 快捷键 · q 退出'}
           </Text>
           {(selected.size > 0 || actions.length > 0) && (
             <>
@@ -1016,6 +1000,21 @@ function Browser({
         </Box>
       )}
     </Box>
+  );
+}
+
+function Browser({ state, ...props }: BrowserProps) {
+  const [store] = useState(() => {
+    const agents = [...props.projectGroups, ...props.globalGroups]
+      .filter((group) => group.skills.length > 0)
+      .map((group) => group.agent);
+    const agent = agents.includes(state.agent) ? state.agent : agents[0] ?? '';
+    return createBrowserStore({ ...state, agent });
+  });
+  return (
+    <Provider store={store}>
+      <BrowserContent {...props} />
+    </Provider>
   );
 }
 
@@ -1098,75 +1097,28 @@ export function browseSkillDetail(
 }
 
 export function browseSkills(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
-  session: InkSession,
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string
+  input: BrowserViewInput,
+  session: InkSession
 ): Promise<BrowserResult> {
   return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
-      <Browser
-        projectGroups={projectGroups}
-        collection={collection}
-        globalGroups={globalGroups}
-        initialQuery={initialQuery}
-        initialTab={initialTab}
-        initialAgent={initialAgent}
-        initialFocus={initialFocus}
-        initialCursor={initialCursor}
-        initialSelected={initialSelected}
-        canSync={canSync}
-        status={status}
-        transientStatus={transientStatus}
-        updatingSkillName={updatingSkillName}
-        finish={finish}
-      />
+      <Browser {...input} finish={finish} />
   ), false);
 }
 
+export interface BrowserConfirmationRequest {
+  message: string;
+  details?: string[];
+  title?: string;
+}
+
 export function confirmBrowseAction(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
+  input: BrowserViewInput,
   session: InkSession,
-  message: string,
-  details: string[] = [],
-  title = '确认',
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string
+  { message, details = [], title = '确认' }: BrowserConfirmationRequest
 ): Promise<boolean> {
   return session.show<boolean>(false, (finish) => (
       <Browser
-        projectGroups={projectGroups}
-        collection={collection}
-        globalGroups={globalGroups}
-        initialQuery={initialQuery}
-        initialTab={initialTab}
-        initialAgent={initialAgent}
-        initialFocus={initialFocus}
-        initialCursor={initialCursor}
-        initialSelected={initialSelected}
-        canSync={canSync}
-        status={status}
-        transientStatus={transientStatus}
-        updatingSkillName={updatingSkillName}
+        {...input}
         confirmation={{
           title,
           message,
@@ -1180,43 +1132,13 @@ export function confirmBrowseAction(
 }
 
 export function displayBrowseSkills(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
+  input: BrowserViewInput,
   session: InkSession,
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string,
-  updatingProgress?: { current: number; total: number },
-  confirmation?: BrowserConfirmation,
-  workingAction: '更新' | '转换' = '更新',
   onInterrupt?: () => void
 ): void {
   session.display(
     <Browser
-      projectGroups={projectGroups}
-      collection={collection}
-      globalGroups={globalGroups}
-      initialQuery={initialQuery}
-      initialTab={initialTab}
-      initialAgent={initialAgent}
-      initialFocus={initialFocus}
-      initialCursor={initialCursor}
-      initialSelected={initialSelected}
-      canSync={canSync}
-      status={status}
-      transientStatus={transientStatus}
-      updatingSkillName={updatingSkillName}
-      updatingProgress={updatingProgress}
-      workingAction={workingAction}
-      confirmation={confirmation}
+      {...input}
       finish={() => undefined}
     />,
     onInterrupt

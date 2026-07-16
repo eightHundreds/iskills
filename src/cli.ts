@@ -11,10 +11,10 @@ import {
   interactiveList,
   printHelp,
 } from './commands/index.js';
-import { commitCollection, ensureCollection, readState } from './core.js';
-import { finalizeResolvedConflicts } from './git.js';
-import { closePrompts } from './prompts.js';
-import { InterruptError } from './ui/session.js';
+import { commitCollection, ensureCollection, readState } from './domain/core.js';
+import { finalizeResolvedConflicts } from './domain/git.js';
+import { closePrompts } from './ui/prompts.js';
+import { InterruptError } from './contracts/terminal.js';
 
 const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }

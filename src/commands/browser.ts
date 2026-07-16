@@ -3,6 +3,8 @@ import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
+import type { BrowserState, BrowserTab, BrowserViewInput } from '../contracts/browser.js';
+import { InterruptError } from '../contracts/terminal.js';
 import {
   AGENTS,
   assertRelativePath,
@@ -24,19 +26,22 @@ import {
   removeFromCollection,
   removeSkillLocations,
   writeMetadata,
-} from '../core.js';
-import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
-import { chooseOne, editInput, editTags, reviewInstall } from '../prompts.js';
-import type { GitSource, Skill, SkillMetadata } from '../types.js';
+} from '../domain/core.js';
+import {
+  checkGitSkillUpdates,
+  cloneGitSource,
+  syncCollection,
+  updateGitSkill,
+} from '../domain/git.js';
+import { chooseOne, editInput, editTags, reviewInstall } from '../ui/prompts.js';
+import type { GitSource, Skill, SkillMetadata } from '../domain/types.js';
 import {
   browseSkillDetail,
   browseSkills,
   confirmBrowseAction,
   displayBrowseSkills,
-  type BrowserFocus,
-  type BrowserTab,
 } from '../ui/browser.js';
-import { InkSession, InterruptError } from '../ui/session.js';
+import { InkSession } from '../ui/session.js';
 import {
   addSkillsToProject,
   globalSkillGroups,
@@ -162,12 +167,14 @@ export async function interactiveList(
   initialQuery = '',
   initialTab: BrowserTab = 'project'
 ): Promise<void> {
-  let query = initialQuery;
-  let tab: BrowserTab = initialTab;
-  let cursor = 0;
-  let selected: string[] = [];
-  let agent = '';
-  let focus: BrowserFocus = 'tabs';
+  let state: BrowserState = {
+    query: initialQuery,
+    tab: initialTab,
+    cursor: 0,
+    selected: [],
+    agent: '',
+    focus: 'tabs',
+  };
   let status = '';
   let transientStatus = false;
   const session = new InkSession(true);
@@ -180,28 +187,29 @@ export async function interactiveList(
         globalSkillGroups(),
       ]);
       const canSync = await exists(join(collectionPaths().root, '.git'));
-      const result = await browseSkills(
-        projects,
+      const browserView = (
+        overrides: Pick<BrowserViewInput, 'updatingSkillName' | 'updatingProgress' | 'workingAction'> = {}
+      ): BrowserViewInput => ({
+        projectGroups: projects,
         collection,
-        globals,
-        session,
-        query,
-        tab,
+        globalGroups: globals,
+        state,
         canSync,
         status,
-        cursor,
-        selected,
-        agent,
-        focus,
-        transientStatus
-      );
+        transientStatus,
+        checkUpdates: checkGitSkillUpdates,
+        ...overrides,
+      });
+      const result = await browseSkills(browserView(), session);
       if (result.type === 'quit') return;
-      query = result.query;
-      tab = result.tab;
-      cursor = result.cursor;
-      selected = result.selected;
-      agent = result.agent;
-      focus = result.focus;
+      state = {
+        query: result.query,
+        tab: result.tab,
+        cursor: result.cursor,
+        selected: result.selected,
+        agent: result.agent,
+        focus: result.focus,
+      };
       if (transientStatus) {
         status = '';
         transientStatus = false;
@@ -209,26 +217,11 @@ export async function interactiveList(
       const confirmInBrowser = (
         message: string,
         details: string[] = [],
-        title = '确认',
-        confirmingSkillName?: string
+        title = '确认'
       ) => confirmBrowseAction(
-        projects,
-        collection,
-        globals,
+        browserView(),
         session,
-        message,
-        details,
-        title,
-        query,
-        tab,
-        canSync,
-        status,
-        cursor,
-        selected,
-        agent,
-        focus,
-        transientStatus,
-        confirmingSkillName
+        { message, details, title }
       );
       if (result.type === 'sync') {
         session.close();
@@ -250,21 +243,11 @@ export async function interactiveList(
         session.close();
         for (const [index, skill] of result.skills.entries()) {
           displayBrowseSkills(
-            projects,
-            collection,
-            globals,
+            browserView({
+              updatingSkillName: skill.name,
+              updatingProgress: { current: index + 1, total: result.skills.length },
+            }),
             session,
-            query,
-            tab,
-            canSync,
-            status,
-            cursor,
-            selected,
-            agent,
-            focus,
-            transientStatus,
-            skill.name,
-            { current: index + 1, total: result.skills.length }
           );
           await delay(120);
           try {
@@ -358,7 +341,7 @@ export async function interactiveList(
           });
           status = `已通过${install.copy ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
           transientStatus = true;
-          selected = [];
+          state = { ...state, selected: [] };
         } catch (error) {
           status = errorMessage(error);
           transientStatus = false;
@@ -375,7 +358,7 @@ export async function interactiveList(
             : `已从收藏夹移除 ${names.length} 个技能`;
           transientStatus = true;
           const removed = new Set(result.skills.map((skill) => skill.path));
-          selected = selected.filter((path) => !removed.has(path));
+          state = { ...state, selected: state.selected.filter((path) => !removed.has(path)) };
         } catch (error) {
           status = `移除失败 — ${errorMessage(error)}`;
           transientStatus = false;
@@ -391,7 +374,7 @@ export async function interactiveList(
             : `已删除 ${count} 个技能位置，收藏夹内容保留`;
           transientStatus = true;
           const removed = new Set(result.skills.map((skill) => skill.path));
-          selected = selected.filter((path) => !removed.has(path));
+          state = { ...state, selected: state.selected.filter((path) => !removed.has(path)) };
         } catch (error) {
           status = `删除失败 — ${errorMessage(error)}`;
           transientStatus = false;
@@ -406,23 +389,12 @@ export async function interactiveList(
             signal: controller.signal,
             onProgress: async (skill, current, total) => {
               displayBrowseSkills(
-                projects,
-                collection,
-                globals,
+                browserView({
+                  updatingSkillName: skill.name,
+                  updatingProgress: { current, total },
+                  workingAction: '转换',
+                }),
                 session,
-                query,
-                tab,
-                canSync,
-                status,
-                cursor,
-                selected,
-                agent,
-                focus,
-                transientStatus,
-                skill.name,
-                { current, total },
-                undefined,
-                '转换',
                 () => controller.abort()
               );
               await delay(120);
@@ -432,7 +404,7 @@ export async function interactiveList(
             ? `已将 ${result.skills[0]?.name ?? ''} 转为副本`
             : `已将 ${result.skills.length} 个引用转为副本`;
           transientStatus = true;
-          selected = [];
+          state = { ...state, selected: [] };
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') {
             throw new InterruptError();
@@ -459,13 +431,11 @@ export async function interactiveList(
           status = errorMessage(error);
           transientStatus = false;
         }
-        selected = [];
+        state = { ...state, selected: [] };
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
       if (result.type === 'open') {
-        cursor = result.cursor;
-        selected = result.selected;
         await skillDetail(result.skill, result.collection, session);
       }
     }

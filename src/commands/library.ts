@@ -30,8 +30,8 @@ import {
   validateSkillTree,
   writeMetadata,
   writeState,
-} from '../core.js';
-import { cloneGitSource } from '../git.js';
+} from '../domain/core.js';
+import { cloneGitSource } from '../domain/git.js';
 import {
   chooseMany,
   chooseOne,
@@ -40,14 +40,14 @@ import {
   confirm,
   input,
   reviewImport,
-} from '../prompts.js';
+} from '../ui/prompts.js';
 import type {
   CollectedSkill,
   CollectionState,
   GitImportContext,
   Skill,
   SkillMetadata,
-} from '../types.js';
+} from '../domain/types.js';
 
 function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
   const sourcePath = assertRelativePath(
@@ -453,6 +453,31 @@ export async function globalSkillGroups(names: string[] = []): Promise<
   return groups.sort((a, b) => a.agent.localeCompare(b.agent));
 }
 
+async function collectionNoteLookup<T extends Skill>(
+  groups: { agent: string; skills: T[] }[]
+): Promise<(skill: T) => string | undefined> {
+  const collection = await listCollection().catch(() => []);
+  const noteByPath = new Map(
+    collection.filter((skill) => skill.note).map((skill) => [skill.path, skill.note])
+  );
+  const realpathBySkillPath = new Map<string, string>();
+  await Promise.all(
+    groups.flatMap((group) =>
+      group.skills.map(async (skill) => {
+        try {
+          realpathBySkillPath.set(skill.path, await realpath(skill.path));
+        } catch {
+          // Ignore unresolved links; their notes cannot be matched safely.
+        }
+      })
+    )
+  );
+  return (skill: T): string | undefined => {
+    const path = realpathBySkillPath.get(skill.path);
+    return path ? noteByPath.get(path) : undefined;
+  };
+}
+
 export async function commandImport(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -505,13 +530,15 @@ export async function commandImport(argv: string[]): Promise<void> {
     let selected = skills;
     if (!values.all && (skills.length > 1 || !input)) {
       if (!process.stdin.isTTY) throw new Error('请使用 --all 或交互选择要导入的技能');
+      const groups = globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }];
       selected = await chooseSkillMany(
-        globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }],
+        groups,
         globalGroups
           ? '扫描全局 Skill 目录'
           : !input
             ? '选择当前仓库技能'
-            : '发现以下技能'
+            : '发现以下技能',
+        { collectionNote: await collectionNoteLookup(groups) }
       );
     }
     if (!selected.length) return;

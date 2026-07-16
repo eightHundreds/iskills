@@ -29,6 +29,7 @@ import type {
   SkillMetadata,
   SkillSource,
 } from './types.js';
+import { matchesSkill } from './skill-query.js';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
@@ -577,21 +578,7 @@ export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
 }
 
 export function matches(skill: Skill, query: string): boolean {
-  if (!query) return true;
-  const haystack = [
-    skill.name,
-    skill.description,
-    skill.note,
-    ...(skill.tags || []),
-    skill.source?.url,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .every((word) => haystack.includes(word));
+  return matchesSkill(skill, query);
 }
 
 export async function removeFromCollection(

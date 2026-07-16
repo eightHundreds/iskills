@@ -13,13 +13,15 @@
 ## 决策
 
 1. 继续使用 Ink + React 作为终端渲染 runtime。
-2. 继续维护 copy-owned `src/ui/termcn.tsx`。新增依赖需要证明可观的可访问性、输入法、布局或维护收益；“社区有组件”本身不足以引入依赖。
+2. 继续维护 copy-owned `src/ui/termcn.tsx`，其中只放无业务语义的控件与视觉令牌；安装、导入等业务页面位于独立 UI 模块，并只通过 props/结果契约取得领域数据。新增依赖需要证明可观的可访问性、输入法、布局或维护收益；“社区有组件”本身不足以引入依赖。
 3. 普通组件不直接写 ANSI；alternate screen、clear 和终端交接由页面或 session 协调层负责。
 4. 简单 Prompt 使用行内模式；主浏览器 MAY 使用 alternate screen。
 5. 长驻 React 树和 coordinator loop 都是允许的实现。无论采用哪种方式，每个逻辑 screen 都必须有明确 identity，完成时必须真正结束或切换其输入与渲染生命周期，不能只 resolve 一个 Promise。
 6. 复用同类型组件时必须通过明确的 state owner、`key` 或 unmount 防止上一个 screen 的 cursor、selection 和 effect 泄漏。
 7. 继承 stdio 或直接连接同一 TTY 的前台子进程运行前卸载 UI 并归还终端。需要保留 UI 且呈现子进程输出时，capture/pipe 输出并由 Ink 的单一通道渲染；不接触终端的子进程不受此约束。
 8. 当前不引入 Clack、第二套 Prompt runtime、自定义 ANSI diff 或 60fps 渲染目标；有实际需求时另写 ADR。
+9. Jotai 仅用于一个浏览器 screen 内跨组件共享的导航与选择状态；每个 screen 使用独立 store。弹层、输入和瞬时反馈保持组件本地，Git、文件和终端生命周期仍由命令层负责。
+10. UI adapter 与命令层通过无 Ink 依赖的输入、结果和能力接口协作。`src/domain/core.ts`、`src/domain/git.ts` 不得导入 Prompt 或 UI；需要确认等交互时由调用方传入回调。
 
 ## 不属于本 ADR 的内容
 

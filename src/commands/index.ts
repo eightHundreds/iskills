@@ -1,13 +1,13 @@
 import { parseArgs } from 'node:util';
-import { errorMessage, listCollection, readState } from '../core.js';
+import { errorMessage, listCollection, readState } from '../domain/core.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
   syncCollection,
   updateGitSkill,
-} from '../git.js';
-import { chooseMany, confirm, input } from '../prompts.js';
-import type { CollectedSkill, UpdateStatus } from '../types.js';
+} from '../domain/git.js';
+import { chooseMany, confirm, input } from '../ui/prompts.js';
+import type { CollectedSkill, UpdateStatus } from '../domain/types.js';
 import { commandList, interactiveList } from './browser.js';
 import { commandAdd, commandImport, commandRemove } from './library.js';
 import { commandSearch } from './search.js';
@@ -44,7 +44,20 @@ export async function commandUpdate(argv: string[]): Promise<void> {
   const results: Array<{ name: string; status: UpdateStatus | 'error'; error?: string }> = [];
   for (const skill of selected) {
     try {
-      results.push({ name: skill.name, status: await updateGitSkill(skill, values.yes ?? false) });
+      const allowDelete = values.yes ?? false;
+      results.push({
+        name: skill.name,
+        status: await updateGitSkill(skill, allowDelete, {
+          confirmDelete: async (links) => {
+            if (!process.stdin.isTTY) {
+              throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
+            }
+            console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
+            links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
+            return confirm('执行收藏夹移除流程吗？');
+          },
+        }),
+      });
     } catch (error) {
       results.push({ name: skill.name, status: 'error', error: errorMessage(error) });
     }
