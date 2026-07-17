@@ -16,13 +16,16 @@ import {
   readMetadata,
   readSkill,
   readState,
-  removeFromCollection,
   sourceSkillFile,
   validateSkillTree,
   writeJson,
-  writeMetadata,
   writeState,
 } from './core.js';
+import {
+  installMergedCollectionSkill,
+  removeFromCollection,
+  saveCollectionMetadata,
+} from './collection-write.js';
 import type {
   GitImportContext,
   GitSource,
@@ -259,26 +262,6 @@ async function prepareSourceMerge(
   return prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
 }
 
-async function installMergedSkill(name: string, workspace: string, source: GitSource): Promise<void> {
-  const paths = collectionPaths();
-  const target = join(paths.skills, assertSkillName(name));
-  const staged = join(paths.skills, `.${name}.update-${process.pid}`);
-  await rm(staged, { recursive: true, force: true });
-  await mkdir(staged, { recursive: true });
-  await validateSkillTree(workspace);
-  await copyDirectoryContents(workspace, staged);
-  if (!(await exists(join(staged, 'SKILL.md')))) {
-    await rm(staged, { recursive: true, force: true });
-    throw new Error(`合并结果不是有效技能：${name}`);
-  }
-  await rm(target, { recursive: true });
-  await rename(staged, target);
-  const metadata = await readMetadata(name);
-  metadata.description = (await readSkill(target)).description;
-  metadata.source = source;
-  await writeMetadata(metadata);
-}
-
 export async function finalizeResolvedConflicts(): Promise<void> {
   const state = await readState();
   const remaining = [];
@@ -333,7 +316,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
       remaining.push(conflict);
       continue;
     }
-    await installMergedSkill(conflict.skill, conflict.path, conflict.source);
+    await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source);
     await rm(conflict.path, { recursive: true, force: true });
     if (conflict.baseline) await rm(conflict.baseline, { recursive: true, force: true });
     console.error(`已应用手动解决的更新：${conflict.skill}`);
@@ -462,7 +445,7 @@ export async function updateGitSkill(
     if (!gitObjectExists(repository, latestRef) && gitSource.ref) {
       if (gitObjectExists(repository, `refs/tags/${gitSource.ref}`)) {
         metadata.source.refType = 'tag';
-        await writeMetadata(metadata);
+        await saveCollectionMetadata(metadata);
         return 'pinned';
       }
       throw new Error(`来源分支不存在：${gitSource.ref}`);
@@ -535,7 +518,7 @@ export async function updateGitSkill(
       return 'conflict';
     }
 
-    await installMergedSkill(skill.name, merge.workspace, nextSource);
+    await installMergedCollectionSkill(skill.name, merge.workspace, nextSource);
     await rm(merge.workspace, { recursive: true, force: true });
     if (baseline) await rm(baseline, { recursive: true, force: true });
     await commitCollection(`update ${skill.name}`);

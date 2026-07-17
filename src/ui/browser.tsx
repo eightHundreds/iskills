@@ -17,6 +17,7 @@ import {
   createBrowserStore,
 } from './browser-state.js';
 import { InkSession } from './session.js';
+import { skillFieldLabels } from './skill-labels.js';
 import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
 
 export type {
@@ -242,16 +243,18 @@ function detailContentLines(
   frameWidth: number
 ): DetailContentLine[] {
   const width = Math.max(1, frameWidth - 4);
-  const lines = detailFieldLines('描述', skill.description || '无描述', width, true);
-  if (!collection) return [...lines, ...detailFieldLines('位置', skill.path, width)];
+  const lines = detailFieldLines(skillFieldLabels.description, skill.description || '无描述', width, true);
+  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels.location, skill.path, width)];
 
   lines.push(
-    ...detailFieldLines('标签', metadata.tags.length ? metadata.tags.join(', ') : '无', width),
-    ...detailFieldLines('备注', metadata.note || '无', width),
-    ...detailFieldLines('来源', source, width)
+    ...detailFieldLines(skillFieldLabels.tags, metadata.tags.length ? metadata.tags.join(', ') : '无', width),
+    ...detailFieldLines(skillFieldLabels.note, metadata.note || '无', width),
+    ...detailFieldLines(skillFieldLabels.source, source, width)
   );
-  if (metadata.source.path) lines.push(...detailFieldLines('路径', metadata.source.path, width));
-  lines.push({ label: '关联位置', value: '' });
+  if (metadata.source.path) {
+    lines.push(...detailFieldLines(skillFieldLabels.path, metadata.source.path, width));
+  }
+  lines.push({ label: skillFieldLabels.relatedLocations, value: '' });
   if (!links.length) return [...lines, { value: '  无', muted: true }];
   return [
     ...lines,
@@ -373,7 +376,8 @@ function SkillPane({
 }) {
   const { stdout } = useStdout();
   const selected = useAtomValue(browserSelectionAtom);
-  const height = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
+  const paneHeight = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
+  const height = rows.length > paneHeight ? Math.max(3, paneHeight - 1) : paneHeight;
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
@@ -381,7 +385,7 @@ function SkillPane({
     showShortcuts ? shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))) : undefined
   );
   const popupHeight = popupLines?.length ?? 0;
-  const compositeHeight = popupLines ? Math.max(visible.length, popupHeight) : visible.length;
+  const compositeHeight = popupLines ? Math.max(height, popupHeight) : visible.length;
   const popupTop = Math.max(0, Math.floor((compositeHeight - popupHeight) / 2));
   const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
   const popupWidth = textWidth(popupLines?.[0] ?? '');
@@ -760,6 +764,8 @@ function BrowserContent({
     hasProjectAgents: visibleProjectGroups.length > 0,
     hasGlobalAgents: visibleGlobalGroups.length > 0,
   });
+  const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
+  const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
   const overlayLines = activeConfirmation
     ? confirmationLines(
         activeConfirmation,
@@ -947,7 +953,7 @@ function BrowserContent({
             rows={projectRows}
             cursor={cursor}
             isActive={focus === 'list'}
-            viewportHeight={frame.listViewportHeight}
+            viewportHeight={agentPaneViewportHeight}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
             overlayMuteLastContent={Boolean(activeConfirmation)}
@@ -972,7 +978,7 @@ function BrowserContent({
             rows={globalRows}
             cursor={cursor}
             isActive={focus === 'list'}
-            viewportHeight={frame.listViewportHeight}
+            viewportHeight={agentPaneViewportHeight}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
             overlayMuteLastContent={Boolean(activeConfirmation)}
@@ -990,7 +996,7 @@ function BrowserContent({
             rows={collectionRows}
             cursor={cursor}
             isActive={focus === 'list'}
-            viewportHeight={frame.listViewportHeight}
+            viewportHeight={collectionPaneViewportHeight}
             showShortcuts={showShortcuts}
             overlayLines={overlayLines}
             overlayMuteLastContent={Boolean(activeConfirmation)}
@@ -1066,6 +1072,7 @@ function BrowserContent({
         isActive={!searching && !showShortcuts && !showActions && focus === 'tabs'}
         enableArrowNav={false}
         focused={!searching && !showShortcuts && focus === 'tabs'}
+        width={frame.frameWidth}
       />
       {searching ? (
         <TextInput
@@ -1087,6 +1094,11 @@ function BrowserContent({
         />
       ) : (
         <Box flexDirection="column">
+          {(selected.size > 0 || actions.length > 0) && (
+            <Text color={termcnColors.muted} wrap="truncate-end">
+              {[...actions, selected.size ? `已选 ${selected.size}` : ''].filter(Boolean).join(' · ')}
+            </Text>
+          )}
           <Text color={termcnColors.muted} wrap="truncate-end">
             {updatingSkillName
               ? `正在${workingAction} · 请稍候`
@@ -1104,18 +1116,10 @@ function BrowserContent({
                   ? '→ 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
                     ? 'Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                  : canDelete
-                    ? 'd 删除 · / 搜索 · ? 快捷键 · q 退出'
+                    : canDelete
+                      ? 'd 删除 · / 搜索 · ? 快捷键 · q 退出'
                     : '/ 搜索 · ? 快捷键 · q 退出'}
           </Text>
-          {(selected.size > 0 || actions.length > 0) && (
-            <>
-              <Text> </Text>
-              <Text color={termcnColors.muted} wrap="truncate-end">
-                {[selected.size ? `已选 ${selected.size}` : '', ...actions].filter(Boolean).join(' · ')}
-              </Text>
-            </>
-          )}
           {activity.length > 0 && (
             <Text color={updateCheck.failed ? termcnColors.error : termcnColors.muted} wrap="truncate-end">
               {activity.join(' · ')}

@@ -1,6 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 
+// Semantic terminal palette. Keep its usage aligned with VISUAL-1 in the TUI guidelines.
 const colors = {
   primary: '#7C3AED',
   foreground: '#FFFFFF',
@@ -465,7 +466,7 @@ export function TagEditor({
       <Box
         flexDirection="column"
         borderStyle="round"
-        borderColor={focus === 'list' ? colors.primary : colors.border}
+        borderColor={colors.border}
         paddingX={1}
       >
         {visible.length ? visible.map((tag, index) => {
@@ -502,6 +503,7 @@ export function Tabs({
   isActive = true,
   enableArrowNav = true,
   focused = false,
+  width,
 }: {
   tabs: Tab[];
   activeTab: string;
@@ -509,6 +511,7 @@ export function Tabs({
   isActive?: boolean;
   enableArrowNav?: boolean;
   focused?: boolean;
+  width?: number;
 }): ReactNode {
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.key === activeTab));
   useInput(
@@ -552,7 +555,7 @@ export function Tabs({
           </Box>
         ))}
       </Box>
-      <Box borderStyle="round" borderColor={colors.border} paddingX={1}>
+      <Box borderStyle="round" borderColor={colors.border} paddingX={1} width={width}>
         {tabs.find((tab) => tab.key === activeTab)?.content}
       </Box>
     </Box>

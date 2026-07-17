@@ -1,6 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Skill } from '../domain/types.js';
+import { skillFieldLabels } from './skill-labels.js';
 import { Tabs, TextInput, termcnColors, type Tab } from './termcn.js';
 
 const colors = termcnColors;
@@ -20,14 +21,108 @@ function skillNameColumnWidth(options: { skill: Skill }[], columns: number): num
     0
   );
   const minimumDescriptionWidth = columns >= 90 ? 32 : columns >= 70 ? 24 : columns >= 50 ? 14 : 0;
-  const availableNameWidth = Math.max(12, columns - 4 - minimumDescriptionWidth);
+  // Account for the framed list, selection marker, status icon column, and gaps.
+  const availableNameWidth = Math.max(12, columns - 9 - minimumDescriptionWidth);
   return Math.max(12, Math.min(Math.max(20, longestName), availableNameWidth));
 }
 
 function collectionStatusLabel(status: Skill['collectionStatus']): string {
-  if (status === 'same-source') return '已收藏自同一来源';
-  if (status === 'same-name') return '已收藏同名技能';
+  if (status === 'same-source') return '已收藏（同一来源）';
+  if (status === 'same-name') return '同名冲突（来源不同）';
   return '';
+}
+
+function collectionStatusIcon(
+  status: Skill['collectionStatus']
+): { symbol: '★' | '☆'; color: string } | undefined {
+  if (status === 'same-source') return { symbol: '★', color: colors.muted };
+  if (status === 'same-name') return { symbol: '☆', color: colors.error };
+  return undefined;
+}
+
+function graphemeWidth(value: string): number {
+  const code = value.codePointAt(0) ?? 0;
+  if (code === 0 || code < 0x20 || (code >= 0x7f && code < 0xa0)) return 0;
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    code === 0x2329 ||
+    code === 0x232a ||
+    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe10 && code <= 0xfe19) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x1f300 && code <= 0x1f64f) ||
+    (code >= 0x1f900 && code <= 0x1f9ff) ||
+    (code >= 0x20000 && code <= 0x3fffd)
+  ) ? 2 : 1;
+}
+
+function textWidth(value: string): number {
+  return graphemes(value).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
+}
+
+function wrapColumns(value: string, width: number): string[] {
+  if (!value) return [''];
+  const lines: string[] = [];
+  let line = '';
+  let columns = 0;
+  for (const grapheme of graphemes(value)) {
+    const graphemeColumns = graphemeWidth(grapheme);
+    if (line && columns + graphemeColumns > width) {
+      lines.push(line);
+      line = '';
+      columns = 0;
+    }
+    line += grapheme;
+    columns += graphemeColumns;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+interface DetailPreviewLine {
+  label?: string;
+  value: string;
+  muted?: boolean;
+}
+
+function detailFieldLines(
+  label: string,
+  value: string,
+  width: number,
+  muted = false
+): DetailPreviewLine[] {
+  const labelText = `${label}：`;
+  const indentation = ' '.repeat(textWidth(labelText));
+  const valueWidth = Math.max(1, width - textWidth(labelText));
+  return value
+    .split(/\r?\n/)
+    .flatMap((paragraph) => wrapColumns(paragraph || '无', valueWidth))
+    .map((line, index) => index === 0
+      ? { label: labelText, value: line, muted }
+      : { value: `${indentation}${line}`, muted });
+}
+
+function detailPreviewLines(
+  skill: Skill,
+  agent: string,
+  width: number
+): DetailPreviewLine[] {
+  const lines: DetailPreviewLine[] = [
+    ...detailFieldLines(skillFieldLabels.description, skill.description || '无', width),
+    ...wrapColumns(`来自 ${agent} · ${skill.path}`, width).map((value) => ({
+      value,
+      muted: true,
+    })),
+  ];
+  const status = collectionStatusLabel(skill.collectionStatus);
+  if (status) {
+    lines.push({ value: '' }, ...detailFieldLines(skillFieldLabels.collectionStatus, status, width));
+  }
+  return lines;
 }
 
 export interface SkillOption<T extends Skill> {
@@ -244,48 +339,70 @@ export function InstallReview({
 function SkillDetailPreview<T extends Skill>({
   skill,
   agent,
-  note,
+  frameHeight,
+  frameWidth,
 }: {
   skill: T;
   agent: string;
-  note: string | undefined;
+  frameHeight: number;
+  frameWidth: number;
 }): ReactNode {
+  const [detailOffset, setDetailOffset] = useState(0);
+  const lines = detailPreviewLines(skill, agent, Math.max(12, frameWidth - 4));
+  const viewportHeight = Math.max(1, frameHeight - 2);
+  const maxOffset = Math.max(0, lines.length - viewportHeight);
+  const offset = Math.min(detailOffset, maxOffset);
+  const visible = lines.slice(offset, offset + viewportHeight);
+
+  useInput((_input, key) => {
+    if (key.upArrow && maxOffset) {
+      setDetailOffset((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (key.downArrow && maxOffset) {
+      setDetailOffset((current) => Math.min(maxOffset, current + 1));
+    }
+  });
+
   return (
-    <Box flexDirection="column">
-      <Text color={colors.primary} bold>
-        ‹ {skill.name}
+    <>
+      <Box
+        flexDirection="column"
+        width={frameWidth}
+        height={frameHeight}
+        borderStyle="round"
+        borderColor={colors.border}
+        paddingX={1}
+        overflow="hidden"
+      >
+        {visible.map((line, index) => (
+          <Text
+            key={`${offset + index}:${line.label ?? ''}:${line.value}`}
+            {...(line.muted ? { color: colors.muted } : {})}
+          >
+            {line.label && <Text bold>{line.label}</Text>}{line.value}
+          </Text>
+        ))}
+      </Box>
+      <Text color={colors.muted}>
+        {maxOffset ? `${offset + 1}–${Math.min(offset + viewportHeight, lines.length)} / ${lines.length}` : ' '}
       </Text>
       <Text color={colors.muted}>
-        来自 {agent} · {skill.path}
+        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}Esc 返回 · Space 选择 · Enter 确认导入`}
       </Text>
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>完整描述：</Text>
-        <Text>{skill.description || '无'}</Text>
-      </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>备注：</Text>
-        <Text>{note ?? '无'}</Text>
-      </Box>
-      {collectionStatusLabel(skill.collectionStatus) && (
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>收藏状态：</Text>
-          <Text>{collectionStatusLabel(skill.collectionStatus)}</Text>
-        </Box>
-      )}
-      <Text color={colors.muted}>Esc 返回 · Space 选择 · Enter 确认导入</Text>
-    </Box>
+    </>
   );
 }
 
 export function SkillMultiSelect<T extends Skill>({
   groups,
   label,
-  collectionNote,
+  onCancel,
   onSubmit,
 }: {
   groups: { agent: string; options: SkillOption<T>[] }[];
   label?: string;
-  collectionNote?: (skill: T) => string | undefined;
+  onCancel: () => void;
   onSubmit: (values: T[]) => void;
 }): ReactNode {
   const { stdout } = useStdout();
@@ -307,13 +424,18 @@ export function SkillMultiSelect<T extends Skill>({
   const singleAgent = groups.length <= 1;
 
   const nameColumnWidth = skillNameColumnWidth(options, stdout.columns ?? 80);
-  const height = Math.max(3, (stdout.rows ?? 24) - 9);
+  const viewportHeight = Math.max(3, (stdout.rows ?? 24) - 9);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, options.length - 1)));
   const offset = Math.max(
     0,
-    Math.min(clampedCursor - Math.floor(height / 2), Math.max(0, options.length - height))
+    Math.min(
+      clampedCursor - Math.floor(viewportHeight / 2),
+      Math.max(0, options.length - viewportHeight)
+    )
   );
-  const visible = options.slice(offset, offset + height);
+  const visible = options.slice(offset, offset + viewportHeight);
+  const frameHeight = Math.max(5, Math.min(viewportHeight, Math.max(3, options.length)) + 2);
+  const frameWidth = Math.max(20, stdout.columns ?? 80);
 
   const setCursor = (next: number) => {
     setCursorByAgent((prev) => ({ ...prev, [activeAgent]: next }));
@@ -382,6 +504,8 @@ export function SkillMultiSelect<T extends Skill>({
       return;
     }
 
+    if (key.escape) return onCancel();
+
     if (focus === 'tabs') {
       if (key.downArrow) setFocus('list');
       if (key.leftArrow || key.rightArrow) {
@@ -425,20 +549,10 @@ export function SkillMultiSelect<T extends Skill>({
     }
   });
 
-  if (viewing) {
-    return (
-      <SkillDetailPreview
-        skill={viewing}
-        agent={activeAgent}
-        note={collectionNote ? collectionNote(viewing) : undefined}
-      />
-    );
-  }
-
   return (
     <Box flexDirection="column">
-      <Text bold>
-        {label ?? '选择技能'} · 已选 {selected.size} / 共 {total}
+      <Text {...(viewing ? { color: colors.primary } : {})} bold>
+        {viewing ? `‹ ${viewing.name}` : `${label ?? '选择技能'} · 已选 ${selected.size} / 共 ${total}`}
       </Text>
       {!singleAgent && (
         <Box paddingLeft={1}>
@@ -457,48 +571,69 @@ export function SkillMultiSelect<T extends Skill>({
           ))}
         </Box>
       )}
-      <Box flexDirection="column">
-        {visible.length ? (
-          visible.map((option, visibleIndex) => {
-            const index = offset + visibleIndex;
-            const isSelected = selected.has(option.skill.path);
-            const isCursor = focus === 'list' && index === clampedCursor;
-            const status = collectionStatusLabel(option.skill.collectionStatus);
-            const description = [option.skill.description, status].filter(Boolean).join(' · ');
-            return (
-              <Box key={option.skill.path} gap={1} width="100%">
-                <Text {...(isCursor ? { color: colors.primary } : {})}>
-                  {isSelected ? '●' : '○'}
-                </Text>
-                <Box width={nameColumnWidth} flexShrink={0}>
-                  <Text wrap="truncate-end" bold={isCursor}>
-                    {option.skill.name}
-                  </Text>
-                </Box>
-                <Box flexGrow={1} overflow="hidden">
-                  <Text wrap="truncate-end" color={colors.muted}>
-                    {description}
-                  </Text>
-                </Box>
-              </Box>
-            );
-          })
-        ) : (
-          <Text color={colors.muted}>当前 Agent 没有可导入的技能</Text>
-        )}
-      </Box>
-      <Text color={colors.muted}>
-        {options.length > 0
-          ? `${offset + 1}–${Math.min(offset + height, options.length)} / ${options.length}`
-          : `0 / 0`}
-      </Text>
-      <Text color={colors.muted}>
-        {singleAgent
-          ? '↑/↓ 移动 · Space 选择 · → 详情 · a 全选 · Enter 确认 · Esc 取消'
-          : focus === 'tabs'
-            ? '←/→ 切换 Agent · ↓ 返回技能列表 · Esc 取消'
-            : '↑/↓ 移动 · Space 选择 · → 详情 · a 全选当前 · Enter 确认 · Esc 取消'}
-      </Text>
+      {viewing ? (
+        <SkillDetailPreview
+          skill={viewing}
+          agent={activeAgent}
+          frameHeight={frameHeight}
+          frameWidth={frameWidth}
+        />
+      ) : (
+        <>
+          <Box
+            flexDirection="column"
+            width={frameWidth}
+            height={frameHeight}
+            borderStyle="round"
+            borderColor={colors.border}
+            paddingX={1}
+            overflow="hidden"
+          >
+            {visible.length ? (
+              visible.map((option, visibleIndex) => {
+                const index = offset + visibleIndex;
+                const isSelected = selected.has(option.skill.path);
+                const isCursor = focus === 'list' && index === clampedCursor;
+                const status = collectionStatusIcon(option.skill.collectionStatus);
+                return (
+                  <Box key={option.skill.path} gap={1} width="100%">
+                    <Text {...(isCursor ? { color: colors.primary } : {})}>
+                      {isSelected ? '●' : '○'}
+                    </Text>
+                    <Box width={1} flexShrink={0}>
+                      {status && <Text color={status.color}>{status.symbol}</Text>}
+                    </Box>
+                    <Box width={nameColumnWidth} flexShrink={0}>
+                      <Text wrap="truncate-end" bold={isCursor}>
+                        {option.skill.name}
+                      </Text>
+                    </Box>
+                    <Box flexGrow={1} overflow="hidden">
+                      <Text wrap="truncate-end" color={colors.muted}>
+                        {option.skill.description}
+                      </Text>
+                    </Box>
+                  </Box>
+                );
+              })
+            ) : (
+              <Text color={colors.muted}>当前 Agent 没有可导入的技能</Text>
+            )}
+          </Box>
+          <Text color={colors.muted}>
+            {options.length > 0
+              ? `${offset + 1}–${Math.min(offset + viewportHeight, options.length)} / ${options.length}`
+              : `0 / 0`}
+          </Text>
+          <Text color={colors.muted}>
+            {singleAgent
+              ? '↑/↓ 移动 · Space 选择 · → 详情 · a 全选 · Enter 确认 · Esc 取消'
+              : focus === 'tabs'
+                ? '←/→ 切换 Agent · ↓ 返回技能列表 · Esc 取消'
+                : '↑/↓ 移动 · Space 选择 · → 详情 · a 全选当前 · Enter 确认 · Esc 取消'}
+          </Text>
+        </>
+      )}
     </Box>
   );
 }
@@ -617,7 +752,7 @@ export function ImportReview<T extends Skill>({
           <Box
             flexDirection="column"
             borderStyle="round"
-            borderColor={tagFocus === 'list' ? colors.primary : colors.border}
+            borderColor={colors.border}
             paddingX={1}
           >
             {visibleTags.length ? (

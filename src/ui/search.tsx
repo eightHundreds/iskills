@@ -125,7 +125,9 @@ function SearchSkills({
                 {...(active ? { color: termcnColors.primary } : {})}
                 bold={active}
               >
-                {`${active ? '›' : ' '} ${skill.name} — ${skill.source} · ${formatInstalls(skill.installs)} installs${collected ? ' · 已收藏同名技能' : ''}`}
+                {`${active ? '›' : ' '} ${skill.name}`}
+                {collected && <Text color={termcnColors.muted}> ☆</Text>}
+                {` — ${skill.source} · ${formatInstalls(skill.installs)} installs`}
               </Text>
             );
           })

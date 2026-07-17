@@ -467,7 +467,7 @@ test('iskills init initializes Git', async () => {
   }
 });
 
-test('failed replacement commit restores the old collection and links', async () => {
+test('replacement keeps collection writes when the following Git sync fails', async () => {
   const context = await makeContext();
   context.env.SK_NO_BACKGROUND_SYNC = '1';
   const first = join(context.project, 'first/rollback-skill');
@@ -487,24 +487,23 @@ test('failed replacement commit restores the old collection and links', async ()
     await writeFile(hook, '#!/bin/sh\nexit 1\n', 'utf8');
     await chmod(hook, 0o755);
 
-    await assert.rejects(
-      run(context, ['import', second, '--all', '--yes', '--replace'])
-    );
+    const replacement = await run(context, ['import', second, '--all', '--yes', '--replace']);
+    assert.match(replacement.stderr, /收藏夹 Git 提交失败/);
     assert.equal(await readFile(join(first, 'version.txt'), 'utf8'), 'first\n');
-    assert.equal((await lstat(first)).isSymbolicLink(), true);
-    assert.equal((await lstat(second)).isDirectory(), true);
+    assert.equal((await lstat(first)).isDirectory(), true);
+    assert.equal((await lstat(second)).isSymbolicLink(), true);
     assert.equal(
       await readFile(join(context.collection, 'skills/rollback-skill/version.txt'), 'utf8'),
-      'first\n'
+      'second\n'
     );
     assert.equal(
       await readFile(join(usage, 'rollback-skill/version.txt'), 'utf8'),
-      'first\n'
+      'second\n'
     );
     const metadata = JSON.parse(
       await readFile(join(context.collection, 'metadata/rollback-skill.json'), 'utf8')
     );
-    assert.equal(metadata.note, 'preserved');
+    assert.equal(metadata.note, '');
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

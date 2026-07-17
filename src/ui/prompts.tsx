@@ -88,7 +88,6 @@ export async function chooseSkillMany<T extends Skill>(
   groups: { agent: string; skills: T[] }[],
   title: string,
   options: {
-    collectionNote?: (skill: T) => string | undefined;
     session?: InkSession;
   } = {}
 ): Promise<T[]> {
@@ -101,11 +100,12 @@ export async function chooseSkillMany<T extends Skill>(
           options: group.skills.map((skill) => ({ skill, agent: group.agent })),
         }))}
         label={title}
-        {...(options.collectionNote ? { collectionNote: options.collectionNote } : {})}
+        onCancel={() => finish([])}
         onSubmit={finish}
       />
     ),
-    options.session
+    options.session,
+    false
   );
 }
 

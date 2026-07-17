@@ -18,15 +18,17 @@ import {
   listCollection,
   listProject,
   listProjectGroups,
-  materializeSkillReferences,
   matches,
   parseGitSource,
   readMetadata,
   readState,
+} from '../domain/core.js';
+import {
+  materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
-  writeMetadata,
-} from '../domain/core.js';
+  saveCollectionMetadata,
+} from '../domain/collection-write.js';
 import {
   checkGitSkillUpdates,
   cloneGitSource,
@@ -109,7 +111,7 @@ async function skillDetail(
       const note = await editInput('编辑备注（Enter 保存，Esc 取消）', metadata.note, session);
       if (note === undefined) continue;
       metadata.note = note;
-      await writeMetadata(metadata);
+      await saveCollectionMetadata(metadata);
       await commitCollection(`note ${skill.name}`);
     }
     if (action === 'tags') {
@@ -118,7 +120,7 @@ async function skillDetail(
       const tags = await editTags(existing, metadata.tags, session);
       if (tags === undefined) continue;
       metadata.tags = tags;
-      await writeMetadata(metadata);
+      await saveCollectionMetadata(metadata);
       await commitCollection(`tag ${skill.name}`);
     }
     if (action === 'source') {
@@ -164,7 +166,7 @@ async function skillDetail(
           sourcePath,
           gitContext.source.refType
         );
-        await writeMetadata(metadata);
+        await saveCollectionMetadata(metadata);
         await commitCollection(`source ${skill.name}`);
       } finally {
         await rm(gitContext.temporary, { recursive: true, force: true });
@@ -295,7 +297,7 @@ export async function interactiveList(
         await Promise.all(result.skills.map(async (skill) => {
           const metadata = await readMetadata(skill.name);
           metadata.tags = [...new Set([...metadata.tags, ...added])];
-          await writeMetadata(metadata);
+          await saveCollectionMetadata(metadata);
         }));
         await commitCollection(`tag ${result.skills.map((skill) => skill.name).join(', ')}`);
         status = `已为 ${result.skills.length} 个技能添加标签`;
@@ -500,7 +502,7 @@ export async function commandList(argv: string[]): Promise<void> {
         values['source-path']
       );
     }
-    await writeMetadata(metadata);
+    await saveCollectionMetadata(metadata);
     await commitCollection(`metadata ${skill.name}`);
     if (!values.json) {
       console.log(`已更新 ${skill.name} 的详情。`);

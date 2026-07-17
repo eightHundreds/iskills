@@ -222,6 +222,5 @@ export function printHelp(command?: string): void {
   -h, --help         显示帮助（可用 iskills help <命令>）
   -v, --version      显示版本
 
-不带命令时打开交互式浏览界面。
 `);
 }

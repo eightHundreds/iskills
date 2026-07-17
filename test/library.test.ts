@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
+  cp,
   lstat,
   mkdir,
   readFile,
@@ -13,11 +14,14 @@ import { dirname, join, resolve } from 'node:path';
 import {
   ensureCollection,
   isGitSource,
-  materializeSkillReferences,
   parseGitSource,
   readState,
   writeState,
 } from '../src/domain/core.js';
+import {
+  materializeSkillReferences,
+  replaceCollectionSkill,
+} from '../src/domain/collection-write.js';
 import {
   makeContext,
   makeSkill,
@@ -86,6 +90,47 @@ test('local import, add, list, project remove and collection restore form one co
     assert.equal((await lstat(source)).isDirectory(), true);
     assert.equal((await lstat(source)).isSymbolicLink(), false);
     await assert.rejects(lstat(join(context.collection, 'skills/demo-skill')), { code: 'ENOENT' });
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('collection write replaces one collected Skill without a command or UI', async () => {
+  const context = await makeContext();
+  const first = join(context.project, 'first/replaced-skill');
+  const second = join(context.project, 'second/replaced-skill');
+  const staged = join(context.root, 'staged/replaced-skill');
+  await makeSkill(first, 'replaced-skill');
+  await makeSkill(second, 'replaced-skill');
+  await writeFile(join(first, 'version.txt'), 'first\n', 'utf8');
+  await writeFile(join(second, 'version.txt'), 'second\n', 'utf8');
+
+  try {
+    await run(context, ['import', first, '--all', '--yes']);
+    await cp(second, staged, { recursive: true });
+    await withCollectionEnvironment(context, async () => {
+      await replaceCollectionSkill({
+        name: 'replaced-skill',
+        staged,
+        metadata: {
+          name: 'replaced-skill',
+          description: 'replacement',
+          tags: ['verified'],
+          note: '',
+          source: { type: 'unknown' },
+        },
+        local: { source: second, selectedPath: second, selectedWasSymlink: false },
+      });
+      assert.equal(
+        await readFile(join(context.collection, 'skills/replaced-skill/version.txt'), 'utf8'),
+        'second\n'
+      );
+      assert.equal(await readFile(join(first, 'version.txt'), 'utf8'), 'first\n');
+      assert.equal((await lstat(second)).isSymbolicLink(), true);
+      assert.deepEqual((await readState()).links, [
+        { skill: 'replaced-skill', path: second, kind: 'origin' },
+      ]);
+    });
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

@@ -2,12 +2,12 @@
 
 本文细化 [CLI/TUI 交互规范的数据完整性章节](cli-tui-guidelines.md)。它是从属于主规范的数据层契约，适用于 `import`、`search` 收藏、update、remove 等收藏写操作；若发生冲突，以主规范为准。
 
-## 1. 身份与状态
+## 1. 同源与状态
 
-- Git/远端 Skill 的来源身份是规范化仓库来源加仓库内 Skill 路径。显示名称、当前 commit 或安装量不能单独作为来源身份。
-- skills.sh 的 `resultId` 是选择器，不替代入库身份；clone 和发现后必须解析为仓库身份与路径。Git 来源先解析为 `(host, repositoryPath)`：去掉 transport、凭据、默认端口和尾部 `.git`/`/`，并把 SCP 风格分隔符规范化。host 一律小写；GitHub 的 `owner/repo` 也小写，其他 host 的 repository path 保留大小写。仓库内 Skill 路径必须是无 `.`、`..` 的 POSIX 相对路径。
-- 本地 Skill 使用 `realpath` 后的 origin path；能从已知 lock 取得 Git provenance 时升级为 Git 身份。unknown provenance 不能推断为同源，同名时按来源冲突处理。
-- 同名且身份相同属于已收藏/可更新；同名但身份不同或无法证明相同属于来源冲突。
+- Git/远端 Skill 的同源依据是规范化仓库来源加仓库内 Skill 路径。显示名称、当前 commit 或安装量不能单独证明同源。
+- skills.sh 的 `resultId` 是选择器，不替代同源依据；clone 和发现后必须解析为规范化仓库来源与来源路径。Git 来源先解析为 `(host, repositoryPath)`：去掉 transport、凭据、默认端口和尾部 `.git`/`/`，并把 SCP 风格分隔符规范化。host 一律小写；GitHub 的 `owner/repo` 也小写，其他 host 的 repository path 保留大小写。仓库内 Skill 路径必须是无 `.`、`..` 的 POSIX 相对路径。
+- 本地 Skill 使用 `realpath` 后的 origin path；能从已知 lock 取得 Git provenance 时使用 Git 的同源依据。unknown provenance 不能推断为同源，同名时按来源冲突处理。
+- 同名且同源属于已收藏/可更新；同名但异源或无法证明同源属于来源冲突。
 - 写操作涉及的状态包括 Skill tree、metadata、state/links、baseline 和收藏夹 Git 工作树。
 
 ## 2. 确认前边界
@@ -16,7 +16,7 @@
 
 1. 取得并校验输入或远端内容；
 2. 发现唯一目标 Skill，并验证名称和目录树；
-3. 判断来源身份和冲突类型；
+3. 判断是否同源和冲突类型；
 4. 获得必要确认或校验显式 `--replace`。
 
 确认前允许网络请求、临时 clone 和只读检查。用户取消后必须清理不再需要的临时 clone/workdir；不得顺带初始化收藏夹、改 metadata、移除旧 Skill 或创建无关 Git commit。只有恢复上一次中断事务所必需、幂等且独立报告的 integrity recovery 可以例外。

@@ -40,6 +40,47 @@ function frameBounds(screen: string[]): { height: number; width: number; x: numb
   return { height: bottom - y + 1, width: right - x + 1, x, y };
 }
 
+function terminalWidth(value: string): number {
+  return [...value].reduce((width, char) => {
+    const code = char.codePointAt(0) ?? 0;
+    const wide =
+      (code >= 0x1100 && code <= 0x115f) ||
+      code === 0x2329 ||
+      code === 0x232a ||
+      (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe10 && code <= 0xfe19) ||
+      (code >= 0xfe30 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x1f300 && code <= 0x1f64f) ||
+      (code >= 0x1f900 && code <= 0x1f9ff) ||
+      (code >= 0x20000 && code <= 0x3fffd);
+    return width + (wide ? 2 : 1);
+  }, 0);
+}
+
+function popupFrameBounds(
+  screen: string[],
+  title: string
+): { height: number; width: number; x: number; y: number } {
+  const y = screen.findIndex((line) => line.includes(`╭─ ${title} `));
+  assert.notEqual(y, -1, 'screen must contain a popup frame top');
+  const top = screen[y] ?? '';
+  const x = top.indexOf('╭');
+  const right = top.indexOf('╮', x);
+  assert.notEqual(right, -1, 'popup frame top must have a right border');
+  const bottom = screen.findIndex((line, index) => index > y && line.includes('╰'));
+  assert.notEqual(bottom, -1, 'screen must contain a popup frame bottom');
+  return {
+    height: bottom - y + 1,
+    width: terminalWidth(top.slice(x, right + 1)),
+    x: terminalWidth(top.slice(0, x)),
+    y,
+  };
+}
+
 test('TTY detail frame matches the selected browser frame', async (t) => {
   try {
     await exec('python3', ['--version']);
@@ -104,6 +145,47 @@ test('TTY detail frame matches the selected browser frame', async (t) => {
     assert.doesNotMatch(detailScreen.join('\n'), /…/, 'description must wrap instead of truncating');
     const scrolledFrame = frameBounds(await renderTerminalScreen(detailScrolledOutput, size));
     assert.deepEqual(scrolledFrame, detailFrame, 'scrolling detail content must not change the frame');
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY shortcut overlay centers in the browser frame', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const source = join(context.project, 'overlay-skills');
+  await Promise.all(Array.from({ length: 24 }, (_, index) =>
+    makeSkill(join(source, `overlay-${index}`), `overlay-${index}`)
+  ));
+  const size = { rows: 40, columns: 120 };
+
+  try {
+    await run(context, ['import', source, '--all', '--yes']);
+    const result = await runInteractive(context, [], [
+      { wait: '收藏夹 24', send: '\u001b[B', enter: false },
+      { wait: '? 快捷键', send: '?', enter: false },
+      { wait: '完整快捷键', capture: 'shortcuts', send: '\u001b', enter: false },
+      { wait: '? 快捷键', send: 'q', enter: false },
+    ], context.project, size);
+    const shortcutsOutput = result.screens?.shortcuts;
+    assert.ok(shortcutsOutput, 'shortcut overlay screen must be captured');
+    const screen = await renderTerminalScreen(shortcutsOutput, size);
+    const frame = frameBounds(screen);
+    const popup = popupFrameBounds(screen, '完整快捷键');
+    assert.ok(
+      Math.abs((popup.x * 2 + popup.width) - (frame.x * 2 + frame.width)) <= 2,
+      'shortcut overlay must be horizontally centered'
+    );
+    assert.ok(
+      Math.abs((popup.y * 2 + popup.height) - (frame.y * 2 + frame.height)) <= 3,
+      'shortcut overlay must be vertically centered'
+    );
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -189,12 +271,50 @@ test('TTY Git import list marks skills already collected from the same GitHub so
   try {
     await run(context, ['import', 'https://github.com/Owner/Repo', '--all', '--yes']);
     const result = await runInteractive(context, ['import', 'https://github.com/owner/repo'], [
-      { wait: '发现以下技能', send: '', enter: false },
-      { wait: '已收藏自同一来源', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: '发现以下技能', capture: 'selection', send: '', enter: false },
+      { wait: '★', send: '\u001b', enter: false, delayAfter: 100 },
     ]);
     assert.match(result.stdout, /alpha/);
     assert.match(result.stdout, /beta/);
-    assert.match(result.stdout, /已收藏自同一来源/);
+    assert.match(result.stdout, /★/);
+    const selectionOutput = result.screens?.selection;
+    assert.ok(selectionOutput, 'import selection screen must be captured');
+    const selectionScreen = (await renderTerminalScreen(selectionOutput, {
+      rows: 40,
+      columns: 120,
+    })).join('\n');
+    assert.match(selectionScreen, /╭.*╮/);
+    assert.match(selectionScreen, /╰.*╯/);
+    assert.match(selectionScreen, /★\s+alpha/);
+    assert.doesNotMatch(selectionScreen, /已收藏/);
+
+    const { repository: replacementRepository } = await makeGitSkillRepo(
+      context,
+      'alpha',
+      'replacement'
+    );
+    await makeSkill(join(replacementRepository, 'skills/beta'), 'beta');
+    await exec('git', ['add', '.'], { cwd: replacementRepository });
+    await exec('git', ['commit', '-m', 'add beta'], { cwd: replacementRepository });
+    context.env.GIT_CONFIG_COUNT = '3';
+    context.env.GIT_CONFIG_KEY_2 = `url.file://${replacementRepository}.insteadOf`;
+    context.env.GIT_CONFIG_VALUE_2 = 'https://github.com/owner/replacement';
+
+    const conflict = await runInteractive(
+      context,
+      ['import', 'https://github.com/owner/replacement'],
+      [
+        { wait: '☆', capture: 'selection', send: '\u001b', enter: false, delayAfter: 100 },
+      ]
+    );
+    const conflictOutput = conflict.screens?.selection;
+    assert.ok(conflictOutput, 'conflicting import selection screen must be captured');
+    const conflictScreen = (await renderTerminalScreen(conflictOutput, {
+      rows: 40,
+      columns: 120,
+    })).join('\n');
+    assert.match(conflictScreen, /☆\s+alpha/);
+    assert.doesNotMatch(conflictScreen, /同名冲突/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -256,7 +376,7 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
     assert.equal(metadata.source.path, 'skills/search-skill');
 
     const declined = await runInteractive(context, ['search', 'search'], [
-      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
+      { wait: '☆', send: '', delayAfter: 300 },
     ]);
     assert.doesNotMatch(declined.stdout, /错误：/);
     assert.match(declined.stdout, /已收藏自同一来源/);
@@ -264,14 +384,14 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
 
     remoteSource = 'search-owner/replacement-repo';
     const conflict = await runInteractive(context, ['search', 'search'], [
-      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
+      { wait: '☆', send: '', delayAfter: 300 },
       { wait: 'replacement-repo/skills/search-skill', send: 'n', delayAfter: 300 },
     ]);
     assert.match(conflict.stdout, /search-repo\/skills\/search-skill/);
     assert.match(conflict.stdout, /\(y\/N\)/);
 
     const replaced = await runInteractive(context, ['search', 'search'], [
-      { wait: '已收藏同名技能', send: '', delayAfter: 300 },
+      { wait: '☆', send: '', delayAfter: 300 },
       { wait: 'replacement-repo/skills/search-skill', send: 'y', delayAfter: 300 },
     ]);
     assert.match(replaced.stdout, /已收藏 search-skill/);
@@ -360,20 +480,83 @@ test('TTY import -g focuses tabs with arrows, multi-selects across agents and vi
       { wait: 'claude (2)', send: '\u001b[B', enter: false, delayAfter: 100 },
       { wait: 'Space 选择', send: '\u001b[B', enter: false, delayAfter: 100 },
       { send: '\u001b[B', enter: false, delay: 200 },
-      { send: '\u001b[C', enter: false, delay: 300 },
-      { wait: '另一个 claude 技能', send: '\u001b[D', enter: false, delayAfter: 200 },
+      { capture: 'list', send: '\u001b[C', enter: false, delay: 300 },
+      {
+        wait: '另一个 claude 技能',
+        capture: 'detail',
+        send: '\u001b[D',
+        enter: false,
+        delayAfter: 200,
+      },
       { wait: 'Enter 确认', send: '', delayAfter: 200 },
       { wait: '选择分组', send: '', delayAfter: 100 },
       { wait: 'Enter 确认导入', send: '', delayAfter: 100 },
     ]);
     assert.match(result.stdout, /claude \(2\)/);
     assert.match(result.stdout, /codex \(1\)/);
-    assert.match(result.stdout, /完整描述/);
+    assert.match(result.stdout, /描述：/);
+    assert.doesNotMatch(result.stdout, /完整描述/);
     assert.doesNotMatch(result.stdout, /顶部按 ↑ 选择 Agent/);
     assert.doesNotMatch(result.stdout, /错误：/);
+    const listOutput = result.screens?.list;
+    const detailOutput = result.screens?.detail;
+    assert.ok(listOutput, 'import selection screen must be captured');
+    assert.ok(detailOutput, 'import detail screen must be captured');
+    const size = { rows: 40, columns: 120 };
+    const listFrame = frameBounds(await renderTerminalScreen(listOutput, size));
+    const detailFrame = frameBounds(await renderTerminalScreen(detailOutput, size));
+    assert.deepEqual(
+      { height: detailFrame.height, width: detailFrame.width, x: detailFrame.x, y: detailFrame.y },
+      { height: listFrame.height, width: listFrame.width, x: listFrame.x, y: listFrame.y }
+    );
     assert.equal((await lstat(claudeSkill)).isDirectory(), true);
     assert.equal((await lstat(claudeSkill2)).isSymbolicLink(), true);
     assert.equal((await lstat(codexSkill)).isSymbolicLink(), true);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY import detail keeps its frame while scrolling long descriptions', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const root = join(context.project, 'skill-set');
+  await makeSkill(join(root, 'alpha'), 'alpha', '详细描述'.repeat(80));
+  await makeSkill(join(root, 'beta'), 'beta', '另一项技能');
+  const size = { rows: 14, columns: 60 };
+
+  try {
+    const result = await runInteractive(context, ['import', root], [
+      { wait: '发现以下技能', capture: 'list', send: '\u001b[C', enter: false },
+      {
+        wait: '描述：',
+        capture: 'detail',
+        send: '\u001b[B'.repeat(20),
+        enter: false,
+        delayAfter: 200,
+      },
+      { wait: '来自 本地', capture: 'detailScrolled', send: '\u001b', enter: false },
+      { wait: '→ 详情', send: '\u001b', enter: false },
+    ], context.project, size);
+    const listOutput = result.screens?.list;
+    const detailOutput = result.screens?.detail;
+    const detailScrolledOutput = result.screens?.detailScrolled;
+    assert.ok(listOutput, 'import selection screen must be captured');
+    assert.ok(detailOutput, 'import detail screen must be captured');
+    assert.ok(detailScrolledOutput, 'scrolled import detail screen must be captured');
+    const listFrame = frameBounds(await renderTerminalScreen(listOutput, size));
+    const detailFrame = frameBounds(await renderTerminalScreen(detailOutput, size));
+    const detailScrolledFrame = frameBounds(await renderTerminalScreen(detailScrolledOutput, size));
+    assert.deepEqual(detailFrame, listFrame);
+    assert.deepEqual(detailScrolledFrame, listFrame);
+    assert.match((await renderTerminalScreen(detailScrolledOutput, size)).join('\n'), /来自 本地/);
+    assert.doesNotMatch((await renderTerminalScreen(detailOutput, size)).join('\n'), /备注/);
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -490,7 +673,7 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
       { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
       { wait: '? 快捷键', send: '?', enter: false, delayAfter: 100 },
       { wait: '完整快捷键', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '› ○ frontend (2)', send: 'g', enter: false, delayAfter: 100 },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'g', enter: false, delayAfter: 100 },
       { wait: '跳转到分组', send: '2', enter: false, delayAfter: 100 },
       { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
       { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
@@ -513,6 +696,38 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
     );
     assert.deepEqual(alpha.tags, ['frontend', 'shared']);
     assert.deepEqual(gamma.tags, ['shared', 'frontend']);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+});
+
+test('TTY empty search preserves the browser frame width', async (t) => {
+  try {
+    await exec('python3', ['--version']);
+  } catch (error) {
+    t.skip(`PTY utility is unavailable: ${errorMessage(error)}`);
+    return;
+  }
+
+  const context = await makeContext();
+  const size = { rows: 40, columns: 120 };
+
+  try {
+    const result = await runInteractive(context, [], [
+      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 100 },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: '/', enter: false, delayAfter: 100 },
+      { wait: '搜索技能', send: 'missing', enter: false, delayAfter: 100 },
+      { wait: '没有匹配的技能', capture: 'empty', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'q', enter: false, delayAfter: 100 },
+    ], context.project, size);
+
+    const emptyOutput = result.screens?.empty;
+    assert.ok(emptyOutput, 'empty search screen must be captured');
+    assert.equal(
+      frameBounds(await renderTerminalScreen(emptyOutput, size)).width,
+      size.columns,
+      'empty search results must preserve the browser frame width'
+    );
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }
@@ -1035,7 +1250,7 @@ test('TTY project tab materializes the current Skill reference from the more-act
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
       { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'm 更多操作', send: 'm', enter: false, delayAfter: 100 },
+      { wait: 'm 更多操作', capture: 'footer', send: 'm', enter: false, delayAfter: 100 },
       { wait: '更多操作', send: '', enter: false },
       { wait: '技能：menu-reference', send: '', enter: false },
       { wait: '将引用转为副本', send: '', delayAfter: 100 },
@@ -1046,6 +1261,13 @@ test('TTY project tab materializes the current Skill reference from the more-act
     assert.match(result.stdout, /引用 ·/);
     assert.match(result.stdout, /m 更多操作/);
     assert.doesNotMatch(result.stdout, /转换.*\(y\/N\)/);
+    const footerOutput = result.screens?.footer;
+    assert.ok(footerOutput, 'more-actions footer must be captured');
+    const footerScreen = await renderTerminalScreen(footerOutput, { rows: 10, columns: 40 });
+    const moreActionsLine = footerScreen.findIndex((line) => line.includes('m 更多操作'));
+    const navigationLine = footerScreen.findIndex((line) => line.includes('/ 搜索'));
+    assert.ok(moreActionsLine >= 0, 'more-actions shortcut must be visible');
+    assert.equal(navigationLine, moreActionsLine + 1, 'navigation must immediately follow more actions');
     assert.equal((await lstat(reference)).isDirectory(), true);
     assert.equal((await lstat(reference)).isSymbolicLink(), false);
     assert.equal(await readFile(join(reference, 'asset.txt'), 'utf8'), 'keep me\n');
@@ -1082,7 +1304,7 @@ test('TTY project more-actions menu materializes all selected Skill references',
       { wait: 'm 更多操作', send: ' ', enter: false },
       { wait: '已选 1', send: '\u001b[B', enter: false },
       { wait: 'beta-reference', send: ' ', enter: false },
-      { wait: '已选 2 · m 更多操作', send: 'm', enter: false },
+      { wait: 'm 更多操作 · i 加入收藏夹 · 已选 2', send: 'm', enter: false },
       { wait: '已选择 2 个技能', send: '', enter: false },
       { wait: '将引用转为副本', send: '' },
       { wait: '正在转换 1/2：alpha-reference', send: '', enter: false },
@@ -1122,7 +1344,7 @@ test('TTY project more-actions menu stays unavailable for a mixed selection', as
       { wait: 'm 更多操作', send: ' ', enter: false },
       { wait: '已选 1', send: '\u001b[B', enter: false },
       { wait: 'beta-local', send: ' ', enter: false },
-      { wait: '已选 2 · i 加入收藏夹', send: 'm', enter: false, delayAfter: 150 },
+      { wait: 'i 加入收藏夹 · 已选 2', send: 'm', enter: false, delayAfter: 150 },
       { send: 'q', enter: false },
     ]);
 
