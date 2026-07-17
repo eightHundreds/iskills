@@ -2,6 +2,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assertSkillName,
   baselinePath,
@@ -136,7 +137,13 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
   const repository = join(temporary, 'repository');
   const cloneArgs = ['clone', '--quiet'];
   if (parsed.ref && !/^[0-9a-f]{7,40}$/i.test(parsed.ref)) cloneArgs.push('--branch', parsed.ref);
-  cloneArgs.push(parsed.url, repository);
+  let cloneSource = parsed.url;
+  if (cloneSource.startsWith('file://')) {
+    try {
+      cloneSource = fileURLToPath(cloneSource);
+    } catch {}
+  }
+  cloneArgs.push(cloneSource, repository);
   try {
     git(cloneArgs);
     if (parsed.ref && /^[0-9a-f]{7,40}$/i.test(parsed.ref)) {

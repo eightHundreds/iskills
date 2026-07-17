@@ -81,7 +81,7 @@ function popupFrameBounds(
   };
 }
 
-test('TTY detail frame matches the selected browser frame', async (t) => {
+test.concurrent('TTY detail frame matches the selected browser frame', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -118,9 +118,8 @@ test('TTY detail frame matches the selected browser frame', async (t) => {
         capture: 'detail',
         send: '\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B\u001b[B',
         enter: false,
-        delayAfter: 300,
       },
-      { delay: 300, capture: 'detailScrolled', send: 'q', enter: false },
+      { capture: 'detailScrolled', send: 'q', enter: false },
       { wait: '→ 查看', send: 'q', enter: false },
     ], context.project, size);
     const listOutput = result.screens?.list;
@@ -150,7 +149,7 @@ test('TTY detail frame matches the selected browser frame', async (t) => {
   }
 });
 
-test('TTY shortcut overlay centers in the browser frame', async (t) => {
+test.concurrent('TTY shortcut overlay centers in the browser frame', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -191,7 +190,7 @@ test('TTY shortcut overlay centers in the browser frame', async (t) => {
   }
 });
 
-test('TTY Git import review shows repository identity and saves selected groups', async (t) => {
+test.concurrent('TTY Git import review shows repository identity and saves selected groups', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -205,8 +204,8 @@ test('TTY Git import review shows repository identity and saves selected groups'
 
   try {
     const result = await runInteractive(context, ['import', source], [
-      { wait: '选择分组', send: 'remote', delayAfter: 100 },
-      { wait: '分组：remote', send: '', delayAfter: 100 },
+      { wait: '选择分组', send: 'remote' },
+      { wait: '分组：remote', send: '' },
       { wait: '已导入 1 个技能。', send: '', enter: false },
     ]);
     assert.match(result.stdout, /file:\/\/.*#main · skills\/remote-/);
@@ -220,7 +219,7 @@ test('TTY Git import review shows repository identity and saves selected groups'
   }
 });
 
-test('TTY import selects current repository skills before group and confirmation', async (t) => {
+test.concurrent('TTY import selects current repository skills before group and confirmation', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -233,10 +232,10 @@ test('TTY import selects current repository skills before group and confirmation
 
   try {
     const result = await runInteractive(context, ['import'], [
-      { wait: '选择当前仓库技能', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '选择分组', send: 'frontend', delayAfter: 100 },
-      { wait: '分组：frontend', send: '', delayAfter: 100 },
+      { wait: '选择当前仓库技能', send: ' ', enter: false },
+      { wait: '已选 1', send: '' },
+      { wait: '选择分组', send: 'frontend' },
+      { wait: '分组：frontend', send: '' },
       { wait: '已导入 1 个技能。', send: '', enter: false },
     ]);
     assert.match(result.stdout, /选择当前仓库技能/);
@@ -249,7 +248,7 @@ test('TTY import selects current repository skills before group and confirmation
   }
 });
 
-test('TTY Git import list marks skills already collected from the same GitHub source', async (t) => {
+test.concurrent('TTY Git import list marks skills already collected from the same GitHub source', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -272,7 +271,7 @@ test('TTY Git import list marks skills already collected from the same GitHub so
     await run(context, ['import', 'https://github.com/Owner/Repo', '--all', '--yes']);
     const result = await runInteractive(context, ['import', 'https://github.com/owner/repo'], [
       { wait: '发现以下技能', capture: 'selection', send: '', enter: false },
-      { wait: '★', send: '\u001b', enter: false, delayAfter: 100 },
+      { wait: '★', send: '\u001b', enter: false },
     ]);
     assert.match(result.stdout, /alpha/);
     assert.match(result.stdout, /beta/);
@@ -304,7 +303,7 @@ test('TTY Git import list marks skills already collected from the same GitHub so
       context,
       ['import', 'https://github.com/owner/replacement'],
       [
-        { wait: '☆', capture: 'selection', send: '\u001b', enter: false, delayAfter: 100 },
+        { wait: '☆', capture: 'selection', send: '\u001b', enter: false },
       ]
     );
     const conflictOutput = conflict.screens?.selection;
@@ -320,7 +319,7 @@ test('TTY Git import list marks skills already collected from the same GitHub so
   }
 });
 
-test('TTY search selects a skills.sh result and saves its Git source to the collection', async (t) => {
+test.concurrent('TTY search selects a skills.sh result and saves its Git source to the collection', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -361,7 +360,7 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
 
   try {
     const result = await runInteractive(context, ['search', 'search'], [
-      { wait: 'search-skill', send: '', delayAfter: 300 },
+      { wait: 'search-skill', send: '' },
     ]);
     assert.match(result.stdout, /已收藏 search-skill/);
     assert.equal(requestedQuery, 'search');
@@ -376,7 +375,7 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
     assert.equal(metadata.source.path, 'skills/search-skill');
 
     const declined = await runInteractive(context, ['search', 'search'], [
-      { wait: '☆', send: '', delayAfter: 300 },
+      { wait: '☆', send: '' },
     ]);
     assert.doesNotMatch(declined.stdout, /错误：/);
     assert.match(declined.stdout, /已收藏自同一来源/);
@@ -384,15 +383,15 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
 
     remoteSource = 'search-owner/replacement-repo';
     const conflict = await runInteractive(context, ['search', 'search'], [
-      { wait: '☆', send: '', delayAfter: 300 },
-      { wait: 'replacement-repo/skills/search-skill', send: 'n', delayAfter: 300 },
+      { wait: '☆', send: '' },
+      { wait: 'replacement-repo/skills/search-skill', send: 'n' },
     ]);
     assert.match(conflict.stdout, /search-repo\/skills\/search-skill/);
     assert.match(conflict.stdout, /\(y\/N\)/);
 
     const replaced = await runInteractive(context, ['search', 'search'], [
-      { wait: '☆', send: '', delayAfter: 300 },
-      { wait: 'replacement-repo/skills/search-skill', send: 'y', delayAfter: 300 },
+      { wait: '☆', send: '' },
+      { wait: 'replacement-repo/skills/search-skill', send: 'y' },
     ]);
     assert.match(replaced.stdout, /已收藏 search-skill/);
     const replacedMetadata = JSON.parse(
@@ -407,7 +406,7 @@ test('TTY search selects a skills.sh result and saves its Git source to the coll
   }
 });
 
-test('interactive search cancellation has no persistent side effects', async (t) => {
+test.concurrent('interactive search cancellation has no persistent side effects', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -425,7 +424,7 @@ test('interactive search cancellation has no persistent side effects', async (t)
   }
 });
 
-test('Ctrl+C interrupts an Ink screen with exit code 130', async (t) => {
+test.concurrent('Ctrl+C interrupts an Ink screen with exit code 130', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -436,7 +435,7 @@ test('Ctrl+C interrupts an Ink screen with exit code 130', async (t) => {
   try {
     try {
       await runInteractive(context, ['search'], [
-        { wait: '搜索技能', send: '\u0003', enter: false, delayAfter: 100 },
+        { wait: '搜索技能', send: '\u0003', enter: false },
       ]);
       assert.fail('Ctrl+C should interrupt the command');
     } catch (error) {
@@ -449,7 +448,7 @@ test('Ctrl+C interrupts an Ink screen with exit code 130', async (t) => {
   }
 });
 
-test('TTY import -g focuses tabs with arrows, multi-selects across agents and views detail', async (t) => {
+test.concurrent('TTY import -g focuses tabs with arrows, multi-selects across agents and views detail', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -470,27 +469,26 @@ test('TTY import -g focuses tabs with arrows, multi-selects across agents and vi
   try {
     const result = await runInteractive(context, ['import', '-g'], [
       { wait: '扫描全局 Skill 目录', send: '', enter: false },
-      { wait: 'claude (2)', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 1', send: '\u001b[A', enter: false, delayAfter: 100 },
-      { wait: '←/→ 切换 Agent', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: 'codex (1)', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'Space 选择', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '已选 2', send: '\u001b[A', enter: false, delayAfter: 100 },
-      { wait: '←/→ 切换 Agent', send: '\u001b[D', enter: false, delayAfter: 100 },
-      { wait: 'claude (2)', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'Space 选择', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { send: '\u001b[B', enter: false, delay: 200 },
-      { capture: 'list', send: '\u001b[C', enter: false, delay: 300 },
+      { wait: 'claude (2)', send: ' ', enter: false },
+      { wait: '已选 1', send: '\u001b[A', enter: false },
+      { wait: '←/→ 切换 Agent', send: '\u001b[C', enter: false },
+      { wait: 'codex (1)', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: ' ', enter: false },
+      { wait: '已选 2', send: '\u001b[A', enter: false },
+      { wait: '←/→ 切换 Agent', send: '\u001b[D', enter: false },
+      { wait: 'claude (2)', send: '\u001b[B', enter: false },
+      { wait: 'Space 选择', send: '\u001b[B', enter: false },
+      { wait: '一个用于演示长描述', send: '\u001b[B', enter: false },
+      { wait: '另一个 claude 技能', capture: 'list', send: '\u001b[C', enter: false },
       {
         wait: '另一个 claude 技能',
         capture: 'detail',
         send: '\u001b[D',
         enter: false,
-        delayAfter: 200,
       },
-      { wait: 'Enter 确认', send: '', delayAfter: 200 },
-      { wait: '选择分组', send: '', delayAfter: 100 },
-      { wait: 'Enter 确认导入', send: '', delayAfter: 100 },
+      { wait: 'Enter 确认', send: '' },
+      { wait: '选择分组', send: '' },
+      { wait: 'Enter 确认导入', send: '' },
     ]);
     assert.match(result.stdout, /claude \(2\)/);
     assert.match(result.stdout, /codex \(1\)/);
@@ -517,7 +515,7 @@ test('TTY import -g focuses tabs with arrows, multi-selects across agents and vi
   }
 });
 
-test('TTY import detail keeps its frame while scrolling long descriptions', async (t) => {
+test.concurrent('TTY import detail keeps its frame while scrolling long descriptions', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -539,7 +537,6 @@ test('TTY import detail keeps its frame while scrolling long descriptions', asyn
         capture: 'detail',
         send: '\u001b[B'.repeat(20),
         enter: false,
-        delayAfter: 200,
       },
       { wait: '来自 本地', capture: 'detailScrolled', send: '\u001b', enter: false },
       { wait: '→ 详情', send: '\u001b', enter: false },
@@ -562,7 +559,7 @@ test('TTY import detail keeps its frame while scrolling long descriptions', asyn
   }
 });
 
-test('TTY import list gives long Skill names room before descriptions', async (t) => {
+test.concurrent('TTY import list gives long Skill names room before descriptions', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -594,7 +591,7 @@ test('TTY import list gives long Skill names room before descriptions', async (t
   }
 });
 
-test('TTY source rebinding discovers repository paths and focuses the matching Skill', async (t) => {
+test.concurrent('TTY source rebinding discovers repository paths and focuses the matching Skill', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -619,18 +616,15 @@ test('TTY source rebinding discovers repository paths and focuses the matching S
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看', send: '\u001b[B', enter: false },
-      { send: '\u001b[C', enter: false, delay: 200 },
-      { wait: 's 来源', send: 's', enter: false, delayAfter: 200 },
+      { send: '\u001b[C', enter: false, delay: 10 },
+      { wait: 's 来源', send: 's', enter: false },
       { wait: 'Git 来源', send: `file://${repository}`, enter: false },
-      { send: '', enter: false, delay: 200 },
-      { send: '', delay: 100 },
+      { wait: 'rebind-remote', send: '' },
       { wait: '分支、Tag 或 Commit', send: 'main', enter: false },
-      { send: '', enter: false, delay: 200 },
-      { send: '', delay: 100 },
-      { wait: '选择仓库内 Skill', send: '', delayAfter: 200 },
-      { send: '', enter: false, delay: 1000 },
-      { wait: 's 来源', send: 'q', enter: false, delayAfter: 300 },
-      { wait: 'q 退出', send: 'q', enter: false, delayAfter: 300 },
+      { wait: 'main', send: '' },
+      { wait: '选择仓库内 Skill', send: '' },
+      { wait: 's 来源', send: 'q', enter: false },
+      { wait: 'q 退出', send: 'q', enter: false },
     ]);
 
     assert.doesNotMatch(result.stdout, /错误：/);
@@ -645,7 +639,7 @@ test('TTY source rebinding discovers repository paths and focuses the matching S
   }
 });
 
-test('TTY list searches across groups and jumps directly to a group', async (t) => {
+test.concurrent('TTY list searches across groups and jumps directly to a group', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -666,20 +660,20 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
     await run(context, ['list', 'gamma', '--tags', 'shared', '--json']);
 
     const result = await runInteractive(context, [], [
-      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 400 },
-      { wait: '/ 搜索 · ? 快捷键', send: '/', enter: false, delayAfter: 100 },
-      { wait: '搜索技能', send: 'alphax', enter: false, delayAfter: 100 },
-      { wait: '没有匹配的技能', send: '\x7f', enter: false, delayAfter: 100 },
-      { wait: 'frontend · shared / ', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '? 快捷键', send: '?', enter: false, delayAfter: 100 },
-      { wait: '完整快捷键', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'g', enter: false, delayAfter: 100 },
-      { wait: '跳转到分组', send: '2', enter: false, delayAfter: 100 },
-      { wait: '› ○ shared (2)', send: ' ', enter: false, delayAfter: 200 },
-      { wait: '已选 2', send: 't', enter: false, delayAfter: 100 },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '/ 搜索 · ? 快捷键', send: '/', enter: false },
+      { wait: '搜索技能', send: 'alphax', enter: false },
+      { wait: '没有匹配的技能', send: '\x7f', enter: false },
+      { wait: 'frontend · shared / ', send: '\u001b', enter: false },
+      { wait: '? 快捷键', send: '?', enter: false },
+      { wait: '完整快捷键', send: '\u001b', enter: false },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'g', enter: false },
+      { wait: '跳转到分组', send: '2', enter: false },
+      { wait: '› ○ shared (2)', send: ' ', enter: false },
+      { wait: '已选 2', send: 't', enter: false },
       { wait: '为 2 个技能添加标签', send: ' ', enter: false },
-      { wait: '已选 1', send: '', delayAfter: 1000 },
-      { wait: '已为 2 个技能添加标签', send: 'q', enter: false, delayAfter: 100 },
+      { wait: '已选 1', send: '' },
+      { wait: '已为 2 个技能添加标签', send: 'q', enter: false },
     ]);
 
     assert.match(result.stdout, /frontend · shared \/ /);
@@ -701,7 +695,7 @@ test('TTY list searches across groups and jumps directly to a group', async (t) 
   }
 });
 
-test('TTY empty search preserves the browser frame width', async (t) => {
+test.concurrent('TTY empty search preserves the browser frame width', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -714,11 +708,11 @@ test('TTY empty search preserves the browser frame width', async (t) => {
 
   try {
     const result = await runInteractive(context, [], [
-      { wait: '↓ 进入', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: '/', enter: false, delayAfter: 100 },
-      { wait: '搜索技能', send: 'missing', enter: false, delayAfter: 100 },
-      { wait: '没有匹配的技能', capture: 'empty', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'q', enter: false, delayAfter: 100 },
+      { wait: '↓ 进入', send: '\u001b[B', enter: false },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: '/', enter: false },
+      { wait: '搜索技能', send: 'missing', enter: false },
+      { wait: '没有匹配的技能', capture: 'empty', send: '\u001b', enter: false },
+      { wait: '/ 搜索 · ? 快捷键 · q 退出', send: 'q', enter: false },
     ], context.project, size);
 
     const emptyOutput = result.screens?.empty;
@@ -733,7 +727,7 @@ test('TTY empty search preserves the browser frame width', async (t) => {
   }
 });
 
-test('TTY list flattens a sole ungrouped section', async (t) => {
+test.concurrent('TTY list flattens a sole ungrouped section', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -748,7 +742,7 @@ test('TTY list flattens a sole ungrouped section', async (t) => {
   try {
     await run(context, ['import', source, '--all', '--yes']);
     const result = await runInteractive(context, [], [
-      { wait: 'q 退出', send: '\u001b[B', enter: false, delayAfter: 400 },
+      { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'plain-skill', send: 'q', enter: false },
     ]);
 
@@ -760,7 +754,7 @@ test('TTY list flattens a sole ungrouped section', async (t) => {
   }
 });
 
-test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
+test.concurrent('TTY add bootstraps an empty collection from a local Skill', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -776,10 +770,10 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
     const result = await runInteractive(context, ['add'], [
       { wait: 'Esc 取消', send: '\u001b[B\u001b[B', enter: false },
       { wait: 'Esc 取消', send: '' },
-      { wait: '路径或 Git 来源：', send: source, enter: false, delayAfter: 100 },
-      { wait: 'first-skill', send: '', delayAfter: 100 },
-      { wait: '选择分组', send: '', delayAfter: 100 },
-      { wait: 'Enter 确认导入', send: '', delayAfter: 100 },
+      { wait: '路径或 Git 来源：', send: source, enter: false },
+      { wait: 'first-skill', send: '' },
+      { wait: '选择分组', send: '' },
+      { wait: 'Enter 确认导入', send: '' },
     ]);
     assert.match(result.stdout, /已添加/);
     assert.equal((await lstat(source)).isSymbolicLink(), true);
@@ -792,7 +786,7 @@ test('TTY add bootstraps an empty collection from a local Skill', async (t) => {
   }
 });
 
-test('TTY entry opens collection browser directly', async (t) => {
+test.concurrent('TTY entry opens collection browser directly', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -818,7 +812,7 @@ test('TTY entry opens collection browser directly', async (t) => {
   }
 });
 
-test('collection browser removes the current Skill with confirmation', async (t) => {
+test.concurrent('collection browser removes the current Skill with confirmation', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -835,9 +829,9 @@ test('collection browser removes the current Skill with confirmation', async (t)
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: 'entry-delete-skill', send: 'd', enter: false },
-      { wait: '删除收藏', send: '', enter: false, delayAfter: 100 },
-      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
-      { wait: '收藏夹 0', send: 'q', enter: false, delayAfter: 300 },
+      { wait: '删除收藏', send: '', enter: false },
+      { wait: '(y/N)', send: 'y', enter: false },
+      { wait: '收藏夹 0', send: 'q', enter: false },
     ]);
     const plainOutput = result.stdout.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
     assert.match(result.stdout, /d 删除/);
@@ -857,7 +851,7 @@ test('collection browser removes the current Skill with confirmation', async (t)
   }
 });
 
-test('project browser deletes a local Skill with default-cancel confirmation', async (t) => {
+test.concurrent('project browser deletes a local Skill with default-cancel confirmation', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -874,9 +868,9 @@ test('project browser deletes a local Skill with default-cancel confirmation', a
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '切换 Agent', send: '\u001b[B', enter: false },
       { wait: 'local-delete-skill', send: 'd', enter: false },
-      { wait: '(y/N)', send: 'n', enter: false, delayAfter: 100 },
-      { wait: 'd 删除', send: 'd', enter: false, delayAfter: 100 },
-      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
+      { wait: '(y/N)', send: 'n', enter: false },
+      { wait: 'd 删除', send: 'd', enter: false },
+      { wait: '(y/N)', send: 'y', enter: false },
       { wait: '已删除 local-delete-skill 的当前位置', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /删除 local-delete-skill 的当前位置吗？/);
@@ -889,7 +883,7 @@ test('project browser deletes a local Skill with default-cancel confirmation', a
   }
 });
 
-test('global browser batch deletes collected and local Skill locations', async (t) => {
+test.concurrent('global browser batch deletes collected and local Skill locations', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -913,7 +907,7 @@ test('global browser batch deletes collected and local Skill locations', async (
       { wait: '已选 1', send: '\u001b[B', enter: false },
       { wait: 'beta-local', send: ' ', enter: false },
       { wait: '已选 2', send: 'd', enter: false },
-      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
+      { wait: '(y/N)', send: 'y', enter: false },
       { wait: '已删除 2 个技能位置', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /d 删除/);
@@ -932,7 +926,7 @@ test('global browser batch deletes collected and local Skill locations', async (
   }
 });
 
-test('collection browser shows progress while updating a Skill', async (t) => {
+test.concurrent('collection browser shows progress while updating a Skill', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -954,7 +948,7 @@ test('collection browser shows progress while updating a Skill', async (t) => {
       { wait: 'remote-skill', send: '', enter: false },
       { wait: 'u 更新当前技能', send: 'u', enter: false },
       { wait: '正在更新：remote-skill', send: '', enter: false },
-      { wait: 'remote-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
+      { wait: 'remote-skill: updated', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /正在更新：remote-skill/);
     assert.match(result.stdout, /remote-skill: updated/);
@@ -972,7 +966,7 @@ test('collection browser shows progress while updating a Skill', async (t) => {
   }
 });
 
-test('collection browser updates all selected Skills without shifting the browser', async (t) => {
+test.sequential('collection browser updates all selected Skills without shifting the browser', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1009,7 +1003,7 @@ test('collection browser updates all selected Skills without shifting the browse
       { wait: '正在更新 1/3：remote-skill', send: '', enter: false },
       { wait: '正在更新 2/3：second-skill', send: '', enter: false },
       { wait: '正在更新 3/3：third-skill', send: '', enter: false },
-      { wait: 'third-skill: updated', send: 'q', enter: false, delayAfter: 3600 },
+      { wait: 'third-skill: updated', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /正在更新 1\/3：remote-skill/);
     assert.match(result.stdout, /正在更新 2\/3：second-skill/);
@@ -1031,7 +1025,7 @@ test('collection browser updates all selected Skills without shifting the browse
   }
 });
 
-test('TTY entry defaults to existing project Skill directories', async (t) => {
+test.concurrent('TTY entry defaults to existing project Skill directories', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1049,11 +1043,11 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看 · d 删除', send: ' ', enter: false },
-      { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '● 当前项目', send: '', delayAfter: 100 },
-      { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
-      { wait: '› ○ 标准 Agent Skills (.agents/skills)', send: '', delayAfter: 100 },
-      { wait: '技能：entry-agent-skill', send: '', delayAfter: 150 },
+      { wait: '已选 1', send: '' },
+      { wait: '● 当前项目', send: '' },
+      { wait: '● 软链（推荐）', send: '' },
+      { wait: '› ○ 标准 Agent Skills (.agents/skills)', send: '' },
+      { wait: '技能：entry-agent-skill', send: '' },
       { wait: '已通过软链添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /安装位置/);
@@ -1074,7 +1068,7 @@ test('TTY entry defaults to existing project Skill directories', async (t) => {
   }
 });
 
-test('TTY entry can copy a selected collection Skill into a global Agent directory', async (t) => {
+test.concurrent('TTY entry can copy a selected collection Skill into a global Agent directory', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1091,13 +1085,13 @@ test('TTY entry can copy a selected collection Skill into a global Agent directo
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看 · d 删除', send: ' ', enter: false },
-      { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '● 当前项目', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: '● 全局', send: '', delayAfter: 100 },
-      { wait: '● 软链（推荐）', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: '● 复制', send: '', delayAfter: 100 },
-      { wait: '› ○ 标准 Agent Skills (~/.agents/skills)', send: ' ', enter: false, delayAfter: 100 },
-      { wait: '› ● 标准 Agent Skills (~/.agents/skills)', send: '', delayAfter: 100 },
+      { wait: '已选 1', send: '' },
+      { wait: '● 当前项目', send: '\u001b[B', enter: false },
+      { wait: '● 全局', send: '' },
+      { wait: '● 软链（推荐）', send: '\u001b[B', enter: false },
+      { wait: '● 复制', send: '' },
+      { wait: '› ○ 标准 Agent Skills (~/.agents/skills)', send: ' ', enter: false },
+      { wait: '› ● 标准 Agent Skills (~/.agents/skills)', send: '' },
       { wait: '技能：entry-copy-skill', send: '' },
       { wait: '已通过复制添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
@@ -1111,7 +1105,7 @@ test('TTY entry can copy a selected collection Skill into a global Agent directo
   }
 });
 
-test('TTY entry cancels installation configuration without creating a target', async (t) => {
+test.concurrent('TTY entry cancels installation configuration without creating a target', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1128,7 +1122,7 @@ test('TTY entry cancels installation configuration without creating a target', a
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看 · d 删除', send: ' ', enter: false },
-      { wait: '已选 1', send: '', delayAfter: 100 },
+      { wait: '已选 1', send: '' },
       { wait: '● 当前项目', send: '\u001b', enter: false },
       { wait: 'q 退出', send: 'q', enter: false },
     ]);
@@ -1139,7 +1133,7 @@ test('TTY entry cancels installation configuration without creating a target', a
   }
 });
 
-test('collection browser confirms replacing an existing add target in a popup', async (t) => {
+test.concurrent('collection browser confirms replacing an existing add target in a popup', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1159,13 +1153,13 @@ test('collection browser confirms replacing an existing add target in a popup', 
     const result = await runInteractive(context, [], [
       { wait: 'q 退出', send: '\u001b[B', enter: false },
       { wait: '→ 查看 · d 删除', send: ' ', enter: false },
-      { wait: '已选 1', send: '', delayAfter: 100 },
-      { wait: '● 当前项目', send: '', delayAfter: 100 },
-      { wait: '● 软链（推荐）', send: '', delayAfter: 100 },
-      { wait: '› ● 标准 Agent Skills (.agents/skills)', send: '', delayAfter: 100 },
+      { wait: '已选 1', send: '' },
+      { wait: '● 当前项目', send: '' },
+      { wait: '● 软链（推荐）', send: '' },
+      { wait: '› ● 标准 Agent Skills (.agents/skills)', send: '' },
       { wait: '技能：entry-replace-skill', send: '' },
-      { wait: '替换目标', send: '', enter: false, delayAfter: 100 },
-      { wait: '(y/N)', send: 'y', enter: false, delayAfter: 150 },
+      { wait: '替换目标', send: '', enter: false },
+      { wait: '(y/N)', send: 'y', enter: false },
       { wait: '已通过软链添加 1 个技能到 1 个目录', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /替换目标/);
@@ -1177,7 +1171,7 @@ test('collection browser confirms replacing an existing add target in a popup', 
   }
 });
 
-test('TTY project tab labels local skills and imports them with i', async (t) => {
+test.concurrent('TTY project tab labels local skills and imports them with i', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1204,12 +1198,12 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
 
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
-      { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: '→ 查看', send: '\u001b[C', enter: false, delayAfter: 100 },
-      { wait: '‹ collected-skill', send: '\u001b', enter: false, delayAfter: 100 },
-      { wait: '→ 查看 · d 删除', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: '› ○ 本地 · local-only', send: ' ', enter: false, delayAfter: 200 },
-      { wait: 'i 加入收藏夹', send: 'i', enter: false, delayAfter: 200 },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: '→ 查看', send: '\u001b[C', enter: false },
+      { wait: '‹ collected-skill', send: '\u001b', enter: false },
+      { wait: '→ 查看 · d 删除', send: '\u001b[B', enter: false },
+      { wait: '› ○ 本地 · local-only', send: ' ', enter: false },
+      { wait: 'i 加入收藏夹', send: 'i', enter: false },
       { wait: '已导入 1 个技能到收藏夹', send: 'q', enter: false },
     ]);
     assert.match(result.stdout, /本地 · local-only/);
@@ -1231,7 +1225,7 @@ test('TTY project tab labels local skills and imports them with i', async (t) =>
   }
 });
 
-test('TTY project tab materializes the current Skill reference from the more-actions menu', async (t) => {
+test.concurrent('TTY project tab materializes the current Skill reference from the more-actions menu', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1249,11 +1243,11 @@ test('TTY project tab materializes the current Skill reference from the more-act
   try {
     const result = await runInteractive(context, ['list'], [
       { wait: '↓ 进入', send: '\u001b[B', enter: false },
-      { wait: '切换 Agent', send: '\u001b[B', enter: false, delayAfter: 100 },
-      { wait: 'm 更多操作', capture: 'footer', send: 'm', enter: false, delayAfter: 100 },
+      { wait: '切换 Agent', send: '\u001b[B', enter: false },
+      { wait: 'm 更多操作', capture: 'footer', send: 'm', enter: false },
       { wait: '更多操作', send: '', enter: false },
       { wait: '技能：menu-reference', send: '', enter: false },
-      { wait: '将引用转为副本', send: '', delayAfter: 100 },
+      { wait: '将引用转为副本', send: '' },
       { wait: '正在转换 1/1：menu-reference', send: '', enter: false },
       { wait: '已将 menu-reference 转为副本', send: 'q', enter: false },
     ], context.project, { rows: 10, columns: 40 });
@@ -1277,7 +1271,7 @@ test('TTY project tab materializes the current Skill reference from the more-act
   }
 });
 
-test('TTY project more-actions menu materializes all selected Skill references', async (t) => {
+test.concurrent('TTY project more-actions menu materializes all selected Skill references', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1320,7 +1314,7 @@ test('TTY project more-actions menu materializes all selected Skill references',
   }
 });
 
-test('TTY project more-actions menu stays unavailable for a mixed selection', async (t) => {
+test.concurrent('TTY project more-actions menu stays unavailable for a mixed selection', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1344,8 +1338,8 @@ test('TTY project more-actions menu stays unavailable for a mixed selection', as
       { wait: 'm 更多操作', send: ' ', enter: false },
       { wait: '已选 1', send: '\u001b[B', enter: false },
       { wait: 'beta-local', send: ' ', enter: false },
-      { wait: 'i 加入收藏夹 · 已选 2', send: 'm', enter: false, delayAfter: 150 },
-      { send: 'q', enter: false },
+      { wait: 'i 加入收藏夹 · 已选 2', send: 'm', enter: false },
+      { send: 'q', enter: false, delay: 10 },
     ]);
 
     assert.doesNotMatch(result.stdout, /╭─ 更多操作/);
@@ -1356,7 +1350,7 @@ test('TTY project more-actions menu stays unavailable for a mixed selection', as
   }
 });
 
-test('Ctrl+C during reference conversion exits 130 and preserves the reference', async (t) => {
+test.concurrent('Ctrl+C during reference conversion exits 130 and preserves the reference', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1382,7 +1376,6 @@ test('Ctrl+C during reference conversion exits 130 and preserves the reference',
           wait: '正在转换 1/1：interrupted-reference',
           send: '\u0003',
           enter: false,
-          delayAfter: 0,
         },
       ]);
       assert.fail('Ctrl+C should interrupt reference conversion');
@@ -1398,7 +1391,7 @@ test('Ctrl+C during reference conversion exits 130 and preserves the reference',
   }
 });
 
-test('iskills init offers origin setup and --remote configures it later', async () => {
+test.concurrent('iskills init offers origin setup and --remote configures it later', async () => {
   const context = await makeContext();
   const remote = join(context.root, 'collection.git');
   try {
@@ -1416,7 +1409,7 @@ test('iskills init offers origin setup and --remote configures it later', async 
   }
 });
 
-test('iskills init configures origin from its first-run prompt', async () => {
+test.concurrent('iskills init configures origin from its first-run prompt', async () => {
   const context = await makeContext();
   const remote = join(context.root, 'collection.git');
   try {
@@ -1433,7 +1426,7 @@ test('iskills init configures origin from its first-run prompt', async () => {
   }
 });
 
-test('TTY import cancellation exits without an error', async (t) => {
+test.concurrent('TTY import cancellation exits without an error', async (t) => {
   try {
     await exec('python3', ['--version']);
   } catch (error) {
@@ -1457,7 +1450,7 @@ test('TTY import cancellation exits without an error', async (t) => {
   }
 });
 
-test('collection browser sync establishes the first upstream and excludes machine-local state', async () => {
+test.concurrent('collection browser sync establishes the first upstream and excludes machine-local state', async () => {
   const context = await makeContext();
   context.env.SK_NO_BACKGROUND_SYNC = '1';
   const collection = context.collection;
@@ -1475,7 +1468,7 @@ test('collection browser sync establishes the first upstream and excludes machin
     await run(context, ['import', source, '--all', '--yes']);
 
     const result = await runInteractive(context, [], [
-      { wait: '? 快捷键', send: 's', enter: false, delayAfter: 800 },
+      { wait: '? 快捷键', send: 's', enter: false },
       { wait: 'Git 同步完成', send: 'q', enter: false },
     ]);
     assert.doesNotMatch(result.stdout, /s 同步 Git/);

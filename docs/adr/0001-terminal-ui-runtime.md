@@ -13,7 +13,7 @@
 ## 决策
 
 1. 继续使用 Ink + React 作为终端渲染 runtime。
-2. 继续维护 copy-owned `src/ui/termcn.tsx`，其中只放无业务语义的控件与视觉令牌；安装、导入等业务页面位于独立 UI 模块，并只通过 props/结果契约取得领域数据。新增依赖需要证明可观的可访问性、输入法、布局或维护收益；“社区有组件”本身不足以引入依赖。
+2. 继续维护 copy-owned `src/ui/components/`，其中只放无业务语义的控件与视觉令牌；安装、导入等业务页面位于独立 UI 模块，并只通过 props/结果契约取得领域数据。新增依赖需要证明可观的可访问性、输入法、布局或维护收益；“社区有组件”本身不足以引入依赖。
 3. 普通组件不直接写 ANSI；alternate screen、clear 和终端交接由页面或 session 协调层负责。
 4. 简单 Prompt 使用行内模式；主浏览器 MAY 使用 alternate screen。
 5. 长驻 React 树和 coordinator loop 都是允许的实现。无论采用哪种方式，每个逻辑 screen 都必须有明确 identity，完成时必须真正结束或切换其输入与渲染生命周期，不能只 resolve 一个 Promise。

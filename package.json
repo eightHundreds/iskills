@@ -19,13 +19,14 @@
   "files": [
     "bin",
     "dist/src",
-    "README.md"
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean --silent && tsc",
     "start": "npm run build --silent && node ./bin/iskills.js",
-    "test": "npm run build --silent && vitest run",
+    "test": "npm run build --silent && node scripts/test-dev.mjs",
     "test:dev": "npm run build --silent && node scripts/test-dev.mjs",
     "test:fast": "npm run build --silent && vitest run --project parallel",
     "test:git": "npm run build --silent && vitest run --project git",
@@ -39,12 +40,15 @@
   "dependencies": {
     "ink": "^6.5.1",
     "jotai": "^2.20.2",
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "string-width": "^8.2.2",
+    "terminal-link": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@xterm/headless": "^6.0.0",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^7.0.0",
     "vitest": "^4.1.10"
   }

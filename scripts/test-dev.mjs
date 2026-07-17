@@ -50,5 +50,26 @@ if (fast.code !== 0) {
   if (failed) {
     console.error(`[test:dev] ${failed.project} failed`);
     process.exitCode = failed.code ?? 1;
+  } else {
+    console.log('\n[test:dev] running git-write after Git and TTY complete');
+    const write = await runVitest('git-write');
+    if (write.code !== 0 || write.signal) {
+      console.error(`[test:dev] ${write.project} failed`);
+      process.exitCode = write.code ?? 1;
+    } else {
+      console.log('\n[test:dev] running git-async after git-write completes');
+      const asyncResult = await runVitest('git-async');
+      if (asyncResult.code !== 0 || asyncResult.signal) {
+        console.error(`[test:dev] ${asyncResult.project} failed`);
+        process.exitCode = asyncResult.code ?? 1;
+      } else {
+        console.log('\n[test:dev] running git-sync after git-async completes');
+        const sync = await runVitest('git-sync');
+        if (sync.code !== 0 || sync.signal) {
+          console.error(`[test:dev] ${sync.project} failed`);
+          process.exitCode = sync.code ?? 1;
+        }
+      }
+    }
   }
 }

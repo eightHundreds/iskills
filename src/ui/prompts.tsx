@@ -5,7 +5,7 @@ import {
   Select,
   TagEditor,
   TextInput,
-} from './termcn.js';
+} from './components/termcn.js';
 import {
   InstallReview,
   ImportReview,
@@ -16,9 +16,11 @@ import {
   type InstallReviewTarget,
 } from './reviews.js';
 import { InkSession } from './session.js';
+import { registerPromptCloser } from './prompt-lifecycle.js';
 import type { Choice, Skill } from '../domain/types.js';
 
 const defaultSession = new InkSession();
+registerPromptCloser(() => defaultSession.close());
 
 function runPrompt<T>(
   cancelledValue: T,

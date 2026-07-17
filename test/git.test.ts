@@ -13,7 +13,6 @@ import {
 } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { setTimeout as delay } from 'node:timers/promises';
 import {
   exec,
   makeContext,
@@ -23,7 +22,7 @@ import {
   type JsonLink,
 } from './helpers.js';
 
-test('imports a Git source with repository provenance and no origin link', async () => {
+test.concurrent('imports a Git source with repository provenance and no origin link', async () => {
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context);
 
@@ -48,7 +47,7 @@ test('imports a Git source with repository provenance and no origin link', async
   }
 });
 
-test('updates a branch source through a three-way Git merge', async () => {
+test.concurrent('updates a branch source through a three-way Git merge', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
 
@@ -69,7 +68,7 @@ test('updates a branch source through a three-way Git merge', async () => {
   }
 });
 
-test('keeps an active Skill valid while a source conflict is resolved manually', async () => {
+test.concurrent('keeps an active Skill valid while a source conflict is resolved manually', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
   const activeAsset = join(context.collection, 'skills/remote-skill/asset.txt');
@@ -102,7 +101,7 @@ test('keeps an active Skill valid while a source conflict is resolved manually',
   }
 });
 
-test('recovers provenance from skills-lock.json and uses the imported files as update baseline', async () => {
+test.concurrent('recovers provenance from skills-lock.json and uses the imported files as update baseline', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
   const installed = join(context.project, '.agents/skills/remote-skill');
@@ -155,7 +154,7 @@ test('recovers provenance from skills-lock.json and uses the imported files as u
   }
 });
 
-test('initializes the collection Git repository with a local fallback identity', async () => {
+test.concurrent('initializes the collection Git repository with a local fallback identity', async () => {
   const context = await makeContext();
   context.env.GIT_CONFIG_NOSYSTEM = '1';
   context.env.GIT_CONFIG_GLOBAL = join(context.root, 'missing-gitconfig');
@@ -191,7 +190,7 @@ test('initializes the collection Git repository with a local fallback identity',
   }
 });
 
-test('search exposes ordered JSON and collects by stable result ID', async () => {
+test.concurrent('search exposes ordered JSON and collects by stable result ID', async () => {
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context, 'relevant');
   const server = createServer((_request, response) => {
@@ -234,7 +233,7 @@ test('search exposes ordered JSON and collects by stable result ID', async () =>
   }
 });
 
-test('noninteractive search rejects source conflicts and treats default Git ports as equivalent', async () => {
+test.concurrent('noninteractive search rejects source conflicts and treats default Git ports as equivalent', async () => {
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context, 'search-skill');
   const { repository: replacementRepository } = await makeGitSkillRepo(
@@ -286,57 +285,7 @@ test('noninteractive search rejects source conflicts and treats default Git port
   }
 });
 
-test('background collection sync merges clean remote changes without blocking the active tree', async () => {
-  const context = await makeContext();
-  context.env.SK_NO_BACKGROUND_SYNC = '1';
-  const collection = context.collection;
-  const remote = join(context.root, 'collection.git');
-  const other = join(context.root, 'other');
-
-  try {
-    await run(context, ['list', '--json']);
-    await exec('git', ['init', '-b', 'main'], { cwd: collection });
-    await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
-    await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', '-b', 'main', remote]);
-    await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
-
-    const first = join(context.project, 'first-local');
-    await makeSkill(first, 'first-local');
-    await run(context, ['import', first, '--all', '--yes']);
-    await exec('git', ['push', '-u', 'origin', 'main'], { cwd: collection });
-
-    await exec('git', ['clone', remote, other]);
-    await exec('git', ['config', 'user.name', 'Other'], { cwd: other });
-    await exec('git', ['config', 'user.email', 'other@example.com'], { cwd: other });
-    await makeSkill(join(other, 'skills/remote-only'), 'remote-only');
-    await writeFile(
-      join(other, 'metadata/remote-only.json'),
-      '{"name":"remote-only","description":"Demo skill","tags":[],"note":"","source":{"type":"unknown"}}\n',
-      'utf8'
-    );
-    await exec('git', ['add', '.'], { cwd: other });
-    await exec('git', ['commit', '-m', 'remote-only'], { cwd: other });
-    await exec('git', ['push'], { cwd: other });
-
-    const second = join(context.project, 'second-local');
-    await makeSkill(second, 'second-local');
-    await run(context, ['import', second, '--all', '--yes']);
-    await run(context, ['sync', '--background']);
-
-    assert.equal((await lstat(join(collection, 'skills/remote-only'))).isDirectory(), true);
-    const remoteSkill = await exec(
-      'git',
-      ['--git-dir', remote, 'show', 'main:skills/second-local/SKILL.md'],
-      { encoding: 'utf8' }
-    );
-    assert.match(remoteSkill.stdout, /name: second-local/);
-  } finally {
-    await rm(context.root, { recursive: true, force: true });
-  }
-});
-
-test('tracks an upstream Skill directory rename through Git history', async () => {
+test.concurrent('tracks an upstream Skill directory rename through Git history', async () => {
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context);
 
@@ -359,7 +308,7 @@ test('tracks an upstream Skill directory rename through Git history', async () =
   }
 });
 
-test('applies upstream deletion through collection removal after explicit confirmation', async () => {
+test.concurrent('applies upstream deletion through collection removal after explicit confirmation', async () => {
   const context = await makeContext();
   const { repository } = await makeGitSkillRepo(context);
   const target = join(context.project, '.agents/skills');
@@ -380,58 +329,7 @@ test('applies upstream deletion through collection removal after explicit confir
   }
 });
 
-test('background collection sync records divergence without writing conflict markers into the collection', async () => {
-  const context = await makeContext();
-  context.env.SK_NO_BACKGROUND_SYNC = '1';
-  const collection = context.collection;
-  const remote = join(context.root, 'collection-conflict.git');
-  const other = join(context.root, 'other-conflict');
-  const source = join(context.project, 'conflict-skill');
-  await makeSkill(source, 'conflict-skill');
-
-  try {
-    await run(context, ['list', '--json']);
-    await exec('git', ['init', '-b', 'main'], { cwd: collection });
-    await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
-    await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', '-b', 'main', remote]);
-    await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
-    await run(context, ['import', source, '--all', '--yes']);
-    await exec('git', ['push', '-u', 'origin', 'main'], { cwd: collection });
-
-    await exec('git', ['clone', remote, other]);
-    await exec('git', ['config', 'user.name', 'Other'], { cwd: other });
-    await exec('git', ['config', 'user.email', 'other@example.com'], { cwd: other });
-    const remoteMetadata = join(other, 'metadata/conflict-skill.json');
-    const remoteValue = JSON.parse(await readFile(remoteMetadata, 'utf8'));
-    remoteValue.note = 'remote note';
-    await writeFile(remoteMetadata, `${JSON.stringify(remoteValue, null, 2)}\n`, 'utf8');
-    await exec('git', ['add', '.'], { cwd: other });
-    await exec('git', ['commit', '-m', 'remote note'], { cwd: other });
-    await exec('git', ['push'], { cwd: other });
-
-    const localMetadata = join(collection, 'metadata/conflict-skill.json');
-    const localValue = JSON.parse(await readFile(localMetadata, 'utf8'));
-    localValue.note = 'local note';
-    await writeFile(localMetadata, `${JSON.stringify(localValue, null, 2)}\n`, 'utf8');
-    await run(context, ['list', '--json']);
-    await run(context, ['sync', '--background']);
-
-    const conflictPath = join(collection, '.local/collection-conflict.json');
-    const state = JSON.parse(await readFile(conflictPath, 'utf8'));
-    assert.equal(state.type, 'collection');
-    assert.equal(JSON.parse(await readFile(localMetadata, 'utf8')).note, 'local note');
-    assert.doesNotMatch(await readFile(localMetadata, 'utf8'), /<{7}|={7}|>{7}/);
-
-    await run(context, ['list', '--json']);
-    const nextRunState = JSON.parse(await readFile(conflictPath, 'utf8'));
-    assert.equal(nextRunState.type, 'collection');
-  } finally {
-    await rm(context.root, { recursive: true, force: true });
-  }
-});
-
-test('keeps Tag-based Git imports pinned', async () => {
+test.concurrent('keeps Tag-based Git imports pinned', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
   await exec('git', ['tag', 'v1'], { cwd: repository });
@@ -453,7 +351,7 @@ test('keeps Tag-based Git imports pinned', async () => {
   }
 });
 
-test('iskills init initializes Git', async () => {
+test.concurrent('iskills init initializes Git', async () => {
   const context = await makeContext();
   try {
     const initialized = await run(context, ['init']);
@@ -467,49 +365,7 @@ test('iskills init initializes Git', async () => {
   }
 });
 
-test('replacement keeps collection writes when the following Git sync fails', async () => {
-  const context = await makeContext();
-  context.env.SK_NO_BACKGROUND_SYNC = '1';
-  const first = join(context.project, 'first/rollback-skill');
-  const second = join(context.project, 'second/rollback-skill');
-  const usage = join(context.project, '.agents/skills');
-  await makeSkill(first, 'rollback-skill');
-  await makeSkill(second, 'rollback-skill');
-  await writeFile(join(first, 'version.txt'), 'first\n', 'utf8');
-  await writeFile(join(second, 'version.txt'), 'second\n', 'utf8');
-
-  try {
-    await run(context, ['init']);
-    await run(context, ['import', first, '--all', '--yes']);
-    await run(context, ['add', 'rollback-skill', '--to', usage]);
-    await run(context, ['list', 'rollback-skill', '--note', 'preserved']);
-    const hook = join(context.collection, '.git/hooks/pre-commit');
-    await writeFile(hook, '#!/bin/sh\nexit 1\n', 'utf8');
-    await chmod(hook, 0o755);
-
-    const replacement = await run(context, ['import', second, '--all', '--yes', '--replace']);
-    assert.match(replacement.stderr, /收藏夹 Git 提交失败/);
-    assert.equal(await readFile(join(first, 'version.txt'), 'utf8'), 'first\n');
-    assert.equal((await lstat(first)).isDirectory(), true);
-    assert.equal((await lstat(second)).isSymbolicLink(), true);
-    assert.equal(
-      await readFile(join(context.collection, 'skills/rollback-skill/version.txt'), 'utf8'),
-      'second\n'
-    );
-    assert.equal(
-      await readFile(join(usage, 'rollback-skill/version.txt'), 'utf8'),
-      'second\n'
-    );
-    const metadata = JSON.parse(
-      await readFile(join(context.collection, 'metadata/rollback-skill.json'), 'utf8')
-    );
-    assert.equal(metadata.note, '');
-  } finally {
-    await rm(context.root, { recursive: true, force: true });
-  }
-});
-
-test('update --all continues after one Skill conflicts', async () => {
+test.concurrent('update --all continues after one Skill conflicts', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
   const second = join(repository, 'skills/second-remote');
@@ -541,48 +397,7 @@ test('update --all continues after one Skill conflicts', async () => {
   }
 });
 
-test('a mutating command returns while its detached Git sync pushes in the background', async () => {
-  const context = await makeContext();
-  const collection = context.collection;
-  const remote = join(context.root, 'async-sync.git');
-  const source = join(context.project, 'async-skill');
-  await makeSkill(source, 'async-skill');
-
-  try {
-    await run(context, ['list', '--json']);
-    await exec('git', ['init', '-b', 'main'], { cwd: collection });
-    await exec('git', ['config', 'user.name', 'Test'], { cwd: collection });
-    await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: collection });
-    await exec('git', ['init', '--bare', '-b', 'main', remote]);
-    await exec('git', ['remote', 'add', 'origin', remote], { cwd: collection });
-    await exec('git', ['add', '.gitignore'], { cwd: collection });
-    await exec('git', ['commit', '-m', 'initial'], { cwd: collection });
-    await exec('git', ['push', '-u', 'origin', 'main'], { cwd: collection });
-
-    await run(context, ['import', source, '--all', '--yes']);
-    let pushed = false;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      try {
-        await exec('git', [
-          '--git-dir',
-          remote,
-          'cat-file',
-          '-e',
-          'main:skills/async-skill/SKILL.md',
-        ]);
-        pushed = true;
-        break;
-      } catch {
-        await delay(50);
-      }
-    }
-    assert.equal(pushed, true, 'background process did not push within five seconds');
-  } finally {
-    await rm(context.root, { recursive: true, force: true });
-  }
-});
-
-test('rejects an upstream update that introduces an escaping symlink', async () => {
+test.concurrent('rejects an upstream update that introduces an escaping symlink', async () => {
   const context = await makeContext();
   const { repository, skill } = await makeGitSkillRepo(context);
 

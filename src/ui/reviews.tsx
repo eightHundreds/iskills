@@ -2,14 +2,10 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Skill } from '../domain/types.js';
 import { skillFieldLabels } from './skill-labels.js';
-import { Tabs, TextInput, termcnColors, type Tab } from './termcn.js';
+import { Tabs, TextInput, termcnColors, type Tab } from './components/termcn.js';
+import { textWidth, wrapColumns } from './components/terminal-layout.js';
 
 const colors = termcnColors;
-const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-
-function graphemes(value: string): string[] {
-  return [...segmenter.segment(value)].map((part) => part.segment);
-}
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
@@ -17,7 +13,7 @@ function isReturn(input: string, keyReturn: boolean): boolean {
 
 function skillNameColumnWidth(options: { skill: Skill }[], columns: number): number {
   const longestName = options.reduce(
-    (longest, option) => Math.max(longest, graphemes(option.skill.name).length),
+    (longest, option) => Math.max(longest, textWidth(option.skill.name)),
     0
   );
   const minimumDescriptionWidth = columns >= 90 ? 32 : columns >= 70 ? 24 : columns >= 50 ? 14 : 0;
@@ -38,49 +34,6 @@ function collectionStatusIcon(
   if (status === 'same-source') return { symbol: '★', color: colors.muted };
   if (status === 'same-name') return { symbol: '☆', color: colors.error };
   return undefined;
-}
-
-function graphemeWidth(value: string): number {
-  const code = value.codePointAt(0) ?? 0;
-  if (code === 0 || code < 0x20 || (code >= 0x7f && code < 0xa0)) return 0;
-  return (
-    (code >= 0x1100 && code <= 0x115f) ||
-    code === 0x2329 ||
-    code === 0x232a ||
-    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe10 && code <= 0xfe19) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x1f300 && code <= 0x1f64f) ||
-    (code >= 0x1f900 && code <= 0x1f9ff) ||
-    (code >= 0x20000 && code <= 0x3fffd)
-  ) ? 2 : 1;
-}
-
-function textWidth(value: string): number {
-  return graphemes(value).reduce((width, grapheme) => width + graphemeWidth(grapheme), 0);
-}
-
-function wrapColumns(value: string, width: number): string[] {
-  if (!value) return [''];
-  const lines: string[] = [];
-  let line = '';
-  let columns = 0;
-  for (const grapheme of graphemes(value)) {
-    const graphemeColumns = graphemeWidth(grapheme);
-    if (line && columns + graphemeColumns > width) {
-      lines.push(line);
-      line = '';
-      columns = 0;
-    }
-    line += grapheme;
-    columns += graphemeColumns;
-  }
-  if (line) lines.push(line);
-  return lines;
 }
 
 interface DetailPreviewLine {

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from '../contracts/search.js';
 import type { RemoteSkill } from '../domain/types.js';
 import { InkSession } from './session.js';
-import { TextInput, termcnColors } from './termcn.js';
+import { TextInput, termcnColors } from './components/termcn.js';
 
 export type { RemoteSkillSearch, SearchViewInput } from '../contracts/search.js';
 

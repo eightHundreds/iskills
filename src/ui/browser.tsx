@@ -18,7 +18,8 @@ import {
 } from './browser-state.js';
 import { InkSession } from './session.js';
 import { skillFieldLabels } from './skill-labels.js';
-import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
+import { Select, Tabs, TextInput, termcnColors } from './components/termcn.js';
+import { padColumns, sliceColumns, textWidth, wrapColumns } from './components/terminal-layout.js';
 
 export type {
   BrowserFocus,
@@ -42,67 +43,6 @@ type SkillRow =
   | { type: 'skill'; group: string; skill: Skill };
 
 const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-function charWidth(char: string): number {
-  const code = char.codePointAt(0) ?? 0;
-  if (code === 0) return 0;
-  if (code < 0x20 || (code >= 0x7f && code < 0xa0)) return 0;
-  return (
-    (code >= 0x1100 && code <= 0x115f) ||
-    code === 0x2329 ||
-    code === 0x232a ||
-    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe10 && code <= 0xfe19) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x1f300 && code <= 0x1f64f) ||
-    (code >= 0x1f900 && code <= 0x1f9ff) ||
-    (code >= 0x20000 && code <= 0x3fffd)
-  ) ? 2 : 1;
-}
-
-function textWidth(value: string): number {
-  return [...value].reduce((width, char) => width + charWidth(char), 0);
-}
-
-function sliceColumns(value: string, start: number, end: number): string {
-  let column = 0;
-  let result = '';
-  for (const char of value) {
-    const width = charWidth(char);
-    const next = column + width;
-    if (next > start && column < end) result += char;
-    column = next;
-    if (column >= end) break;
-  }
-  return result;
-}
-
-function padColumns(value: string, width: number): string {
-  return `${value}${' '.repeat(Math.max(0, width - textWidth(value)))}`;
-}
-
-function wrapColumns(value: string, width: number): string[] {
-  if (!value) return [''];
-  const lines: string[] = [];
-  let line = '';
-  let columns = 0;
-  for (const char of value) {
-    const charColumns = charWidth(char);
-    if (line && columns + charColumns > width) {
-      lines.push(line);
-      line = '';
-      columns = 0;
-    }
-    line += char;
-    columns += charColumns;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
 
 function useSpinner(active: boolean): string {
   const [index, setIndex] = useState(0);

@@ -25,7 +25,6 @@ export interface InteractiveStep {
   wait?: string;
   regex?: boolean;
   delay?: number;
-  delayAfter?: number;
   enter?: boolean;
   capture?: string;
 }
@@ -47,11 +46,30 @@ export interface JsonLink {
   path: string;
 }
 
-export const exec = promisify(execFile) as (
+const execFileAsync = promisify(execFile) as (
   file: string,
   args: readonly string[],
   options?: ExecFileOptionsWithStringEncoding
 ) => Promise<ExecResult>;
+
+export async function exec(
+  file: string,
+  args: readonly string[],
+  options: ExecFileOptionsWithStringEncoding = {}
+): Promise<ExecResult> {
+  return execFileAsync(file, args, {
+    ...options,
+    env: file === 'git'
+      ? {
+          GIT_AUTHOR_NAME: 'Test',
+          GIT_AUTHOR_EMAIL: 'test@example.com',
+          GIT_COMMITTER_NAME: 'Test',
+          GIT_COMMITTER_EMAIL: 'test@example.com',
+          ...options.env,
+        }
+      : options.env,
+  });
+}
 const cli = resolve('bin/iskills.js');
 
 export function errorMessage(error: unknown): string {
@@ -86,7 +104,15 @@ export async function makeContext(): Promise<TestContext> {
     home,
     config,
     project,
-    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: config },
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+      HOME: home,
+      XDG_CONFIG_HOME: config,
+    },
     collection: join(config, 'iskills'),
   };
 }
@@ -152,6 +178,16 @@ def read_once(timeout=0.1):
         return True
     return False
 
+def wait_for_idle():
+    deadline = time.time() + 1
+    idle_deadline = time.time() + 0.01
+    while time.time() < deadline:
+        remaining = idle_deadline - time.time()
+        if remaining <= 0:
+            return
+        if read_once(min(remaining, 0.01)):
+            idle_deadline = time.time() + 0.01
+
 for step in steps:
     wait = step.get("wait")
     if wait:
@@ -163,9 +199,9 @@ for step in steps:
         if found < 0:
             raise TimeoutError("PTY prompt not found: " + wait + "\n" + output.decode("utf-8", "replace"))
         cursor = found + len(pattern)
-    else:
-        time.sleep(step.get("delay", 150) / 1000)
-    time.sleep(step.get("delayAfter", 50) / 1000)
+        wait_for_idle()
+    elif step.get("delay"):
+        time.sleep(step["delay"] / 1000)
     capture = step.get("capture")
     if capture:
         settle_deadline = time.time() + 1
@@ -178,7 +214,8 @@ for step in steps:
         payload = step["send"].encode("utf-8")
         if step.get("enter", True):
             payload += b"\r"
-        os.write(fd, payload)
+        if payload:
+            os.write(fd, payload)
     except OSError:
         sys.stdout.buffer.write(output)
         raise
@@ -235,8 +272,6 @@ export async function makeGitSkillRepo(
   const skill = join(repository, 'skills', name);
   await makeSkill(skill, name);
   await exec('git', ['init', '-b', 'main'], { cwd: repository });
-  await exec('git', ['config', 'user.name', 'Test'], { cwd: repository });
-  await exec('git', ['config', 'user.email', 'test@example.com'], { cwd: repository });
   await exec('git', ['add', '.'], { cwd: repository });
   await exec('git', ['commit', '-m', 'initial'], { cwd: repository });
   return { repository, skill };

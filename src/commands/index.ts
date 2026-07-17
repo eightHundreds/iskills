@@ -6,13 +6,35 @@ import {
   syncCollection,
   updateGitSkill,
 } from '../domain/git.js';
-import { chooseMany, confirm, input } from '../ui/prompts.js';
+import type { BrowserTab } from '../contracts/browser.js';
 import type { CollectedSkill, UpdateStatus } from '../domain/types.js';
-import { commandList, interactiveList } from './browser.js';
-import { commandAdd, commandImport, commandRemove } from './library.js';
-import { commandSearch } from './search.js';
 
-export { commandAdd, commandImport, commandList, commandRemove, commandSearch, interactiveList };
+export async function commandAdd(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandAdd(argv);
+}
+
+export async function commandImport(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandImport(argv);
+}
+
+export async function commandList(argv: string[]): Promise<void> {
+  return (await import('./browser.js')).commandList(argv);
+}
+
+export async function commandRemove(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandRemove(argv);
+}
+
+export async function commandSearch(argv: string[]): Promise<void> {
+  return (await import('./search.js')).commandSearch(argv);
+}
+
+export async function interactiveList(
+  initialQuery = '',
+  initialTab: BrowserTab = 'project'
+): Promise<void> {
+  return (await import('./browser.js')).interactiveList(initialQuery, initialTab);
+}
 
 export async function commandUpdate(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -36,6 +58,7 @@ export async function commandUpdate(argv: string[]): Promise<void> {
   } else if (values.all) {
     selected = updateable;
   } else if (process.stdin.isTTY) {
+    const { chooseMany } = await import('../ui/prompts.js');
     selected = await chooseMany(updateable, '选择要更新的技能：');
   } else {
     throw new Error('请指定技能名称或使用 --all');
@@ -54,6 +77,7 @@ export async function commandUpdate(argv: string[]): Promise<void> {
             }
             console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
             links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
+            const { confirm } = await import('../ui/prompts.js');
             return confirm('执行收藏夹移除流程吗？');
           },
         }),
@@ -92,8 +116,9 @@ export async function commandInit(argv: string[] = []): Promise<void> {
   const initialized = await initCollectionGit();
   console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
   let remote = values.remote;
-  if (!remote && initialized && process.stdin.isTTY && await confirm('是否配置远程仓库？')) {
-    remote = await input('远程仓库地址：');
+  if (!remote && initialized && process.stdin.isTTY) {
+    const { confirm, input } = await import('../ui/prompts.js');
+    if (await confirm('是否配置远程仓库？')) remote = await input('远程仓库地址：');
   }
   if (remote) {
     await configureCollectionRemote(remote);

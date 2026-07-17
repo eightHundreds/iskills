@@ -13,7 +13,7 @@ import {
 } from './commands/index.js';
 import { commitCollection, ensureCollection, readState } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
-import { closePrompts } from './ui/prompts.js';
+import { closeActivePrompts } from './ui/prompt-lifecycle.js';
 import { InterruptError } from './contracts/terminal.js';
 
 const packageVersion = (
@@ -62,6 +62,6 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     }
     throw error;
   } finally {
-    closePrompts();
+    closeActivePrompts();
   }
 }

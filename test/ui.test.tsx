@@ -6,12 +6,14 @@ import type { Skill } from '../src/domain/types.js';
 import { ImportReview, InstallReview } from '../src/ui/reviews.js';
 import {
   Confirm,
+  Link,
   MultiSelect,
   Select,
   Tabs,
   TextInput,
   type Tab,
-} from '../src/ui/termcn.js';
+} from '../src/ui/components/termcn.js';
+import { padColumns, sliceColumns, textWidth, wrapColumns } from '../src/ui/components/terminal-layout.js';
 import { withInk } from './ink.js';
 
 const skill: Skill = {
@@ -55,7 +57,7 @@ test('Select supports cursor navigation and numbered shortcuts', async () => {
     />,
     async (screen) => {
       await screen.press('down');
-      assert.match(screen.frame(), /❯\s+第二项/);
+      assert.match(await screen.waitForFrame(/❯\s+第二项/), /❯\s+第二项/);
       await screen.press('enter');
     }
   );
@@ -92,6 +94,7 @@ test('MultiSelect preserves option order when submitting selected values', async
     />,
     async (screen) => {
       await screen.press('down');
+      assert.match(screen.frame(), /❯\s+○\s+第二项/);
       await screen.write(' ');
       await screen.press('down');
       await screen.write(' ');
@@ -108,12 +111,36 @@ test('TextInput edits at the cursor and submits the resulting value', async () =
     async (screen) => {
       await screen.press('left');
       await screen.write('X');
-      assert.match(screen.frame(), /aXb/);
+      assert.match(await screen.waitForFrame(/aXb/), /aXb/);
       await screen.press('backspace');
+      await screen.waitForFrame(/ab/);
       await screen.press('enter');
     }
   );
   assert.deepEqual(submitted, ['ab']);
+});
+
+test('terminal layout measures and slices Unicode graphemes by terminal columns', () => {
+  assert.equal(textWidth('a你e\u0301'), 4);
+  assert.deepEqual(wrapColumns('a你b', 3), ['a你', 'b']);
+  assert.equal(sliceColumns('a你b', 1, 3), '你');
+  assert.equal(padColumns('你', 4), '你  ');
+});
+
+test('Link renders a clickable link or its fallback for the current terminal', async () => {
+  await withInk(
+    <Link url="https://example.com" fallback={(text, url) => `${text} (${url})`}>
+      文档
+    </Link>,
+    async (screen) => {
+      const frame = screen.frame();
+      assert.equal(
+        frame.includes('\u001B]8;;https://example.com\u0007') ||
+          frame.includes('文档 (https://example.com)'),
+        true
+      );
+    }
+  );
 });
 
 function TabsHarness() {
@@ -129,9 +156,9 @@ test('Tabs updates the active content with arrow navigation', async () => {
   await withInk(<TabsHarness />, async (screen) => {
     assert.match(screen.frame(), /第一项内容/);
     await screen.press('right');
-    assert.match(screen.frame(), /第二项内容/);
+    assert.match(await screen.waitForFrame(/第二项内容/), /第二项内容/);
     await screen.press('left');
-    assert.match(screen.frame(), /第一项内容/);
+    assert.match(await screen.waitForFrame(/第一项内容/), /第一项内容/);
   });
 });
 
@@ -145,8 +172,12 @@ test('ImportReview submits selected tags only after its confirmation tab', async
     />,
     async (screen) => {
       await screen.write(' ');
+      await screen.waitForFrame(/已选分组：frontend/);
       await screen.press('right');
-      assert.match(screen.frame(), /将导入 1 个技能；分组：frontend/);
+      assert.match(
+        await screen.waitForFrame(/将导入 1 个技能；分组：frontend/),
+        /将导入 1 个技能；分组：frontend/
+      );
       await screen.press('enter');
     }
   );
@@ -176,11 +207,13 @@ test('InstallReview carries its selected configuration into confirmation', async
     />,
     async (screen) => {
       await screen.press('enter');
+      await screen.waitForFrame(/↑\/↓ 选择 · ← 返回 · Enter 下一步/);
       await screen.press('enter');
+      await screen.waitForFrame(/至少选择一个目录|Space 选择/);
       await screen.press('enter');
-      assert.match(screen.frame(), /安装位置：当前项目/);
-      assert.match(screen.frame(), /添加方式：软链/);
-      assert.match(screen.frame(), /目标目录：Codex 项目目录/);
+      const confirmation = await screen.waitForFrame(/安装位置：当前项目/);
+      assert.match(confirmation, /添加方式：软链/);
+      assert.match(confirmation, /目标目录：Codex 项目目录/);
       await screen.press('enter');
     }
   );
