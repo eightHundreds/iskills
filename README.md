@@ -7,7 +7,7 @@
 ## 本地试用
 
 ```bash
-npm link
+pnpm link
 iskills --help
 ```
 
@@ -48,6 +48,6 @@ iskills sync                    # 阻塞式同步收藏夹 Git
 ## 验证
 
 ```bash
-npm test
-npm pack --dry-run
+pnpm test
+pnpm pack --dry-run
 ```

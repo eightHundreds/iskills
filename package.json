@@ -11,6 +11,7 @@
   "publishConfig": {
     "access": "public"
   },
+  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "types": "./dist/src/cli.d.ts",
   "bin": {
@@ -24,15 +25,15 @@
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean --silent && tsc",
-    "start": "npm run build --silent && node ./bin/iskills.js",
-    "test": "npm run build --silent && node scripts/test-dev.mjs",
-    "test:dev": "npm run build --silent && node scripts/test-dev.mjs",
-    "test:fast": "npm run build --silent && vitest run --project parallel",
-    "test:git": "npm run build --silent && vitest run --project git",
-    "test:tty": "npm run build --silent && vitest run --project tty",
+    "build": "pnpm run -s clean && tsc",
+    "start": "pnpm run -s build && node ./bin/iskills.js",
+    "test": "pnpm run -s build && node scripts/test-dev.mjs",
+    "test:dev": "pnpm run -s build && node scripts/test-dev.mjs",
+    "test:fast": "pnpm run -s build && vitest run --project parallel",
+    "test:git": "pnpm run -s build && vitest run --project git",
+    "test:tty": "pnpm run -s build && vitest run --project tty",
     "type-check": "tsc --noEmit",
-    "prepack": "npm run build"
+    "prepack": "pnpm run build"
   },
   "engines": {
     "node": ">=24"
