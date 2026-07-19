@@ -1,25 +1,43 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { matches } from '../core.js';
-import { checkGitSkillUpdates } from '../git.js';
-import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../types.js';
+import { Provider, useAtom, useAtomValue } from 'jotai';
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
+import type {
+  BrowserFocus,
+  BrowserResult,
+  BrowserState,
+  BrowserTab,
+  BrowserViewInput,
+  SkillGroup,
+} from '../contracts/browser.js';
+import { matchesSkill } from '../domain/skill-query.js';
+import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../domain/types.js';
+import {
+  browserNavigationAtom,
+  browserSelectionAtom,
+  createBrowserStore,
+} from './browser-state.js';
 import { InkSession } from './session.js';
-import { Select, Tabs, TextInput, termcnColors } from './termcn.js';
+import { skillFieldLabels } from './skill-labels.js';
+import {
+  Modal,
+  Select,
+  Tabs,
+  TextInput,
+  termcnColors,
+  type ModalBackgroundLine,
+} from './components/termcn.js';
+import { textWidth, wrapColumns } from './components/terminal-layout.js';
 
-export type BrowserTab = 'project' | 'collection' | 'global';
-export type BrowserFocus = 'tabs' | 'agents' | 'list';
-export interface SkillGroup {
-  agent: string;
-  skills: Skill[];
-}
-interface BrowserState {
-  tab: BrowserTab;
-  query: string;
-  cursor: number;
-  selected: string[];
-  agent: string;
-  focus: BrowserFocus;
-}
+export type {
+  BrowserFocus,
+  BrowserResult,
+  BrowserState,
+  BrowserTab,
+  BrowserUpdateCheck,
+  BrowserUpdateChecker,
+  BrowserViewInput,
+  SkillGroup,
+} from '../contracts/browser.js';
 interface BrowserConfirmation {
   title: string;
   message: string;
@@ -27,86 +45,11 @@ interface BrowserConfirmation {
   onConfirm: () => void;
   onCancel: () => void;
 }
-export type BrowserResult =
-  | { type: 'quit' }
-  | (BrowserState & (
-      | { type: 'sync' }
-      | { type: 'tags'; skills: Skill[] }
-      | { type: 'update'; skills: CollectedSkill[] }
-      | { type: 'add'; skills: CollectedSkill[] }
-      | { type: 'removeCollection'; skills: CollectedSkill[] }
-      | { type: 'removeLocations'; skills: Skill[] }
-      | { type: 'materialize'; skills: Skill[] }
-      | { type: 'import'; skills: Skill[] }
-      | { type: 'open'; skill: Skill; collection: boolean }
-    ));
-
 type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
   | { type: 'skill'; group: string; skill: Skill };
 
 const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-function charWidth(char: string): number {
-  const code = char.codePointAt(0) ?? 0;
-  if (code === 0) return 0;
-  if (code < 0x20 || (code >= 0x7f && code < 0xa0)) return 0;
-  return (
-    (code >= 0x1100 && code <= 0x115f) ||
-    code === 0x2329 ||
-    code === 0x232a ||
-    (code >= 0x2e80 && code <= 0xa4cf && code !== 0x303f) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe10 && code <= 0xfe19) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x1f300 && code <= 0x1f64f) ||
-    (code >= 0x1f900 && code <= 0x1f9ff) ||
-    (code >= 0x20000 && code <= 0x3fffd)
-  ) ? 2 : 1;
-}
-
-function textWidth(value: string): number {
-  return [...value].reduce((width, char) => width + charWidth(char), 0);
-}
-
-function sliceColumns(value: string, start: number, end: number): string {
-  let column = 0;
-  let result = '';
-  for (const char of value) {
-    const width = charWidth(char);
-    const next = column + width;
-    if (next > start && column < end) result += char;
-    column = next;
-    if (column >= end) break;
-  }
-  return result;
-}
-
-function padColumns(value: string, width: number): string {
-  return `${value}${' '.repeat(Math.max(0, width - textWidth(value)))}`;
-}
-
-function wrapColumns(value: string, width: number): string[] {
-  if (!value) return [''];
-  const lines: string[] = [];
-  let line = '';
-  let columns = 0;
-  for (const char of value) {
-    const charColumns = charWidth(char);
-    if (line && columns + charColumns > width) {
-      lines.push(line);
-      line = '';
-      columns = 0;
-    }
-    line += char;
-    columns += charColumns;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
 
 function useSpinner(active: boolean): string {
   const [index, setIndex] = useState(0);
@@ -127,7 +70,7 @@ function skillGroups(skill: Skill): string[] {
 function groupedRows(skills: Skill[], query: string): SkillRow[] {
   if (query.trim()) {
     return skills
-      .filter((skill) => matches(skill, query))
+      .filter((skill) => matchesSkill(skill, query))
       .map((skill) => ({ type: 'skill', group: skillGroups(skill).join(' · '), skill }));
   }
   const groups = new Map<string, Skill[]>();
@@ -155,7 +98,7 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
 
 function flatRows(skills: Skill[], query: string): SkillRow[] {
   return skills
-    .filter((skill) => matches(skill, query))
+    .filter((skill) => matchesSkill(skill, query))
     .map((skill) => ({ type: 'skill', group: '', skill }));
 }
 
@@ -163,21 +106,116 @@ function selectableSkills(row: SkillRow): Skill[] {
   return row.type === 'group' ? row.skills : [row.skill];
 }
 
-function framedLines(title: string, content: string[], width: number): string[] {
-  const inner = width - 4;
-  const titleWidth = textWidth(title);
-  const body = content
-    .flatMap((line) => wrapColumns(line, inner))
-    .map((line) => padColumns(line, inner));
+function paneHeight(rowCount: number, viewportHeight: number): number {
+  const visibleRows = Math.max(3, Math.min(rowCount, viewportHeight));
+  return visibleRows + (rowCount > viewportHeight ? 1 : 0);
+}
+
+export interface BrowserFrameDimensions {
+  frameHeight: number;
+  frameWidth: number;
+  listViewportHeight: number;
+}
+
+export function browserFrameDimensions({
+  rows,
+  columns,
+  projectRows,
+  globalRows,
+  collectionRows,
+  hasProjectAgents,
+  hasGlobalAgents,
+}: {
+  rows: number | undefined;
+  columns: number | undefined;
+  projectRows: number;
+  globalRows: number;
+  collectionRows: number;
+  hasProjectAgents: boolean;
+  hasGlobalAgents: boolean;
+}): BrowserFrameDimensions {
+  const listViewportHeight = Math.max(3, (rows ?? 24) - 10);
+  const tabContentHeight = Math.max(
+    paneHeight(projectRows, listViewportHeight) + (hasProjectAgents ? 1 : 0),
+    paneHeight(globalRows, listViewportHeight) + (hasGlobalAgents ? 1 : 0),
+    paneHeight(collectionRows, listViewportHeight)
+  );
+  return {
+    frameHeight: tabContentHeight + 2,
+    frameWidth: columns ?? 80,
+    listViewportHeight,
+  };
+}
+
+export function detailFrameDimensions(
+  frameHeight: number,
+  frameWidth: number,
+  terminalRows: number | undefined
+): { height: number; width: number } {
+  return {
+    height: Math.min(frameHeight, Math.max(5, (terminalRows ?? 24) - 4)),
+    width: frameWidth,
+  };
+}
+
+interface DetailContentLine {
+  label?: string;
+  value: string;
+  muted?: boolean;
+}
+
+function detailFieldLines(
+  label: string,
+  value: string,
+  width: number,
+  muted = false
+): DetailContentLine[] {
+  const labelText = `${label}  `;
+  const indentation = ' '.repeat(textWidth(labelText));
+  const valueWidth = Math.max(1, width - textWidth(labelText));
+  return value
+    .split(/\r?\n/)
+    .flatMap((paragraph) => wrapColumns(paragraph, valueWidth))
+    .map((line, index) => index === 0
+      ? { label: labelText, value: line, muted }
+      : { value: `${indentation}${line}`, muted });
+}
+
+function detailContentLines(
+  skill: Skill,
+  metadata: SkillMetadata,
+  links: SkillLink[],
+  collection: boolean,
+  source: string,
+  frameWidth: number
+): DetailContentLine[] {
+  const width = Math.max(1, frameWidth - 4);
+  const lines = detailFieldLines(skillFieldLabels.description, skill.description || '无描述', width, true);
+  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels.location, skill.path, width)];
+
+  lines.push(
+    ...detailFieldLines(skillFieldLabels.tags, metadata.tags.length ? metadata.tags.join(', ') : '无', width),
+    ...detailFieldLines(skillFieldLabels.note, metadata.note || '无', width),
+    ...detailFieldLines(skillFieldLabels.source, source, width)
+  );
+  if (metadata.source.path) {
+    lines.push(...detailFieldLines(skillFieldLabels.path, metadata.source.path, width));
+  }
+  lines.push({ label: skillFieldLabels.relatedLocations, value: '' });
+  if (!links.length) return [...lines, { value: '  无', muted: true }];
   return [
-    `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
-    ...body.map((line) => `│ ${line} │`),
-    `╰${'─'.repeat(width - 2)}╯`,
+    ...lines,
+    ...links.flatMap((link) => detailFieldLines(
+      link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖',
+      link.path,
+      width,
+      true
+    )),
   ];
 }
 
-function shortcutHelpLines(width: number): string[] {
-  const content = [
+function shortcutModalContent(): string[] {
+  return [
     '↑/↓ 移动焦点或列表项',
     '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
     'Space 选择当前项或当前分组',
@@ -192,98 +230,55 @@ function shortcutHelpLines(width: number): string[] {
     'm 更多操作（当前项目引用可转换时）',
     'q 退出 · Esc 取消当前上下文',
     '',
-    'Esc / q / ? 关闭',
+    'Esc 关闭',
   ];
-  return framedLines(' 完整快捷键 ', content, width);
 }
 
-function moreActionLines(scope: string, width: number): string[] {
-  return framedLines(' 更多操作 ', [scope, '', '› 将引用转为副本'], width);
+function moreActionModalContent(scope: string): string[] {
+  return [scope, '', '› 将引用转为副本'];
 }
 
-function confirmationLines(confirmation: BrowserConfirmation, width: number): string[] {
-  return framedLines(
-    ` ${confirmation.title} `,
-    [
-      confirmation.message,
-      ...(confirmation.details?.length ? confirmation.details : []),
-      '(y/N)',
-    ],
-    width
-  );
-}
-
-function PopupLine({
-  line,
-  index,
-  last,
-  muteLastContent,
-}: {
-  line: string;
-  index: number;
-  last: number;
-  muteLastContent: boolean;
-}) {
-  if (index === 0 || index === last) {
-    return <Text color={termcnColors.primary}>{line}</Text>;
-  }
-  const content = line.slice(2, -2);
-  return (
-    <Text>
-      <Text color={termcnColors.primary}>│ </Text>
-      {muteLastContent && index === last - 1 ? (
-        <Text color={termcnColors.muted}>{content}</Text>
-      ) : (
-        content
-      )}
-      <Text color={termcnColors.primary}> │</Text>
-    </Text>
-  );
+interface BrowserModal {
+  title: string;
+  content: string[];
+  width: number;
+  onEscape: () => void;
+  muteLastContent?: boolean;
 }
 
 function SkillPane({
   rows,
   cursor,
-  selected,
   isActive,
-  showShortcuts = false,
   preferNote = false,
   showSource = false,
   showReferences = false,
   showGroup = false,
   updates = new Set<string>(),
   updatingSkillName,
-  overlayLines,
-  overlayMuteLastContent = true,
+  modal,
+  viewportHeight,
 }: {
   rows: SkillRow[];
   cursor: number;
-  selected: Set<string>;
   isActive: boolean;
-  showShortcuts?: boolean;
   preferNote?: boolean;
   showSource?: boolean;
   showReferences?: boolean;
   showGroup?: boolean;
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
-  overlayLines?: string[] | undefined;
-  overlayMuteLastContent?: boolean;
+  modal?: BrowserModal | undefined;
+  viewportHeight?: number | undefined;
 }) {
   const { stdout } = useStdout();
-  const height = Math.max(3, (stdout.rows ?? 24) - 8);
+  const selected = useAtomValue(browserSelectionAtom);
+  const paneHeight = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
+  const height = rows.length > paneHeight ? Math.max(3, paneHeight - 1) : paneHeight;
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
-  const popupLines = overlayLines ?? (
-    showShortcuts ? shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))) : undefined
-  );
-  const popupHeight = popupLines?.length ?? 0;
-  const compositeHeight = popupLines ? Math.max(visible.length, popupHeight) : visible.length;
-  const popupTop = Math.max(0, Math.floor((compositeHeight - popupHeight) / 2));
   const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
-  const popupWidth = textWidth(popupLines?.[0] ?? '');
-  const popupLeft = Math.max(0, Math.floor((paneWidth - popupWidth) / 2));
   const rowText = (row: SkillRow, index: number): string => {
     if (row.type === 'group') {
       const groupSkills = row.skills;
@@ -354,39 +349,26 @@ function SkillPane({
       </Text>
     );
   };
-  const renderRows = () => {
-    if (!popupLines) {
-      return visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex));
-    }
-    return Array.from({ length: compositeHeight }, (_, visibleIndex) => {
-      const row = visible[visibleIndex];
-      const index = offset + visibleIndex;
-      const popupIndex = visibleIndex - popupTop;
-      const popupLine = popupLines[popupIndex];
-      if (popupLine === undefined) {
-        return row ? renderRow(row, index) : <Text key={`shortcut-empty:${visibleIndex}`}> </Text>;
-      }
-      const base = row ? rowText(row, index) : '';
-      const prefix = padColumns(sliceColumns(base, 0, popupLeft), popupLeft);
-      const suffix = sliceColumns(base, popupLeft + popupWidth, paneWidth);
-      return (
-        <Text key={`shortcut-overlay:${visibleIndex}`} wrap="truncate-end">
-          {prefix}
-          <PopupLine
-            line={popupLine}
-            index={popupIndex}
-            last={popupLines.length - 1}
-            muteLastContent={overlayLines ? overlayMuteLastContent : true}
-          />
-          {suffix}
-        </Text>
-      );
-    });
-  };
+  const backgroundLines: ModalBackgroundLine[] = visible.map((row, visibleIndex) => {
+    const index = offset + visibleIndex;
+    return { text: rowText(row, index), content: renderRow(row, index) };
+  });
   return (
     <Box flexDirection="column" minHeight={3}>
-      {rows.length || popupLines ? (
-        renderRows()
+      {modal ? (
+        <Modal
+          open
+          title={modal.title}
+          content={modal.content}
+          width={modal.width}
+          viewportWidth={paneWidth}
+          viewportHeight={height}
+          backgroundLines={backgroundLines}
+          onEscape={modal.onEscape}
+          {...(modal.muteLastContent ? { muteLastContent: true } : {})}
+        />
+      ) : rows.length ? (
+        visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
       )}
@@ -431,57 +413,30 @@ function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {
   return groups.filter((group) => group.skills.length > 0);
 }
 
-function Browser({
+interface BrowserProps extends BrowserViewInput {
+  confirmation?: BrowserConfirmation | undefined;
+  finish: (result: BrowserResult) => void;
+}
+
+function BrowserContent({
   projectGroups,
   collection,
   globalGroups,
-  initialQuery,
-  initialTab,
-  initialAgent,
-  initialFocus,
-  initialCursor,
-  initialSelected,
   canSync,
   status,
   transientStatus,
+  checkUpdates,
   updatingSkillName,
   updatingProgress,
   workingAction = '更新',
   confirmation,
   finish,
-}: {
-  projectGroups: SkillGroup[];
-  collection: CollectedSkill[];
-  globalGroups: SkillGroup[];
-  initialQuery: string;
-  initialTab: BrowserTab;
-  initialAgent: string;
-  initialFocus: BrowserFocus;
-  initialCursor: number;
-  initialSelected: string[];
-  canSync: boolean;
-  status: string;
-  transientStatus: boolean;
-  updatingSkillName?: string | undefined;
-  updatingProgress?: { current: number; total: number } | undefined;
-  workingAction?: '更新' | '转换';
-  confirmation?: BrowserConfirmation | undefined;
-  finish: (result: BrowserResult) => void;
-}) {
-  const [tab, setTab] = useState<BrowserTab>(initialTab);
-  const [query, setQuery] = useState(initialQuery);
+}: Omit<BrowserProps, 'state'>) {
+  const [navigation, setNavigation] = useAtom(browserNavigationAtom);
+  const { tab, query, cursor, agent, focus } = navigation;
   const [visibleStatus, setVisibleStatus] = useState(status);
   const visibleProjectGroups = useMemo(() => visibleAgentGroups(projectGroups), [projectGroups]);
   const visibleGlobalGroups = useMemo(() => visibleAgentGroups(globalGroups), [globalGroups]);
-  const allAgents = [
-    ...new Set([...visibleProjectGroups, ...visibleGlobalGroups].map((group) => group.agent)),
-  ];
-  const [agent, setAgent] = useState(
-    allAgents.includes(initialAgent)
-      ? initialAgent
-      : visibleProjectGroups[0]?.agent ?? visibleGlobalGroups[0]?.agent ?? ''
-  );
-  const [focus, setFocus] = useState<BrowserFocus>(initialFocus);
   const activeProjectAgent = visibleProjectGroups.some((group) => group.agent === agent)
     ? agent
     : visibleProjectGroups[0]?.agent ?? '';
@@ -509,11 +464,27 @@ function Browser({
     [globalGroup, query]
   );
   const rows = tab === 'project' ? projectRows : tab === 'global' ? globalRows : collectionRows;
-  const [cursor, setCursor] = useState(() =>
-    Math.min(initialCursor, Math.max(0, rows.length - 1))
-  );
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setTab = (value: BrowserTab): void => {
+    setNavigation((current) => ({ ...current, tab: value }));
+  };
+  const setQuery = (value: string): void => {
+    setNavigation((current) => ({ ...current, query: value }));
+  };
+  const setAgent = (value: string): void => {
+    setNavigation((current) => ({ ...current, agent: value }));
+  };
+  const setFocus = (value: BrowserFocus): void => {
+    setNavigation((current) => ({ ...current, focus: value }));
+  };
+  const setCursor = (value: SetStateAction<number>): void => {
+    setNavigation((current) => {
+      const cursor = typeof value === 'function' ? value(current.cursor) : value;
+      cursorRef.current = cursor;
+      return { ...current, cursor };
+    });
+  };
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -522,9 +493,9 @@ function Browser({
     scope: 'collection' | 'location';
     skills: Skill[];
   } | undefined>();
-  const [queryBeforeSearch, setQueryBeforeSearch] = useState(initialQuery);
+  const [queryBeforeSearch, setQueryBeforeSearch] = useState(query);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const [selected, setSelected] = useAtom(browserSelectionAtom);
   const [updateCheck, setUpdateCheck] = useState<{
     checking: boolean;
     updates: Set<string>;
@@ -594,13 +565,17 @@ function Browser({
     checkedUpdates.current = true;
     let active = true;
     setUpdateCheck((current) => ({ ...current, checking: true }));
-    void checkGitSkillUpdates(collection).then(({ updates, failed }) => {
-      if (active) setUpdateCheck({ checking: false, updates, failed });
-    });
+    void checkUpdates(collection)
+      .then(({ updates, failed }) => {
+        if (active) setUpdateCheck({ checking: false, updates, failed });
+      })
+      .catch(() => {
+        if (active) setUpdateCheck({ checking: false, updates: new Set(), failed: collection.length });
+      });
     return () => {
       active = false;
     };
-  }, [collection, tab]);
+  }, [checkUpdates, collection, tab]);
 
   const browserState = (): BrowserState => ({
     tab,
@@ -617,6 +592,8 @@ function Browser({
       type: 'open',
       skill,
       collection,
+      frameHeight: frame.frameHeight,
+      frameWidth: frame.frameWidth,
     });
   const localConfirmation: BrowserConfirmation | undefined = removeConfirmation
     ? removeConfirmation.scope === 'collection'
@@ -654,24 +631,53 @@ function Browser({
     : undefined;
   const activeConfirmation = confirmation ?? localConfirmation;
   const { stdout } = useStdout();
-  const overlayLines = activeConfirmation
-    ? confirmationLines(
-        activeConfirmation,
-        Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))
-      )
+  const frame = browserFrameDimensions({
+    rows: stdout.rows,
+    columns: stdout.columns,
+    projectRows: projectRows.length,
+    globalRows: globalRows.length,
+    collectionRows: collectionRows.length,
+    hasProjectAgents: visibleProjectGroups.length > 0,
+    hasGlobalAgents: visibleGlobalGroups.length > 0,
+  });
+  const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
+  const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
+  const modal: BrowserModal | undefined = activeConfirmation
+    ? {
+        title: ` ${activeConfirmation.title} `,
+        content: [
+          activeConfirmation.message,
+          ...(activeConfirmation.details?.length ? activeConfirmation.details : []),
+          '(y/N)',
+        ],
+        width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
+        onEscape: activeConfirmation.onCancel,
+        muteLastContent: true,
+      }
     : showActions
-      ? moreActionLines(
-          selectedProject.length
-            ? `已选择 ${actionSkills.length} 个技能`
-            : `技能：${actionSkills[0]?.name ?? ''}`,
-          Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6))
-        )
-      : undefined;
+      ? {
+          title: ' 更多操作 ',
+          content: moreActionModalContent(
+            selectedProject.length
+              ? `已选择 ${actionSkills.length} 个技能`
+              : `技能：${actionSkills[0]?.name ?? ''}`
+          ),
+          width: Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6)),
+          onEscape: () => setShowActions(false),
+        }
+      : showShortcuts
+        ? {
+            title: ' 完整快捷键 ',
+            content: shortcutModalContent(),
+            width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
+            onEscape: () => setShowShortcuts(false),
+          }
+        : undefined;
   useInput(
     (input, key) => {
       const choice = input.trim().toLowerCase();
       if (choice === 'y') return activeConfirmation?.onConfirm();
-      if (choice === 'n' || key.return || key.escape) {
+      if (choice === 'n' || key.return) {
         return activeConfirmation?.onCancel();
       }
     },
@@ -679,20 +685,11 @@ function Browser({
   );
   useInput(
     (input, key) => {
-      if (key.escape) return setShowActions(false);
       if (key.return || input.includes('\r') || input.includes('\n')) {
         return finish({ ...browserState(), type: 'materialize', skills: actionSkills });
       }
     },
     { isActive: showActions && !activeConfirmation }
-  );
-  useInput(
-    (input, key) => {
-      if (key.escape || input === 'q' || input === '?') {
-        setShowShortcuts(false);
-      }
-    },
-    { isActive: showShortcuts && !activeConfirmation }
   );
   useInput(
     (input, key) => {
@@ -811,8 +808,7 @@ function Browser({
       isActive:
         !searching &&
         !choosingGroup &&
-        !showShortcuts &&
-        !showActions &&
+        !modal &&
         !updatingSkillName &&
         !activeConfirmation,
     }
@@ -831,7 +827,7 @@ function Browser({
       key: 'project',
       label: `当前项目 ${project.length}`,
       content: (
-        <Box flexDirection="column">
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
           <AgentTabs
             groups={visibleProjectGroups}
             agent={activeProjectAgent}
@@ -840,11 +836,9 @@ function Browser({
           <SkillPane
             rows={projectRows}
             cursor={cursor}
-            selected={selected}
             isActive={focus === 'list'}
-            showShortcuts={showShortcuts}
-            overlayLines={overlayLines}
-            overlayMuteLastContent={Boolean(activeConfirmation)}
+            viewportHeight={agentPaneViewportHeight}
+            modal={modal}
             showSource
             showReferences
             showGroup={Boolean(query.trim())}
@@ -856,7 +850,7 @@ function Browser({
       key: 'global',
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
-        <Box flexDirection="column">
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
           <AgentTabs
             groups={visibleGlobalGroups}
             agent={activeGlobalAgent}
@@ -865,11 +859,9 @@ function Browser({
           <SkillPane
             rows={globalRows}
             cursor={cursor}
-            selected={selected}
             isActive={focus === 'list'}
-            showShortcuts={showShortcuts}
-            overlayLines={overlayLines}
-            overlayMuteLastContent={Boolean(activeConfirmation)}
+            viewportHeight={agentPaneViewportHeight}
+            modal={modal}
             showSource
           />
         </Box>
@@ -879,19 +871,19 @@ function Browser({
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
-        <SkillPane
-          rows={collectionRows}
-          cursor={cursor}
-          selected={selected}
-          isActive={focus === 'list'}
-          showShortcuts={showShortcuts}
-          overlayLines={overlayLines}
-          overlayMuteLastContent={Boolean(activeConfirmation)}
-          preferNote
-          showGroup={Boolean(query.trim())}
-          updates={updateCheck.updates}
-          updatingSkillName={updatingSkillName}
-        />
+        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
+          <SkillPane
+            rows={collectionRows}
+            cursor={cursor}
+            isActive={focus === 'list'}
+            viewportHeight={collectionPaneViewportHeight}
+            modal={modal}
+            preferNote
+            showGroup={Boolean(query.trim())}
+            updates={updateCheck.updates}
+            updatingSkillName={updatingSkillName}
+          />
+        </Box>
       ),
     },
   ];
@@ -955,9 +947,10 @@ function Browser({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
-        isActive={!searching && !showShortcuts && !showActions && focus === 'tabs'}
+        isActive={!searching && !modal && focus === 'tabs'}
         enableArrowNav={false}
-        focused={!searching && !showShortcuts && focus === 'tabs'}
+        focused={!searching && !modal && focus === 'tabs'}
+        width={frame.frameWidth}
       />
       {searching ? (
         <TextInput
@@ -979,35 +972,32 @@ function Browser({
         />
       ) : (
         <Box flexDirection="column">
+          {(selected.size > 0 || actions.length > 0) && (
+            <Text color={termcnColors.muted} wrap="truncate-end">
+              {[...actions, selected.size ? `已选 ${selected.size}` : ''].filter(Boolean).join(' · ')}
+            </Text>
+          )}
           <Text color={termcnColors.muted} wrap="truncate-end">
             {updatingSkillName
               ? `正在${workingAction} · 请稍候`
               : activeConfirmation
               ? '等待确认'
               : showActions
-              ? '↑/↓ 移动 · Enter 执行 · Esc 返回'
+              ? 'Enter 执行 · Esc 返回'
               : showShortcuts
-              ? 'Esc / q / ? 关闭'
+              ? 'Esc 关闭'
               : focus === 'tabs'
               ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
               : focus === 'agents'
                 ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
                 : canViewWithRightArrow
-                  ? '↑/↓ 移动 · Space 选择 · → 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                  ? '→ 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
                   : canViewWithEnter
-                    ? '↑/↓ 移动 · Space 选择 · Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                  : canDelete
-                    ? '↑/↓ 移动 · Space 选择 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                    : '↑/↓ 移动 · Space 选择 · / 搜索 · ? 快捷键 · q 退出'}
+                    ? 'Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
+                    : canDelete
+                      ? 'd 删除 · / 搜索 · ? 快捷键 · q 退出'
+                    : '/ 搜索 · ? 快捷键 · q 退出'}
           </Text>
-          {(selected.size > 0 || actions.length > 0) && (
-            <>
-              <Text> </Text>
-              <Text color={termcnColors.muted} wrap="truncate-end">
-                {[selected.size ? `已选 ${selected.size}` : '', ...actions].filter(Boolean).join(' · ')}
-              </Text>
-            </>
-          )}
           {activity.length > 0 && (
             <Text color={updateCheck.failed ? termcnColors.error : termcnColors.muted} wrap="truncate-end">
               {activity.join(' · ')}
@@ -1019,6 +1009,21 @@ function Browser({
   );
 }
 
+function Browser({ state, ...props }: BrowserProps) {
+  const [store] = useState(() => {
+    const agents = [...props.projectGroups, ...props.globalGroups]
+      .filter((group) => group.skills.length > 0)
+      .map((group) => group.agent);
+    const agent = agents.includes(state.agent) ? state.agent : agents[0] ?? '';
+    return createBrowserStore({ ...state, agent });
+  });
+  return (
+    <Provider store={store}>
+      <BrowserContent {...props} />
+    </Provider>
+  );
+}
+
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';
 
 function Detail({
@@ -1026,15 +1031,38 @@ function Detail({
   metadata,
   links,
   collection,
+  frameHeight,
+  frameWidth,
   finish,
 }: {
   skill: Skill;
   metadata: SkillMetadata;
   links: SkillLink[];
   collection: boolean;
+  frameHeight: number;
+  frameWidth: number;
   finish: (action: DetailAction) => void;
 }) {
+  const { stdout } = useStdout();
+  const detailFrame = detailFrameDimensions(frameHeight, frameWidth, stdout.rows);
+  const [detailOffset, setDetailOffset] = useState(0);
+  const source = metadata.source.url
+    ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
+    : metadata.source.type;
+  const lines = detailContentLines(skill, metadata, links, collection, source, detailFrame.width);
+  const viewportHeight = Math.max(1, detailFrame.height - 2);
+  const maxOffset = Math.max(0, lines.length - viewportHeight);
+  const offset = Math.min(detailOffset, maxOffset);
+  const visibleLines = lines.slice(offset, offset + viewportHeight);
   useInput((input, key) => {
+    if (key.upArrow && maxOffset) {
+      setDetailOffset((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (key.downArrow && maxOffset) {
+      setDetailOffset((current) => Math.min(maxOffset, current + 1));
+      return;
+    }
     if (
       key.escape ||
       key.leftArrow ||
@@ -1047,33 +1075,29 @@ function Detail({
     if (collection && input === 't') return finish('tags');
     if (collection && input === 's') return finish('source');
   });
-  const source = metadata.source.url
-    ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
-    : metadata.source.type;
   return (
     <Box flexDirection="column">
       <Text color={termcnColors.primary} bold>‹ {skill.name}</Text>
-      <Text color={termcnColors.muted}>{skill.description || '无描述'}</Text>
-      <Box flexDirection="column" borderStyle="round" borderColor={termcnColors.border} paddingX={1} marginTop={1}>
-        {collection ? (
-          <>
-            <Text><Text bold>标签  </Text>{metadata.tags.length ? metadata.tags.join(', ') : '无'}</Text>
-            <Text><Text bold>备注  </Text>{metadata.note || '无'}</Text>
-            <Text><Text bold>来源  </Text>{source}</Text>
-            {metadata.source.path && <Text><Text bold>路径  </Text>{metadata.source.path}</Text>}
-            <Text bold>关联位置</Text>
-            {links.length ? links.map((link) => (
-              <Text key={`${link.kind}:${link.path}`} color={termcnColors.muted}>
-                {link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖'}  {link.path}
-              </Text>
-            )) : <Text color={termcnColors.muted}>  无</Text>}
-          </>
-        ) : (
-          <Text><Text bold>位置  </Text>{skill.path}</Text>
-        )}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={termcnColors.border}
+        paddingX={1}
+        height={detailFrame.height}
+        width={detailFrame.width}
+        overflow="hidden"
+      >
+        {visibleLines.map((line, index) => (
+          <Text
+            key={`${offset + index}:${line.label ?? ''}:${line.value}`}
+            {...(line.muted ? { color: termcnColors.muted } : {})}
+          >
+            {line.label && <Text bold>{line.label}</Text>}{line.value}
+          </Text>
+        ))}
       </Box>
       <Text color={termcnColors.muted}>
-        {collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}
+        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}${collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}`}
       </Text>
     </Box>
   );
@@ -1084,6 +1108,8 @@ export function browseSkillDetail(
   metadata: SkillMetadata,
   links: SkillLink[],
   collection: boolean,
+  frameHeight: number,
+  frameWidth: number,
   session: InkSession
 ): Promise<DetailAction> {
   return session.show<DetailAction>('back', (finish) => (
@@ -1092,81 +1118,36 @@ export function browseSkillDetail(
         metadata={metadata}
         links={links}
         collection={collection}
+        frameHeight={frameHeight}
+        frameWidth={frameWidth}
         finish={finish}
       />
   ), false);
 }
 
 export function browseSkills(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
-  session: InkSession,
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string
+  input: BrowserViewInput,
+  session: InkSession
 ): Promise<BrowserResult> {
   return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
-      <Browser
-        projectGroups={projectGroups}
-        collection={collection}
-        globalGroups={globalGroups}
-        initialQuery={initialQuery}
-        initialTab={initialTab}
-        initialAgent={initialAgent}
-        initialFocus={initialFocus}
-        initialCursor={initialCursor}
-        initialSelected={initialSelected}
-        canSync={canSync}
-        status={status}
-        transientStatus={transientStatus}
-        updatingSkillName={updatingSkillName}
-        finish={finish}
-      />
+      <Browser {...input} finish={finish} />
   ), false);
 }
 
+export interface BrowserConfirmationRequest {
+  message: string;
+  details?: string[];
+  title?: string;
+}
+
 export function confirmBrowseAction(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
+  input: BrowserViewInput,
   session: InkSession,
-  message: string,
-  details: string[] = [],
-  title = '确认',
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string
+  { message, details = [], title = '确认' }: BrowserConfirmationRequest
 ): Promise<boolean> {
   return session.show<boolean>(false, (finish) => (
       <Browser
-        projectGroups={projectGroups}
-        collection={collection}
-        globalGroups={globalGroups}
-        initialQuery={initialQuery}
-        initialTab={initialTab}
-        initialAgent={initialAgent}
-        initialFocus={initialFocus}
-        initialCursor={initialCursor}
-        initialSelected={initialSelected}
-        canSync={canSync}
-        status={status}
-        transientStatus={transientStatus}
-        updatingSkillName={updatingSkillName}
+        {...input}
         confirmation={{
           title,
           message,
@@ -1180,43 +1161,13 @@ export function confirmBrowseAction(
 }
 
 export function displayBrowseSkills(
-  projectGroups: SkillGroup[],
-  collection: CollectedSkill[],
-  globalGroups: SkillGroup[],
+  input: BrowserViewInput,
   session: InkSession,
-  initialQuery = '',
-  initialTab: BrowserTab = 'project',
-  canSync = false,
-  status = '',
-  initialCursor = 0,
-  initialSelected: string[] = [],
-  initialAgent = '',
-  initialFocus: BrowserFocus = 'tabs',
-  transientStatus = false,
-  updatingSkillName?: string,
-  updatingProgress?: { current: number; total: number },
-  confirmation?: BrowserConfirmation,
-  workingAction: '更新' | '转换' = '更新',
   onInterrupt?: () => void
 ): void {
   session.display(
     <Browser
-      projectGroups={projectGroups}
-      collection={collection}
-      globalGroups={globalGroups}
-      initialQuery={initialQuery}
-      initialTab={initialTab}
-      initialAgent={initialAgent}
-      initialFocus={initialFocus}
-      initialCursor={initialCursor}
-      initialSelected={initialSelected}
-      canSync={canSync}
-      status={status}
-      transientStatus={transientStatus}
-      updatingSkillName={updatingSkillName}
-      updatingProgress={updatingProgress}
-      workingAction={workingAction}
-      confirmation={confirmation}
+      {...input}
       finish={() => undefined}
     />,
     onInterrupt

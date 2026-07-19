@@ -2,6 +2,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assertSkillName,
   baselinePath,
@@ -16,14 +17,16 @@ import {
   readMetadata,
   readSkill,
   readState,
-  removeFromCollection,
   sourceSkillFile,
   validateSkillTree,
   writeJson,
-  writeMetadata,
   writeState,
 } from './core.js';
-import { confirm } from './prompts.js';
+import {
+  installMergedCollectionSkill,
+  removeFromCollection,
+  saveCollectionMetadata,
+} from './collection-write.js';
 import type {
   GitImportContext,
   GitSource,
@@ -134,7 +137,13 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
   const repository = join(temporary, 'repository');
   const cloneArgs = ['clone', '--quiet'];
   if (parsed.ref && !/^[0-9a-f]{7,40}$/i.test(parsed.ref)) cloneArgs.push('--branch', parsed.ref);
-  cloneArgs.push(parsed.url, repository);
+  let cloneSource = parsed.url;
+  if (cloneSource.startsWith('file://')) {
+    try {
+      cloneSource = fileURLToPath(cloneSource);
+    } catch {}
+  }
+  cloneArgs.push(cloneSource, repository);
   try {
     git(cloneArgs);
     if (parsed.ref && /^[0-9a-f]{7,40}$/i.test(parsed.ref)) {
@@ -260,26 +269,6 @@ async function prepareSourceMerge(
   return prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
 }
 
-async function installMergedSkill(name: string, workspace: string, source: GitSource): Promise<void> {
-  const paths = collectionPaths();
-  const target = join(paths.skills, assertSkillName(name));
-  const staged = join(paths.skills, `.${name}.update-${process.pid}`);
-  await rm(staged, { recursive: true, force: true });
-  await mkdir(staged, { recursive: true });
-  await validateSkillTree(workspace);
-  await copyDirectoryContents(workspace, staged);
-  if (!(await exists(join(staged, 'SKILL.md')))) {
-    await rm(staged, { recursive: true, force: true });
-    throw new Error(`合并结果不是有效技能：${name}`);
-  }
-  await rm(target, { recursive: true });
-  await rename(staged, target);
-  const metadata = await readMetadata(name);
-  metadata.description = (await readSkill(target)).description;
-  metadata.source = source;
-  await writeMetadata(metadata);
-}
-
 export async function finalizeResolvedConflicts(): Promise<void> {
   const state = await readState();
   const remaining = [];
@@ -334,7 +323,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
       remaining.push(conflict);
       continue;
     }
-    await installMergedSkill(conflict.skill, conflict.path, conflict.source);
+    await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source);
     await rm(conflict.path, { recursive: true, force: true });
     if (conflict.baseline) await rm(conflict.baseline, { recursive: true, force: true });
     console.error(`已应用手动解决的更新：${conflict.skill}`);
@@ -426,7 +415,7 @@ export async function backgroundCollectionSync(): Promise<void> {
   }
 }
 
-interface UpdateGitSkillOptions {
+export interface UpdateGitSkillOptions {
   confirmDelete?: (links: SkillLink[]) => Promise<boolean>;
   quietDelete?: boolean;
 }
@@ -463,7 +452,7 @@ export async function updateGitSkill(
     if (!gitObjectExists(repository, latestRef) && gitSource.ref) {
       if (gitObjectExists(repository, `refs/tags/${gitSource.ref}`)) {
         metadata.source.refType = 'tag';
-        await writeMetadata(metadata);
+        await saveCollectionMetadata(metadata);
         return 'pinned';
       }
       throw new Error(`来源分支不存在：${gitSource.ref}`);
@@ -484,15 +473,11 @@ export async function updateGitSkill(
       : gitSource.path;
     if (!gitObjectExists(repository, `${latestCommit}:${sourceSkillFile(newPath ?? '.')}`)) {
       if (!allowDelete) {
-        if (!process.stdin.isTTY) throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
-        const confirmed = options.confirmDelete
-          ? await options.confirmDelete(links)
-          : await (async () => {
-              console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
-              links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
-              return confirm('执行收藏夹移除流程吗？');
-            })();
+        if (!options.confirmDelete) {
+          throw new Error(`上游已删除 ${skill.name}；调用方必须确认或显式允许移除`);
+        }
+        const confirmed = await options.confirmDelete(links);
         if (!confirmed) return 'delete-skipped';
       }
       await removeFromCollection(skill.name, true, options.quietDelete ?? false);
@@ -540,7 +525,7 @@ export async function updateGitSkill(
       return 'conflict';
     }
 
-    await installMergedSkill(skill.name, merge.workspace, nextSource);
+    await installMergedCollectionSkill(skill.name, merge.workspace, nextSource);
     await rm(merge.workspace, { recursive: true, force: true });
     if (baseline) await rm(baseline, { recursive: true, force: true });
     await commitCollection(`update ${skill.name}`);

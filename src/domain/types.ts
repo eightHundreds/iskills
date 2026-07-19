@@ -87,7 +87,7 @@ export interface CollectionPaths {
 }
 
 export interface AgentConfig {
-  project: string;
+  project?: string;
   global: (home: string) => string;
 }
 

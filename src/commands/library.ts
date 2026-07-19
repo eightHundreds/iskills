@@ -24,30 +24,29 @@ import {
   provenanceFromKnownLocks,
   readMetadata,
   readState,
-  removeFromCollection,
   sameGitIdentity,
   sanitizeTerminal,
   validateSkillTree,
-  writeMetadata,
-  writeState,
-} from '../core.js';
-import { cloneGitSource } from '../git.js';
+} from '../domain/core.js';
 import {
-  chooseMany,
-  chooseOne,
-  chooseOptionsMany,
-  chooseSkillMany,
-  confirm,
-  input,
-  reviewImport,
-} from '../prompts.js';
+  registerCollectionLinks,
+  replaceCollectionSkill,
+  removeCollectionUsage,
+  removeFromCollection,
+  saveCollectionMetadata,
+} from '../domain/collection-write.js';
+import { cloneGitSource } from '../domain/git.js';
 import type {
   CollectedSkill,
-  CollectionState,
   GitImportContext,
   Skill,
+  SkillLink,
   SkillMetadata,
-} from '../types.js';
+} from '../domain/types.js';
+
+function prompts(): Promise<typeof import('../ui/prompts.js')> {
+  return import('../ui/prompts.js');
+}
 
 function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
   const sourcePath = assertRelativePath(
@@ -55,9 +54,9 @@ function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string
   );
   const ref = gitContext.source.ref ? `#${gitContext.source.ref}` : '';
   const status = skill.collectionStatus === 'same-source'
-    ? ' · 已收藏自同一来源'
+    ? ' · 已收藏（同一来源）'
     : skill.collectionStatus === 'same-name'
-      ? ' · 已收藏同名技能'
+      ? ' · 同名冲突（来源不同）'
       : '';
   return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}${status}`;
 }
@@ -95,120 +94,6 @@ function annotateGitCollectionStatus(
         ? 'same-source'
         : 'same-name',
     };
-  });
-}
-
-interface ReplacementInput {
-  name: string;
-  staged: string;
-  metadata: SkillMetadata;
-  local?: { source: string; selectedPath: string; selectedWasSymlink: boolean };
-}
-
-async function replaceCollectionSkill(input: ReplacementInput): Promise<void> {
-  const paths = collectionPaths();
-  const target = join(paths.skills, input.name);
-  const metadata = metadataPath(input.name);
-  const baseline = baselinePath(input.name);
-  const transaction = await mkdtemp(join(paths.local, `.replace-${input.name}-`));
-  const oldTree = join(transaction, 'old-tree');
-  const oldMetadata = join(transaction, 'old-metadata.json');
-  const oldBaseline = join(transaction, 'old-baseline');
-  const newSource = join(transaction, 'new-source');
-  const state = await readState();
-  const links = state.links.filter((link) => link.skill === input.name);
-  const origin = links.find((link) => link.kind === 'origin');
-  const hadMetadata = await pathPresent(metadata);
-  const hadBaseline = await pathPresent(baseline);
-  let sourceMoved = false;
-
-  if (origin && !(await isExactSymlink(origin.path, target))) {
-    await rm(transaction, { recursive: true, force: true });
-    throw new Error(`原始位置已不是指向收藏夹的软链，已中止：${origin.path}`);
-  }
-
-  try {
-    await cp(target, oldTree, { recursive: true, errorOnExist: true });
-    if (hadMetadata) await cp(metadata, oldMetadata, { errorOnExist: true });
-    if (hadBaseline) await cp(baseline, oldBaseline, { recursive: true, errorOnExist: true });
-  } catch (error) {
-    await rm(transaction, { recursive: true, force: true });
-    throw error;
-  }
-
-  try {
-    if (input.local) {
-      await moveDirectory(input.local.source, newSource);
-      sourceMoved = true;
-    }
-    if (origin) {
-      await rm(origin.path);
-      await cp(oldTree, origin.path, { recursive: true, errorOnExist: true });
-    }
-
-    await rm(target, { recursive: true, force: true });
-    await moveDirectory(input.staged, target);
-    if (input.local) await symlink(target, input.local.source, 'dir');
-    await writeMetadata(input.metadata);
-    await rm(baseline, { recursive: true, force: true });
-    if (input.metadata.source.type === 'git' && !input.metadata.source.commit) {
-      await cp(target, baseline, { recursive: true });
-    }
-    const nextState: CollectionState = {
-      links: state.links.filter((link) => link.skill !== input.name || link.kind === 'usage'),
-      conflicts: state.conflicts.filter(
-        (conflict) => conflict.type !== 'source' || conflict.skill !== input.name
-      ),
-    };
-    if (input.local) {
-      nextState.links.push({ skill: input.name, path: input.local.source, kind: 'origin' });
-      if (input.local.selectedWasSymlink) {
-        nextState.links.push({
-          skill: input.name,
-          path: input.local.selectedPath,
-          kind: 'dependent',
-        });
-      }
-    }
-    await writeState(nextState);
-    await commitCollection(`import ${input.name}`, true);
-  } catch (error) {
-    try {
-      if (input.local && sourceMoved) {
-        await rm(input.local.source, { recursive: true, force: true });
-        await moveDirectory(newSource, input.local.source);
-      }
-      await rm(target, { recursive: true, force: true });
-      await cp(oldTree, target, { recursive: true, errorOnExist: true });
-      if (hadMetadata) await cp(oldMetadata, metadata, { force: true });
-      else await rm(metadata, { force: true });
-      await rm(baseline, { recursive: true, force: true });
-      if (hadBaseline) await cp(oldBaseline, baseline, { recursive: true });
-      await writeState(state);
-      if (origin) {
-        await rm(origin.path, { recursive: true, force: true });
-        await mkdir(resolve(origin.path, '..'), { recursive: true });
-        await symlink(target, origin.path, 'dir');
-      }
-      await commitCollection(`rollback import ${input.name}`);
-    } catch (rollbackError) {
-      throw new Error(
-        `导入失败：${errorMessage(error)}；回滚失败：${errorMessage(rollbackError)}`
-      );
-    }
-    await rm(transaction, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-
-  for (const conflict of state.conflicts) {
-    if (conflict.type === 'source' && conflict.skill === input.name) {
-      await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
-        console.error(`警告：旧冲突目录清理失败：${errorMessage(error)}`);
-      });
-    }
-  }
-  await rm(transaction, { recursive: true, force: true }).catch((error) => {
-    console.error(`警告：替换备份清理失败：${errorMessage(error)}`);
   });
 }
 
@@ -265,7 +150,7 @@ async function importLocalSkill(
     throw error;
   }
 
-  await writeMetadata({
+  await saveCollectionMetadata({
     name: skill.name,
     description: skill.description,
     tags,
@@ -277,12 +162,11 @@ async function importLocalSkill(
     await rm(baseline, { recursive: true, force: true });
     await cp(target, baseline, { recursive: true });
   }
-  const state = await readState();
-  state.links.push({ skill: skill.name, path: source, kind: 'origin' });
+  const links: SkillLink[] = [{ skill: skill.name, path: source, kind: 'origin' }];
   if (selectedStats.isSymbolicLink()) {
-    state.links.push({ skill: skill.name, path: selectedPath, kind: 'dependent' });
+    links.push({ skill: skill.name, path: selectedPath, kind: 'dependent' });
   }
-  await writeState(state);
+  await registerCollectionLinks(links);
   return true;
 }
 
@@ -319,7 +203,7 @@ async function importRemoteSkill(
   }
   await ensureCollection();
   await cp(skill.path, target, { recursive: true, errorOnExist: true });
-  await writeMetadata(metadata);
+  await saveCollectionMetadata(metadata);
   return true;
 }
 
@@ -398,7 +282,7 @@ export async function importSkillsToCollection(
     }
     allowReplace = options.confirmReplace
       ? await options.confirmReplace(conflicts)
-      : await confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+      : await (await prompts()).confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
     if (!allowReplace) {
       selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
@@ -505,8 +389,9 @@ export async function commandImport(argv: string[]): Promise<void> {
     let selected = skills;
     if (!values.all && (skills.length > 1 || !input)) {
       if (!process.stdin.isTTY) throw new Error('请使用 --all 或交互选择要导入的技能');
-      selected = await chooseSkillMany(
-        globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }],
+      const groups = globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }];
+      selected = await (await prompts()).chooseSkillMany(
+        groups,
         globalGroups
           ? '扫描全局 Skill 目录'
           : !input
@@ -522,7 +407,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       const existingTags = [...new Set((await listCollection().catch(() => []))
         .flatMap((skill) => skill.tags))]
         .sort((a, b) => a.localeCompare(b));
-      const review = await reviewImport(
+      const review = await (await prompts()).reviewImport(
         selected.map((skill) => ({
           skill,
           detail: gitContext
@@ -557,7 +442,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       if (!process.stdin.isTTY) {
         throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
       }
-      allowReplace = await confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+      allowReplace = await (await prompts()).confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
       if (!allowReplace) selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
     let count = 0;
@@ -589,7 +474,7 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
     let names = requestedAgents;
     if (!names.length) {
       if (!process.stdin.isTTY) throw new Error('添加到全局目录时请指定 --agent');
-      names = await chooseOptionsMany(
+      names = await (await prompts()).chooseOptionsMany(
         Object.keys(AGENTS).map((name) => ({ label: name, value: name })),
         '选择全局 Agent 目录：'
       );
@@ -610,6 +495,9 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
         requestedAgents.map((name) => {
           const agent = AGENTS[name];
           if (!agent) throw new Error(`未知 Agent：${name}`);
+          if (!agent.project) {
+            throw new Error(`Agent ${name} 只支持全局 Skill 目录，请使用 --global`);
+          }
           return resolve(agent.project);
         })
       ),
@@ -623,7 +511,7 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
   const unique = [...new Set(detected)];
   if (unique.length <= 1) return unique.length ? unique : [resolve('.agents/skills')];
   if (!process.stdin.isTTY) return [resolve('.agents/skills')];
-  return chooseOptionsMany(
+  return (await prompts()).chooseOptionsMany(
     unique.map((path) => ({ label: relative(process.cwd(), path), value: path })),
     '检测到多个 Agent 目录：'
   );
@@ -644,7 +532,7 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
   if (!process.stdin.isTTY) throw new Error('请指定技能名称');
   if (!skills.length) {
     let source: string | undefined;
-    source = await chooseOne(
+    source = await (await prompts()).chooseOne(
       [
         { label: '扫描当前目录', value: 'current' },
         { label: '扫描常见全局 Agent 目录', value: 'global' },
@@ -652,14 +540,14 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
       ],
       '收藏夹还是空的，先从哪里导入技能？'
     );
-    if (source === 'custom') source = await input('路径或 Git 来源：');
+    if (source === 'custom') source = await (await prompts()).input('路径或 Git 来源：');
     if (!source) return [];
     await commandImport(source === 'global' ? ['-g'] : source === 'current' ? [] : [source]);
     return listCollection();
   }
-  const query = await input('搜索收藏夹：');
+  const query = await (await prompts()).input('搜索收藏夹：');
   if (query === undefined) return [];
-  return chooseMany(
+  return (await prompts()).chooseMany(
     skills.filter((skill) => matches(skill, query)),
     '选择技能：'
   );
@@ -673,9 +561,9 @@ export async function addSkillsToProject(
   const targetRoots = await resolveTargets(values);
   if (!targetRoots.length) return { count: 0, targetCount: 0 };
   await Promise.all(targetRoots.map((targetRoot) => mkdir(targetRoot, { recursive: true })));
-  const state = await readState();
   const addedSkills = new Set<string>();
   const addedTargets = new Set<string>();
+  const usageLinks: Array<{ skill: string; path: string; kind: 'usage' }> = [];
 
   for (const targetRoot of targetRoots) {
     for (const skill of skills) {
@@ -689,7 +577,7 @@ export async function addSkillsToProject(
         if (!replace && process.stdin.isTTY && !values.yes) {
           replace = values.confirmReplace
             ? await values.confirmReplace(target)
-            : await confirm(`目标已存在，替换 ${target} 吗？`);
+            : await (await prompts()).confirm(`目标已存在，替换 ${target} 吗？`);
         }
         if (!replace) {
           if (process.stdin.isTTY && !values.yes) continue;
@@ -701,13 +589,13 @@ export async function addSkillsToProject(
         await cp(skill.path, target, { recursive: true, errorOnExist: true });
       } else {
         await symlink(skill.path, target, 'dir');
-        state.links.push({ skill: skill.name, path: target, kind: 'usage' });
+        usageLinks.push({ skill: skill.name, path: target, kind: 'usage' });
       }
       addedSkills.add(skill.name);
       addedTargets.add(targetRoot);
     }
   }
-  await writeState(state);
+  await registerCollectionLinks(usageLinks);
   if (!values.quiet) {
     console.log(
       `已添加 ${addedSkills.size} 个技能到 ${addedTargets.size} 个目录${values.copy ? '（复制）' : ''}。`
@@ -742,33 +630,15 @@ export async function commandAdd(argv: string[]): Promise<void> {
 }
 
 async function removeUsage(name: string, from?: string): Promise<void> {
-  const state = await readState();
-  const collectionTarget = join(collectionPaths().skills, assertSkillName(name));
-  const scope = resolve(from || process.cwd());
-  const candidates = state.links.filter(
-    (link) =>
-      link.skill === name &&
-      link.kind !== 'origin' &&
-      (resolve(link.path) === scope || resolve(link.path).startsWith(`${scope}${sep}`))
-  );
-  if (!candidates.length) throw new Error(`当前范围没有使用技能：${name}`);
-  for (const link of candidates) {
-    if (!(await isExactSymlink(link.path, collectionTarget))) {
-      throw new Error(`使用位置已不是预期软链，未删除：${link.path}`);
-    }
-  }
-  for (const link of candidates) await rm(link.path);
-  const removed = new Set(candidates.map((link) => resolve(link.path)));
-  state.links = state.links.filter((link) => !removed.has(resolve(link.path)));
-  await writeState(state);
-  console.log(`已从 ${candidates.length} 个位置移除 ${name}，收藏夹内容保留。`);
+  const count = await removeCollectionUsage(name, from);
+  console.log(`已从 ${count} 个位置移除 ${name}，收藏夹内容保留。`);
 }
 
 async function selectOneCollectionSkill(name?: string): Promise<string | undefined> {
   if (name) return name;
   if (!process.stdin.isTTY) throw new Error('请指定技能名称');
   const skills = await listCollection();
-  return chooseOne(
+  return (await prompts()).chooseOne(
     skills.map((skill) => ({ label: skill.name, value: skill.name })),
     '选择技能：'
   );
@@ -798,7 +668,7 @@ export async function commandRemove(argv: string[]): Promise<void> {
         const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
         console.log(`- ${link.path}（${kind}）`);
       });
-      if (!(await confirm('从收藏夹移除吗？'))) return;
+      if (!(await (await prompts()).confirm('从收藏夹移除吗？'))) return;
     }
     await removeFromCollection(name, true);
   } else {

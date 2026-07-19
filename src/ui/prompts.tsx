@@ -1,21 +1,26 @@
 import type { ReactNode } from 'react';
-import { realpath } from 'node:fs/promises';
-import { listCollection } from './core.js';
 import {
   Confirm,
-  ImportReview,
   MultiSelect,
   Select,
-  SkillMultiSelect,
   TagEditor,
   TextInput,
+} from './components/termcn.js';
+import {
+  InstallReview,
+  ImportReview,
+  SkillMultiSelect,
   type ImportReviewItem,
   type ImportReviewResult,
-} from './ui/termcn.js';
-import { InkSession } from './ui/session.js';
-import type { Choice, Skill } from './types.js';
+  type InstallReviewResult,
+  type InstallReviewTarget,
+} from './reviews.js';
+import { InkSession } from './session.js';
+import { registerPromptCloser } from './prompt-lifecycle.js';
+import type { Choice, Skill } from '../domain/types.js';
 
 const defaultSession = new InkSession();
+registerPromptCloser(() => defaultSession.close());
 
 function runPrompt<T>(
   cancelledValue: T,
@@ -84,30 +89,10 @@ export function chooseMany<T extends Skill>(skills: T[], title: string): Promise
 export async function chooseSkillMany<T extends Skill>(
   groups: { agent: string; skills: T[] }[],
   title: string,
-  session?: InkSession
+  options: {
+    session?: InkSession;
+  } = {}
 ): Promise<T[]> {
-  const collection = await listCollection().catch(() => []);
-  const noteByPath = new Map<string, string>();
-  for (const skill of collection) {
-    if (skill.note) noteByPath.set(skill.path, skill.note);
-  }
-  const realpathBySkillPath = new Map<string, string>();
-  await Promise.all(
-    groups.flatMap((group) =>
-      group.skills.map(async (skill) => {
-        try {
-          realpathBySkillPath.set(skill.path, await realpath(skill.path));
-        } catch {
-          // ignore unresolved symlinks
-        }
-      })
-    )
-  );
-  const collectionNote = (skill: T): string | undefined => {
-    const real = realpathBySkillPath.get(skill.path);
-    if (!real) return undefined;
-    return noteByPath.get(real);
-  };
   return runPrompt<T[]>(
     [],
     (finish) => (
@@ -117,11 +102,12 @@ export async function chooseSkillMany<T extends Skill>(
           options: group.skills.map((skill) => ({ skill, agent: group.agent })),
         }))}
         label={title}
-        collectionNote={collectionNote}
+        onCancel={() => finish([])}
         onSubmit={finish}
       />
     ),
-    session
+    options.session,
+    false
   );
 }
 
@@ -161,6 +147,24 @@ export function reviewImport<T extends Skill>(
     <ImportReview<T>
       items={items}
       existingTags={existingTags}
+      onSubmit={(result) => finish(result.confirmed ? result : undefined)}
+    />
+  ), session);
+}
+
+export function reviewInstall(
+  skills: Skill[],
+  targets: InstallReviewTarget[],
+  defaultProjectAgents: string[],
+  defaultGlobalAgents: string[],
+  session: InkSession
+): Promise<InstallReviewResult | undefined> {
+  return runPrompt<InstallReviewResult | undefined>(undefined, (finish) => (
+    <InstallReview
+      skills={skills}
+      targets={targets}
+      defaultProjectAgents={defaultProjectAgents}
+      defaultGlobalAgents={defaultGlobalAgents}
       onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
   ), session);

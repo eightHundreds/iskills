@@ -1,10 +1,11 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useRef, useState } from 'react';
-import type { RemoteSkill } from '../types.js';
+import type { RemoteSkillSearch, SearchViewInput } from '../contracts/search.js';
+import type { RemoteSkill } from '../domain/types.js';
 import { InkSession } from './session.js';
-import { TextInput, termcnColors } from './termcn.js';
+import { TextInput, termcnColors } from './components/termcn.js';
 
-type Search = (query: string, signal: AbortSignal) => Promise<RemoteSkill[]>;
+export type { RemoteSkillSearch, SearchViewInput } from '../contracts/search.js';
 
 function formatInstalls(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -19,8 +20,8 @@ function SearchSkills({
   finish,
 }: {
   initialQuery: string;
-  collectedNames: Set<string>;
-  search: Search;
+  collectedNames: ReadonlySet<string>;
+  search: RemoteSkillSearch;
   finish: (skill: RemoteSkill | undefined) => void;
 }) {
   const { stdout } = useStdout();
@@ -124,7 +125,9 @@ function SearchSkills({
                 {...(active ? { color: termcnColors.primary } : {})}
                 bold={active}
               >
-                {`${active ? '›' : ' '} ${skill.name} — ${skill.source} · ${formatInstalls(skill.installs)} installs${collected ? ' · 已收藏同名技能' : ''}`}
+                {`${active ? '›' : ' '} ${skill.name}`}
+                {collected && <Text color={termcnColors.muted}> ☆</Text>}
+                {` — ${skill.source} · ${formatInstalls(skill.installs)} installs`}
               </Text>
             );
           })
@@ -142,16 +145,12 @@ function SearchSkills({
 }
 
 export function searchRemoteSkill(
-  initialQuery: string,
-  collectedNames: Set<string>,
-  search: Search,
+  input: SearchViewInput,
   session: InkSession
 ): Promise<RemoteSkill | undefined> {
   return session.show<RemoteSkill | undefined>(undefined, (finish) => (
     <SearchSkills
-      initialQuery={initialQuery}
-      collectedNames={collectedNames}
-      search={search}
+      {...input}
       finish={finish}
     />
   ));

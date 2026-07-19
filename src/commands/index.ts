@@ -1,18 +1,40 @@
 import { parseArgs } from 'node:util';
-import { errorMessage, listCollection, readState } from '../core.js';
+import { errorMessage, listCollection, readState } from '../domain/core.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
   syncCollection,
   updateGitSkill,
-} from '../git.js';
-import { chooseMany, confirm, input } from '../prompts.js';
-import type { CollectedSkill, UpdateStatus } from '../types.js';
-import { commandList, interactiveList } from './browser.js';
-import { commandAdd, commandImport, commandRemove } from './library.js';
-import { commandSearch } from './search.js';
+} from '../domain/git.js';
+import type { BrowserTab } from '../contracts/browser.js';
+import type { CollectedSkill, UpdateStatus } from '../domain/types.js';
 
-export { commandAdd, commandImport, commandList, commandRemove, commandSearch, interactiveList };
+export async function commandAdd(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandAdd(argv);
+}
+
+export async function commandImport(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandImport(argv);
+}
+
+export async function commandList(argv: string[]): Promise<void> {
+  return (await import('./browser.js')).commandList(argv);
+}
+
+export async function commandRemove(argv: string[]): Promise<void> {
+  return (await import('./library.js')).commandRemove(argv);
+}
+
+export async function commandSearch(argv: string[]): Promise<void> {
+  return (await import('./search.js')).commandSearch(argv);
+}
+
+export async function interactiveList(
+  initialQuery = '',
+  initialTab: BrowserTab = 'project'
+): Promise<void> {
+  return (await import('./browser.js')).interactiveList(initialQuery, initialTab);
+}
 
 export async function commandUpdate(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -36,6 +58,7 @@ export async function commandUpdate(argv: string[]): Promise<void> {
   } else if (values.all) {
     selected = updateable;
   } else if (process.stdin.isTTY) {
+    const { chooseMany } = await import('../ui/prompts.js');
     selected = await chooseMany(updateable, '选择要更新的技能：');
   } else {
     throw new Error('请指定技能名称或使用 --all');
@@ -44,7 +67,21 @@ export async function commandUpdate(argv: string[]): Promise<void> {
   const results: Array<{ name: string; status: UpdateStatus | 'error'; error?: string }> = [];
   for (const skill of selected) {
     try {
-      results.push({ name: skill.name, status: await updateGitSkill(skill, values.yes ?? false) });
+      const allowDelete = values.yes ?? false;
+      results.push({
+        name: skill.name,
+        status: await updateGitSkill(skill, allowDelete, {
+          confirmDelete: async (links) => {
+            if (!process.stdin.isTTY) {
+              throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
+            }
+            console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
+            links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
+            const { confirm } = await import('../ui/prompts.js');
+            return confirm('执行收藏夹移除流程吗？');
+          },
+        }),
+      });
     } catch (error) {
       results.push({ name: skill.name, status: 'error', error: errorMessage(error) });
     }
@@ -79,8 +116,9 @@ export async function commandInit(argv: string[] = []): Promise<void> {
   const initialized = await initCollectionGit();
   console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
   let remote = values.remote;
-  if (!remote && initialized && process.stdin.isTTY && await confirm('是否配置远程仓库？')) {
-    remote = await input('远程仓库地址：');
+  if (!remote && initialized && process.stdin.isTTY) {
+    const { confirm, input } = await import('../ui/prompts.js');
+    if (await confirm('是否配置远程仓库？')) remote = await input('远程仓库地址：');
   }
   if (remote) {
     await configureCollectionRemote(remote);
@@ -108,7 +146,7 @@ const COMMAND_HELP: Record<string, string> = {
 从收藏夹添加技能到当前项目或 Agent 全局目录。
 
 选项：
-  --agent <名称>     限定 Agent，可重复使用
+  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
   -g, --global       添加到 Agent 全局 Skill 目录
   --to <目录>        指定目标目录
   --copy             复制而非创建软链
@@ -123,7 +161,7 @@ const COMMAND_HELP: Record<string, string> = {
 
 选项：
   -g, --global       扫描 Agent 全局 Skill 目录
-  --agent <名称>     限定 Agent，可重复使用
+  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
   --all              导入发现的全部技能
   --replace          替换收藏夹中的同名技能
   -y, --yes          跳过确认
@@ -209,6 +247,5 @@ export function printHelp(command?: string): void {
   -h, --help         显示帮助（可用 iskills help <命令>）
   -v, --version      显示版本
 
-不带命令时打开交互式浏览界面。
 `);
 }

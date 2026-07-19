@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
-import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from '../core.js';
-import { confirm } from '../prompts.js';
-import type { RemoteSkill, SkillMetadata } from '../types.js';
+import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from '../domain/core.js';
+import { confirm } from '../ui/prompts.js';
+import type { RemoteSkill, SkillMetadata } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search.js';
 import { InkSession } from '../ui/session.js';
 import { importRemoteSkillToCollection } from './library.js';
@@ -112,9 +112,11 @@ export async function commandSearch(argv: string[]): Promise<void> {
   let selected: RemoteSkill | undefined;
   try {
     selected = await searchRemoteSkill(
-      positionals.join(' ').trim(),
-      collectedNames,
-      searchSkills,
+      {
+        initialQuery: positionals.join(' ').trim(),
+        collectedNames,
+        search: searchSkills,
+      },
       session
     );
   } finally {

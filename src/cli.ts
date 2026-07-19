@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import {
   commandAdd,
   commandImport,
@@ -10,10 +11,14 @@ import {
   interactiveList,
   printHelp,
 } from './commands/index.js';
-import { commitCollection, ensureCollection, readState } from './core.js';
-import { finalizeResolvedConflicts } from './git.js';
-import { closePrompts } from './prompts.js';
-import { InterruptError } from './ui/session.js';
+import { commitCollection, ensureCollection, readState } from './domain/core.js';
+import { finalizeResolvedConflicts } from './domain/git.js';
+import { closeActivePrompts } from './ui/prompt-lifecycle.js';
+import { InterruptError } from './contracts/terminal.js';
+
+const packageVersion = (
+  createRequire(import.meta.url)('../../package.json') as { version: string }
+).version;
 
 async function run(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
@@ -22,7 +27,7 @@ async function run(argv: string[]): Promise<void> {
   }
   if (rest.includes('--help') || rest.includes('-h')) return printHelp(command);
   if (command === '--version' || command === '-v') {
-    console.log('0.0.0');
+    console.log(packageVersion);
     return;
   }
   if (command === 'search') return commandSearch(rest);
@@ -57,6 +62,6 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     }
     throw error;
   } finally {
-    closePrompts();
+    closeActivePrompts();
   }
 }

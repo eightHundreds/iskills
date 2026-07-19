@@ -3,6 +3,8 @@ import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
+import type { BrowserState, BrowserTab, BrowserViewInput } from '../contracts/browser.js';
+import { InterruptError } from '../contracts/terminal.js';
 import {
   AGENTS,
   assertRelativePath,
@@ -16,27 +18,32 @@ import {
   listCollection,
   listProject,
   listProjectGroups,
-  materializeSkillReferences,
   matches,
   parseGitSource,
   readMetadata,
   readState,
+} from '../domain/core.js';
+import {
+  materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
-  writeMetadata,
-} from '../core.js';
-import { cloneGitSource, syncCollection, updateGitSkill } from '../git.js';
-import { chooseOne, chooseOptionsMany, editInput, editTags } from '../prompts.js';
-import type { GitSource, Skill, SkillMetadata } from '../types.js';
+  saveCollectionMetadata,
+} from '../domain/collection-write.js';
+import {
+  checkGitSkillUpdates,
+  cloneGitSource,
+  syncCollection,
+  updateGitSkill,
+} from '../domain/git.js';
+import { chooseOne, editInput, editTags, reviewInstall } from '../ui/prompts.js';
+import type { GitSource, Skill, SkillMetadata } from '../domain/types.js';
 import {
   browseSkillDetail,
   browseSkills,
   confirmBrowseAction,
   displayBrowseSkills,
-  type BrowserFocus,
-  type BrowserTab,
 } from '../ui/browser.js';
-import { InkSession, InterruptError } from '../ui/session.js';
+import { InkSession } from '../ui/session.js';
 import {
   addSkillsToProject,
   globalSkillGroups,
@@ -74,6 +81,8 @@ async function bindMetadataSource(
 async function skillDetail(
   skill: Skill,
   collection: boolean,
+  frameHeight: number,
+  frameWidth: number,
   session: InkSession
 ): Promise<void> {
   while (true) {
@@ -88,13 +97,21 @@ async function skillDetail(
     };
     const state = await readState();
     const links = state.links.filter((link) => link.skill === skill.name);
-    const action = await browseSkillDetail(skill, metadata, links, collection, session);
+    const action = await browseSkillDetail(
+      skill,
+      metadata,
+      links,
+      collection,
+      frameHeight,
+      frameWidth,
+      session
+    );
     if (action === 'back') return;
     if (action === 'note') {
       const note = await editInput('编辑备注（Enter 保存，Esc 取消）', metadata.note, session);
       if (note === undefined) continue;
       metadata.note = note;
-      await writeMetadata(metadata);
+      await saveCollectionMetadata(metadata);
       await commitCollection(`note ${skill.name}`);
     }
     if (action === 'tags') {
@@ -103,7 +120,7 @@ async function skillDetail(
       const tags = await editTags(existing, metadata.tags, session);
       if (tags === undefined) continue;
       metadata.tags = tags;
-      await writeMetadata(metadata);
+      await saveCollectionMetadata(metadata);
       await commitCollection(`tag ${skill.name}`);
     }
     if (action === 'source') {
@@ -149,7 +166,7 @@ async function skillDetail(
           sourcePath,
           gitContext.source.refType
         );
-        await writeMetadata(metadata);
+        await saveCollectionMetadata(metadata);
         await commitCollection(`source ${skill.name}`);
       } finally {
         await rm(gitContext.temporary, { recursive: true, force: true });
@@ -162,12 +179,14 @@ export async function interactiveList(
   initialQuery = '',
   initialTab: BrowserTab = 'project'
 ): Promise<void> {
-  let query = initialQuery;
-  let tab: BrowserTab = initialTab;
-  let cursor = 0;
-  let selected: string[] = [];
-  let agent = '';
-  let focus: BrowserFocus = 'tabs';
+  let state: BrowserState = {
+    query: initialQuery,
+    tab: initialTab,
+    cursor: 0,
+    selected: [],
+    agent: '',
+    focus: 'tabs',
+  };
   let status = '';
   let transientStatus = false;
   const session = new InkSession(true);
@@ -180,28 +199,29 @@ export async function interactiveList(
         globalSkillGroups(),
       ]);
       const canSync = await exists(join(collectionPaths().root, '.git'));
-      const result = await browseSkills(
-        projects,
+      const browserView = (
+        overrides: Pick<BrowserViewInput, 'updatingSkillName' | 'updatingProgress' | 'workingAction'> = {}
+      ): BrowserViewInput => ({
+        projectGroups: projects,
         collection,
-        globals,
-        session,
-        query,
-        tab,
+        globalGroups: globals,
+        state,
         canSync,
         status,
-        cursor,
-        selected,
-        agent,
-        focus,
-        transientStatus
-      );
+        transientStatus,
+        checkUpdates: checkGitSkillUpdates,
+        ...overrides,
+      });
+      const result = await browseSkills(browserView(), session);
       if (result.type === 'quit') return;
-      query = result.query;
-      tab = result.tab;
-      cursor = result.cursor;
-      selected = result.selected;
-      agent = result.agent;
-      focus = result.focus;
+      state = {
+        query: result.query,
+        tab: result.tab,
+        cursor: result.cursor,
+        selected: result.selected,
+        agent: result.agent,
+        focus: result.focus,
+      };
       if (transientStatus) {
         status = '';
         transientStatus = false;
@@ -209,26 +229,11 @@ export async function interactiveList(
       const confirmInBrowser = (
         message: string,
         details: string[] = [],
-        title = '确认',
-        confirmingSkillName?: string
+        title = '确认'
       ) => confirmBrowseAction(
-        projects,
-        collection,
-        globals,
+        browserView(),
         session,
-        message,
-        details,
-        title,
-        query,
-        tab,
-        canSync,
-        status,
-        cursor,
-        selected,
-        agent,
-        focus,
-        transientStatus,
-        confirmingSkillName
+        { message, details, title }
       );
       if (result.type === 'sync') {
         session.close();
@@ -247,24 +252,14 @@ export async function interactiveList(
         transientStatus = false;
         const outcomes: string[] = [];
         let failed = 0;
+        session.close();
         for (const [index, skill] of result.skills.entries()) {
-          session.close();
           displayBrowseSkills(
-            projects,
-            collection,
-            globals,
+            browserView({
+              updatingSkillName: skill.name,
+              updatingProgress: { current: index + 1, total: result.skills.length },
+            }),
             session,
-            query,
-            tab,
-            canSync,
-            status,
-            cursor,
-            selected,
-            agent,
-            focus,
-            transientStatus,
-            skill.name,
-            { current: index + 1, total: result.skills.length }
           );
           await delay(120);
           try {
@@ -287,7 +282,6 @@ export async function interactiveList(
         }
         status = outcomes.join(' · ');
         transientStatus = failed === 0;
-        process.stdout.write(CLEAR_SCREEN);
         continue;
       }
       if (result.type === 'tags') {
@@ -303,7 +297,7 @@ export async function interactiveList(
         await Promise.all(result.skills.map(async (skill) => {
           const metadata = await readMetadata(skill.name);
           metadata.tags = [...new Set([...metadata.tags, ...added])];
-          await writeMetadata(metadata);
+          await saveCollectionMetadata(metadata);
         }));
         await commitCollection(`tag ${result.skills.map((skill) => skill.name).join(', ')}`);
         status = `已为 ${result.skills.length} 个技能添加标签`;
@@ -311,65 +305,55 @@ export async function interactiveList(
         continue;
       }
       if (result.type === 'add') {
-        const destination = await chooseOne(
-          [
-            { label: '当前项目', value: 'project' },
-            { label: '全局', value: 'global' },
-          ],
-          '添加到：',
-          false,
-          session
-        );
-        if (!destination) continue;
-        const mode = await chooseOne(
-          [
-            { label: '软链（推荐）', value: 'link' },
-            { label: '复制', value: 'copy' },
-          ],
-          '添加方式：',
-          false,
-          session
-        );
-        if (!mode) continue;
-        const isGlobal = destination === 'global';
         const targetOptions = [
           {
-            label: `标准 Agent Skills (${isGlobal ? '~/.agents/skills' : '.agents/skills'})`,
             value: 'agents',
+            projectLabel: '标准 Agent Skills (.agents/skills)',
+            globalLabel: '标准 Agent Skills (~/.agents/skills)',
           },
           {
-            label: `Claude Code (${isGlobal ? '~/.claude/skills' : '.claude/skills'})`,
             value: 'claude',
+            projectLabel: 'Claude Code (.claude/skills)',
+            globalLabel: 'Claude Code (~/.claude/skills)',
+          },
+          {
+            value: 'pi',
+            globalLabel: 'Pi (~/.pi/agent/skills)',
           },
         ];
-        const defaultAgents: string[] = [];
+        const defaultProjectAgents: string[] = [];
+        const defaultGlobalAgents: string[] = [];
         for (const option of targetOptions) {
           const agent = AGENTS[option.value];
-          const path = isGlobal ? agent?.global(homedir()) : agent?.project;
-          if (path && await exists(path)) defaultAgents.push(option.value);
+          if (agent?.project && await exists(agent.project)) defaultProjectAgents.push(option.value);
+          const globalPath = agent?.global(homedir());
+          if (globalPath && await exists(globalPath)) {
+            defaultGlobalAgents.push(option.value);
+          }
         }
-        const agents = await chooseOptionsMany(
+        const install = await reviewInstall(
+          result.skills,
           targetOptions,
-          destination === 'global' ? '选择全局 Skill 目录：' : '选择项目 Skill 目录：',
+          defaultProjectAgents,
+          defaultGlobalAgents,
           session,
-          defaultAgents
         );
-        if (!agents.length) continue;
+        if (!install) continue;
         try {
           const { count, targetCount } = await addSkillsToProject(result.skills, {
             quiet: true,
-            agent: agents,
-            copy: mode === 'copy',
+            agent: install.agents,
+            copy: install.copy,
             confirmReplace: (target) => confirmInBrowser(
               `目标已存在，替换 ${target} 吗？`,
               [],
               '替换目标'
             ),
-            ...(isGlobal ? { global: true } : {}),
+            ...(install.destination === 'global' ? { global: true } : {}),
           });
-          status = `已通过${mode === 'copy' ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
+          status = `已通过${install.copy ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`;
           transientStatus = true;
-          selected = [];
+          state = { ...state, selected: [] };
         } catch (error) {
           status = errorMessage(error);
           transientStatus = false;
@@ -386,7 +370,7 @@ export async function interactiveList(
             : `已从收藏夹移除 ${names.length} 个技能`;
           transientStatus = true;
           const removed = new Set(result.skills.map((skill) => skill.path));
-          selected = selected.filter((path) => !removed.has(path));
+          state = { ...state, selected: state.selected.filter((path) => !removed.has(path)) };
         } catch (error) {
           status = `移除失败 — ${errorMessage(error)}`;
           transientStatus = false;
@@ -402,7 +386,7 @@ export async function interactiveList(
             : `已删除 ${count} 个技能位置，收藏夹内容保留`;
           transientStatus = true;
           const removed = new Set(result.skills.map((skill) => skill.path));
-          selected = selected.filter((path) => !removed.has(path));
+          state = { ...state, selected: state.selected.filter((path) => !removed.has(path)) };
         } catch (error) {
           status = `删除失败 — ${errorMessage(error)}`;
           transientStatus = false;
@@ -417,23 +401,12 @@ export async function interactiveList(
             signal: controller.signal,
             onProgress: async (skill, current, total) => {
               displayBrowseSkills(
-                projects,
-                collection,
-                globals,
+                browserView({
+                  updatingSkillName: skill.name,
+                  updatingProgress: { current, total },
+                  workingAction: '转换',
+                }),
                 session,
-                query,
-                tab,
-                canSync,
-                status,
-                cursor,
-                selected,
-                agent,
-                focus,
-                transientStatus,
-                skill.name,
-                { current, total },
-                undefined,
-                '转换',
                 () => controller.abort()
               );
               await delay(120);
@@ -443,7 +416,7 @@ export async function interactiveList(
             ? `已将 ${result.skills[0]?.name ?? ''} 转为副本`
             : `已将 ${result.skills.length} 个引用转为副本`;
           transientStatus = true;
-          selected = [];
+          state = { ...state, selected: [] };
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') {
             throw new InterruptError();
@@ -470,14 +443,18 @@ export async function interactiveList(
           status = errorMessage(error);
           transientStatus = false;
         }
-        selected = [];
+        state = { ...state, selected: [] };
         process.stdout.write(CLEAR_SCREEN);
         continue;
       }
       if (result.type === 'open') {
-        cursor = result.cursor;
-        selected = result.selected;
-        await skillDetail(result.skill, result.collection, session);
+        await skillDetail(
+          result.skill,
+          result.collection,
+          result.frameHeight,
+          result.frameWidth,
+          session
+        );
       }
     }
   } finally {
@@ -525,7 +502,7 @@ export async function commandList(argv: string[]): Promise<void> {
         values['source-path']
       );
     }
-    await writeMetadata(metadata);
+    await saveCollectionMetadata(metadata);
     await commitCollection(`metadata ${skill.name}`);
     if (!values.json) {
       console.log(`已更新 ${skill.name} 的详情。`);
