@@ -18,8 +18,15 @@ import {
 } from './browser-state.js';
 import { InkSession } from './session.js';
 import { skillFieldLabels } from './skill-labels.js';
-import { Select, Tabs, TextInput, termcnColors } from './components/termcn.js';
-import { padColumns, sliceColumns, textWidth, wrapColumns } from './components/terminal-layout.js';
+import {
+  Modal,
+  Select,
+  Tabs,
+  TextInput,
+  termcnColors,
+  type ModalBackgroundLine,
+} from './components/termcn.js';
+import { textWidth, wrapColumns } from './components/terminal-layout.js';
 
 export type {
   BrowserFocus,
@@ -207,21 +214,8 @@ function detailContentLines(
   ];
 }
 
-function framedLines(title: string, content: string[], width: number): string[] {
-  const inner = width - 4;
-  const titleWidth = textWidth(title);
-  const body = content
-    .flatMap((line) => wrapColumns(line, inner))
-    .map((line) => padColumns(line, inner));
+function shortcutModalContent(): string[] {
   return [
-    `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`,
-    ...body.map((line) => `│ ${line} │`),
-    `╰${'─'.repeat(width - 2)}╯`,
-  ];
-}
-
-function shortcutHelpLines(width: number): string[] {
-  const content = [
     '↑/↓ 移动焦点或列表项',
     '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
     'Space 选择当前项或当前分组',
@@ -238,80 +232,43 @@ function shortcutHelpLines(width: number): string[] {
     '',
     'Esc 关闭',
   ];
-  return framedLines(' 完整快捷键 ', content, width);
 }
 
-function moreActionLines(scope: string, width: number): string[] {
-  return framedLines(' 更多操作 ', [scope, '', '› 将引用转为副本'], width);
+function moreActionModalContent(scope: string): string[] {
+  return [scope, '', '› 将引用转为副本'];
 }
 
-function confirmationLines(confirmation: BrowserConfirmation, width: number): string[] {
-  return framedLines(
-    ` ${confirmation.title} `,
-    [
-      confirmation.message,
-      ...(confirmation.details?.length ? confirmation.details : []),
-      '(y/N)',
-    ],
-    width
-  );
-}
-
-function PopupLine({
-  line,
-  index,
-  last,
-  muteLastContent,
-}: {
-  line: string;
-  index: number;
-  last: number;
-  muteLastContent: boolean;
-}) {
-  if (index === 0 || index === last) {
-    return <Text color={termcnColors.primary}>{line}</Text>;
-  }
-  const content = line.slice(2, -2);
-  return (
-    <Text>
-      <Text color={termcnColors.primary}>│ </Text>
-      {muteLastContent && index === last - 1 ? (
-        <Text color={termcnColors.muted}>{content}</Text>
-      ) : (
-        content
-      )}
-      <Text color={termcnColors.primary}> │</Text>
-    </Text>
-  );
+interface BrowserModal {
+  title: string;
+  content: string[];
+  width: number;
+  onEscape: () => void;
+  muteLastContent?: boolean;
 }
 
 function SkillPane({
   rows,
   cursor,
   isActive,
-  showShortcuts = false,
   preferNote = false,
   showSource = false,
   showReferences = false,
   showGroup = false,
   updates = new Set<string>(),
   updatingSkillName,
-  overlayLines,
-  overlayMuteLastContent = true,
+  modal,
   viewportHeight,
 }: {
   rows: SkillRow[];
   cursor: number;
   isActive: boolean;
-  showShortcuts?: boolean;
   preferNote?: boolean;
   showSource?: boolean;
   showReferences?: boolean;
   showGroup?: boolean;
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
-  overlayLines?: string[] | undefined;
-  overlayMuteLastContent?: boolean;
+  modal?: BrowserModal | undefined;
   viewportHeight?: number | undefined;
 }) {
   const { stdout } = useStdout();
@@ -321,15 +278,7 @@ function SkillPane({
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
-  const popupLines = overlayLines ?? (
-    showShortcuts ? shortcutHelpLines(Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))) : undefined
-  );
-  const popupHeight = popupLines?.length ?? 0;
-  const compositeHeight = popupLines ? Math.max(height, popupHeight) : visible.length;
-  const popupTop = Math.max(0, Math.floor((compositeHeight - popupHeight) / 2));
   const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
-  const popupWidth = textWidth(popupLines?.[0] ?? '');
-  const popupLeft = Math.max(0, Math.floor((paneWidth - popupWidth) / 2));
   const rowText = (row: SkillRow, index: number): string => {
     if (row.type === 'group') {
       const groupSkills = row.skills;
@@ -400,39 +349,26 @@ function SkillPane({
       </Text>
     );
   };
-  const renderRows = () => {
-    if (!popupLines) {
-      return visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex));
-    }
-    return Array.from({ length: compositeHeight }, (_, visibleIndex) => {
-      const row = visible[visibleIndex];
-      const index = offset + visibleIndex;
-      const popupIndex = visibleIndex - popupTop;
-      const popupLine = popupLines[popupIndex];
-      if (popupLine === undefined) {
-        return row ? renderRow(row, index) : <Text key={`shortcut-empty:${visibleIndex}`}> </Text>;
-      }
-      const base = row ? rowText(row, index) : '';
-      const prefix = padColumns(sliceColumns(base, 0, popupLeft), popupLeft);
-      const suffix = sliceColumns(base, popupLeft + popupWidth, paneWidth);
-      return (
-        <Text key={`shortcut-overlay:${visibleIndex}`} wrap="truncate-end">
-          {prefix}
-          <PopupLine
-            line={popupLine}
-            index={popupIndex}
-            last={popupLines.length - 1}
-            muteLastContent={overlayLines ? overlayMuteLastContent : true}
-          />
-          {suffix}
-        </Text>
-      );
-    });
-  };
+  const backgroundLines: ModalBackgroundLine[] = visible.map((row, visibleIndex) => {
+    const index = offset + visibleIndex;
+    return { text: rowText(row, index), content: renderRow(row, index) };
+  });
   return (
     <Box flexDirection="column" minHeight={3}>
-      {rows.length || popupLines ? (
-        renderRows()
+      {modal ? (
+        <Modal
+          open
+          title={modal.title}
+          content={modal.content}
+          width={modal.width}
+          viewportWidth={paneWidth}
+          viewportHeight={height}
+          backgroundLines={backgroundLines}
+          onEscape={modal.onEscape}
+          {...(modal.muteLastContent ? { muteLastContent: true } : {})}
+        />
+      ) : rows.length ? (
+        visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
       )}
@@ -706,24 +642,42 @@ function BrowserContent({
   });
   const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
   const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
-  const overlayLines = activeConfirmation
-    ? confirmationLines(
-        activeConfirmation,
-        Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6))
-      )
+  const modal: BrowserModal | undefined = activeConfirmation
+    ? {
+        title: ` ${activeConfirmation.title} `,
+        content: [
+          activeConfirmation.message,
+          ...(activeConfirmation.details?.length ? activeConfirmation.details : []),
+          '(y/N)',
+        ],
+        width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
+        onEscape: activeConfirmation.onCancel,
+        muteLastContent: true,
+      }
     : showActions
-      ? moreActionLines(
-          selectedProject.length
-            ? `已选择 ${actionSkills.length} 个技能`
-            : `技能：${actionSkills[0]?.name ?? ''}`,
-          Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6))
-        )
-      : undefined;
+      ? {
+          title: ' 更多操作 ',
+          content: moreActionModalContent(
+            selectedProject.length
+              ? `已选择 ${actionSkills.length} 个技能`
+              : `技能：${actionSkills[0]?.name ?? ''}`
+          ),
+          width: Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6)),
+          onEscape: () => setShowActions(false),
+        }
+      : showShortcuts
+        ? {
+            title: ' 完整快捷键 ',
+            content: shortcutModalContent(),
+            width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
+            onEscape: () => setShowShortcuts(false),
+          }
+        : undefined;
   useInput(
     (input, key) => {
       const choice = input.trim().toLowerCase();
       if (choice === 'y') return activeConfirmation?.onConfirm();
-      if (choice === 'n' || key.return || key.escape) {
+      if (choice === 'n' || key.return) {
         return activeConfirmation?.onCancel();
       }
     },
@@ -731,20 +685,11 @@ function BrowserContent({
   );
   useInput(
     (input, key) => {
-      if (key.escape) return setShowActions(false);
       if (key.return || input.includes('\r') || input.includes('\n')) {
         return finish({ ...browserState(), type: 'materialize', skills: actionSkills });
       }
     },
     { isActive: showActions && !activeConfirmation }
-  );
-  useInput(
-    (input, key) => {
-      if (key.escape) {
-        setShowShortcuts(false);
-      }
-    },
-    { isActive: showShortcuts && !activeConfirmation }
   );
   useInput(
     (input, key) => {
@@ -863,8 +808,7 @@ function BrowserContent({
       isActive:
         !searching &&
         !choosingGroup &&
-        !showShortcuts &&
-        !showActions &&
+        !modal &&
         !updatingSkillName &&
         !activeConfirmation,
     }
@@ -894,9 +838,7 @@ function BrowserContent({
             cursor={cursor}
             isActive={focus === 'list'}
             viewportHeight={agentPaneViewportHeight}
-            showShortcuts={showShortcuts}
-            overlayLines={overlayLines}
-            overlayMuteLastContent={Boolean(activeConfirmation)}
+            modal={modal}
             showSource
             showReferences
             showGroup={Boolean(query.trim())}
@@ -919,9 +861,7 @@ function BrowserContent({
             cursor={cursor}
             isActive={focus === 'list'}
             viewportHeight={agentPaneViewportHeight}
-            showShortcuts={showShortcuts}
-            overlayLines={overlayLines}
-            overlayMuteLastContent={Boolean(activeConfirmation)}
+            modal={modal}
             showSource
           />
         </Box>
@@ -937,9 +877,7 @@ function BrowserContent({
             cursor={cursor}
             isActive={focus === 'list'}
             viewportHeight={collectionPaneViewportHeight}
-            showShortcuts={showShortcuts}
-            overlayLines={overlayLines}
-            overlayMuteLastContent={Boolean(activeConfirmation)}
+            modal={modal}
             preferNote
             showGroup={Boolean(query.trim())}
             updates={updateCheck.updates}
@@ -1009,9 +947,9 @@ function BrowserContent({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
-        isActive={!searching && !showShortcuts && !showActions && focus === 'tabs'}
+        isActive={!searching && !modal && focus === 'tabs'}
         enableArrowNav={false}
-        focused={!searching && !showShortcuts && focus === 'tabs'}
+        focused={!searching && !modal && focus === 'tabs'}
         width={frame.frameWidth}
       />
       {searching ? (

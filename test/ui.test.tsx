@@ -7,6 +7,7 @@ import { ImportReview, InstallReview } from '../src/ui/reviews.js';
 import {
   Confirm,
   Link,
+  Modal,
   MultiSelect,
   Select,
   Tabs,
@@ -141,6 +142,33 @@ test('Link renders a clickable link or its fallback for the current terminal', a
       );
     }
   );
+});
+
+test('Modal centers in its viewport and owns Escape', async () => {
+  const escaped: boolean[] = [];
+  await withInk(
+    <Modal
+      open
+      title=" 确认 "
+      content={['删除 demo-skill 吗？', '(y/N)']}
+      width={24}
+      viewportWidth={40}
+      viewportHeight={5}
+      backgroundLines={Array.from({ length: 5 }, (_, index) => ({
+        text: `背景 ${index + 1}`,
+        content: <Text key={index}>背景 {index + 1}</Text>,
+      }))}
+      onEscape={() => escaped.push(true)}
+      muteLastContent
+    />,
+    async (screen) => {
+      const top = screen.frame().split('\n').find((line) => line.includes('╭─ 确认 '));
+      assert.ok(top);
+      assert.equal(textWidth(top.slice(0, top.indexOf('╭'))), 8);
+      await screen.press('escape');
+    }
+  );
+  assert.deepEqual(escaped, [true]);
 });
 
 function TabsHarness() {
