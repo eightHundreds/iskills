@@ -1,6 +1,6 @@
 # iskills
 
-独立的个人 Skill 收藏夹 CLI。命令名和配置目录名为 `iskills`，支持 macOS、Linux 和 Node.js 20+。
+独立的个人 Skill 收藏夹 CLI。命令名和配置目录名为 `iskills`，支持 macOS、Linux 和 Node.js 24+。
 
 实现使用严格 TypeScript、Ink 和按 copy-owned 模式引入的 termcn 组件，按收藏操作、浏览交互、存储/发现、Git 生命周期和 CLI 路由拆分；发布包只包含编译后的 `dist/src`。
 
@@ -40,9 +40,8 @@ iskills sync                    # 阻塞式同步收藏夹 Git
 
 ## 开发文档
 
-- [CLI/TUI 交互规范](docs/cli-tui-guidelines.md)
+- [设计准则（CLI/TUI 交互规范）](docs/design/README.md)
 - [终端 UI 架构 ADR](docs/adr/0001-terminal-ui-runtime.md)
-- [收藏数据完整性契约](docs/data-integrity.md)
 - [Agent Skills 目录支持调研](docs/agent-skills-support.md)
 
 ## 验证

@@ -4,6 +4,42 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.27] - 2026-07-16
+
+### 修复
+
+- 稳定技能浏览器详情区域的终端帧渲染。
+
+## [0.2.26] - 2026-07-16
+
+### 变更
+
+- 拆分终端 UI 层次，明确渲染与交互责任。
+
+### 修复
+
+- 修复技能浏览器批量更新时绕过 Ink 清屏的问题。
+
+## [0.2.25] - 2026-07-15
+
+### 修复
+
+- 确保 CLI 正确输出当前包版本。
+- 稳定技能引用转换的中断测试。
+
+## [0.2.24] - 2026-07-15
+
+### 变更
+
+- 发布 0.2.24 维护版本。
+
+## [0.2.23] - 2026-07-15
+
+### 新增
+
+- 支持 Pi 的全局技能目录。
+- 技能浏览器的安装流程改为项目与全局目标分页选择。
+
 ## [0.2.22] - 2026-07-14
 
 ### 新增
@@ -195,7 +231,12 @@
 
 - 确保 npm 发布包保留 CLI 可执行权限。
 
-[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.22...HEAD
+[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.27...HEAD
+[0.2.27]: https://github.com/eightHundreds/iskills/compare/v0.2.26...v0.2.27
+[0.2.26]: https://github.com/eightHundreds/iskills/compare/v0.2.25...v0.2.26
+[0.2.25]: https://github.com/eightHundreds/iskills/compare/v0.2.24...v0.2.25
+[0.2.24]: https://github.com/eightHundreds/iskills/compare/v0.2.23...v0.2.24
+[0.2.23]: https://github.com/eightHundreds/iskills/compare/v0.2.22...v0.2.23
 [0.2.22]: https://github.com/eightHundreds/iskills/compare/v0.2.21...v0.2.22
 [0.2.21]: https://github.com/eightHundreds/iskills/compare/v0.2.20...v0.2.21
 [0.2.20]: https://github.com/eightHundreds/iskills/compare/v0.2.19...v0.2.20
