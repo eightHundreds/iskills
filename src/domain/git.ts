@@ -381,7 +381,7 @@ export async function backgroundCollectionSync(): Promise<void> {
       });
     } catch {
       await markCollectionConflict(
-        '收藏夹与 origin 存在冲突，请运行 iskills sync 后手动解决',
+        '收藏夹与 origin 存在冲突，请在主 TUI 中同步后手动解决',
         remoteHead
       );
       return;

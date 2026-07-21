@@ -4,6 +4,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 变更
+
+- 以主 TUI 统一浏览、删除、更新和 Git 同步，移除重复的 `list`、`remove`、`update`、`sync` 子命令。
+- 保留独立 `search [关键词]` TUI，移除 `search --json` 与 `search --collect` 自动化入口。
+
 ## [0.2.27] - 2026-07-16
 
 ### 修复

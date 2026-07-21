@@ -19,7 +19,7 @@ function formatIdentity(skill: SkillMetadata): string {
 function printImportResult(result: Awaited<ReturnType<typeof importRemoteSkillToCollection>>): void {
   if (result.status === 'imported') console.log(`已收藏 ${result.name}。`);
   if (result.status === 'unchanged') {
-    console.log(`${result.name} 已收藏自同一来源；如需更新请使用 update。`);
+    console.log(`${result.name} 已收藏自同一来源；可在主 TUI 中更新。`);
   }
 }
 
@@ -70,41 +70,12 @@ export async function commandSearch(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
     options: {
-      json: { type: 'boolean' },
-      collect: { type: 'string' },
       replace: { type: 'boolean' },
     },
     allowPositionals: true,
   });
-  if (values.json && values.collect) throw new Error('--json 和 --collect 不能同时使用');
-  let query = positionals.join(' ').trim();
-  if (values.collect && !query) query = values.collect.split('/').at(-1) || '';
-
-  if (values.json || values.collect) {
-    if (query.length < 2) throw new Error('搜索关键词至少需要 2 个字符');
-    const results = await searchSkills(
-      query,
-      new AbortController().signal,
-      values.collect ? 100 : 10
-    );
-    if (values.json) {
-      console.log(JSON.stringify({ query, results }, null, 2));
-      return;
-    }
-    const selected = results.find((skill) => skill.resultId === values.collect);
-    if (!selected) {
-      throw new Error(`搜索结果中不存在 resultId：${sanitizeTerminal(values.collect || '')}`);
-    }
-    console.error('正在校验并收藏…');
-    const result = await importRemoteSkillToCollection(selected.source, selected.name, {
-      replace: values.replace ?? false,
-    });
-    printImportResult(result);
-    return;
-  }
-
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('交互搜索需要 stdin 和 stdout TTY；自动化请使用 search <关键词> --json');
+    throw new Error('独立搜索 TUI 需要 stdin 和 stdout TTY；当前终端不支持。');
   }
   const collection = await listCollection();
   const collectedNames = new Set(collection.map((skill) => skill.name.toLowerCase()));

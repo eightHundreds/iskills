@@ -3,11 +3,7 @@ import {
   commandAdd,
   commandImport,
   commandInit,
-  commandList,
-  commandRemove,
   commandSearch,
-  commandSync,
-  commandUpdate,
   interactiveList,
   printHelp,
 } from './commands/index.js';
@@ -20,6 +16,8 @@ const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }
 ).version;
 
+const PUBLIC_COMMANDS = new Set(['search', 'add', 'import', 'init']);
+
 async function run(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
   if (command === 'help' || command === '--help' || command === '-h') {
@@ -30,7 +28,12 @@ async function run(argv: string[]): Promise<void> {
     console.log(packageVersion);
     return;
   }
+  if (command && !PUBLIC_COMMANDS.has(command)) throw new Error(`未知命令：${command}`);
   if (command === 'search') return commandSearch(rest);
+
+  if (!command && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    throw new Error('主 TUI 需要 stdin 和 stdout TTY；当前终端不支持。');
+  }
 
   await ensureCollection();
   if (command === 'init') return commandInit(rest);
@@ -40,15 +43,10 @@ async function run(argv: string[]): Promise<void> {
   if (pending.length) console.error(`警告：存在 ${pending.length} 个待处理冲突。`);
 
   if (!command) {
-    if (!process.stdin.isTTY) return printHelp();
     return interactiveList('', 'collection');
   }
   if (command === 'add') return commandAdd(rest);
   if (command === 'import') return commandImport(rest);
-  if (command === 'list') return commandList(rest);
-  if (command === 'remove') return commandRemove(rest);
-  if (command === 'sync') return commandSync(rest);
-  if (command === 'update') return commandUpdate(rest);
   throw new Error(`未知命令：${command}`);
 }
 

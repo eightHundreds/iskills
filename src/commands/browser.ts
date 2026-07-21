@@ -18,7 +18,6 @@ import {
   listCollection,
   listProject,
   listProjectGroups,
-  matches,
   parseGitSource,
   readMetadata,
   readState,
@@ -461,67 +460,4 @@ export async function interactiveList(
     session.close();
     process.stdout.write(LEAVE_ALTERNATE_SCREEN);
   }
-}
-
-export async function commandList(argv: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      json: { type: 'boolean' },
-      note: { type: 'string' },
-      tags: { type: 'string' },
-      source: { type: 'string' },
-      ref: { type: 'string' },
-      'source-path': { type: 'string' },
-    },
-  });
-  const query = positionals.join(' ');
-  const edits = values.note !== undefined || values.tags !== undefined || values.source;
-  if (edits) {
-    if (positionals.length !== 1) throw new Error('编辑详情时请指定一个完整技能名称');
-    const name = positionals[0];
-    if (!name) throw new Error('编辑详情时请指定一个完整技能名称');
-    const skill = (await listCollection()).find((item) => item.name === name);
-    if (!skill) throw new Error(`收藏夹中不存在：${name}`);
-    const metadata = await readMetadata(skill.name);
-    if (values.note !== undefined) metadata.note = values.note;
-    if (values.tags !== undefined) {
-      metadata.tags = values.tags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-    }
-    if (values.source) {
-      if (!values['source-path']) throw new Error('绑定来源时必须指定 --source-path');
-      await bindMetadataSource(
-        skill.name,
-        metadata,
-        values.source,
-        values.ref,
-        values['source-path']
-      );
-    }
-    await saveCollectionMetadata(metadata);
-    await commitCollection(`metadata ${skill.name}`);
-    if (!values.json) {
-      console.log(`已更新 ${skill.name} 的详情。`);
-      return;
-    }
-  }
-  if (values.json || !process.stdin.isTTY) {
-    const [project, collection] = await Promise.all([listProject(), listCollection()]);
-    console.log(
-      JSON.stringify(
-        {
-          project: project.filter((skill) => matches(skill, query)),
-          collection: collection.filter((skill) => matches(skill, query)),
-        },
-        null,
-        2
-      )
-    );
-    return;
-  }
-  await interactiveList(query);
 }

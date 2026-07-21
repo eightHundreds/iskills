@@ -1,7 +1,7 @@
 {
   "name": "iskills",
   "version": "0.2.27",
-  "description": "Personal Skill library CLI for AI coding agents",
+  "description": "Personal Skill collection terminal app for AI coding agents",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eightHundreds/iskills.git"

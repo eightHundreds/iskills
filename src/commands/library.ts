@@ -23,7 +23,6 @@ import {
   pathPresent,
   provenanceFromKnownLocks,
   readMetadata,
-  readState,
   sameGitIdentity,
   sanitizeTerminal,
   validateSkillTree,
@@ -31,8 +30,6 @@ import {
 import {
   registerCollectionLinks,
   replaceCollectionSkill,
-  removeCollectionUsage,
-  removeFromCollection,
   saveCollectionMetadata,
 } from '../domain/collection-write.js';
 import { cloneGitSource } from '../domain/git.js';
@@ -627,51 +624,4 @@ export async function commandAdd(argv: string[]): Promise<void> {
   if (values.replace !== undefined) options.replace = values.replace;
   if (values.yes !== undefined) options.yes = values.yes;
   await addSkillsToProject(skills, options);
-}
-
-async function removeUsage(name: string, from?: string): Promise<void> {
-  const count = await removeCollectionUsage(name, from);
-  console.log(`已从 ${count} 个位置移除 ${name}，收藏夹内容保留。`);
-}
-
-async function selectOneCollectionSkill(name?: string): Promise<string | undefined> {
-  if (name) return name;
-  if (!process.stdin.isTTY) throw new Error('请指定技能名称');
-  const skills = await listCollection();
-  return (await prompts()).chooseOne(
-    skills.map((skill) => ({ label: skill.name, value: skill.name })),
-    '选择技能：'
-  );
-}
-
-export async function commandRemove(argv: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      global: { type: 'boolean', short: 'g' },
-      from: { type: 'string' },
-      yes: { type: 'boolean', short: 'y' },
-    },
-  });
-  if (positionals.length > 1) throw new Error('一次只能移除一个技能');
-  const name = await selectOneCollectionSkill(positionals[0]);
-  if (!name) return;
-
-  if (values.global) {
-    if (!values.yes) {
-      if (!process.stdin.isTTY) throw new Error('从收藏夹移除需要使用 --yes 确认');
-      const state = await readState();
-      const links = state.links.filter((link) => link.skill === name);
-      console.log('该技能关联以下位置：');
-      links.forEach((link) => {
-        const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
-        console.log(`- ${link.path}（${kind}）`);
-      });
-      if (!(await (await prompts()).confirm('从收藏夹移除吗？'))) return;
-    }
-    await removeFromCollection(name, true);
-  } else {
-    await removeUsage(name, values.from);
-  }
 }

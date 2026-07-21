@@ -1,13 +1,9 @@
 import { parseArgs } from 'node:util';
-import { errorMessage, listCollection, readState } from '../domain/core.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
-  syncCollection,
-  updateGitSkill,
 } from '../domain/git.js';
 import type { BrowserTab } from '../contracts/browser.js';
-import type { CollectedSkill, UpdateStatus } from '../domain/types.js';
 
 export async function commandAdd(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandAdd(argv);
@@ -15,14 +11,6 @@ export async function commandAdd(argv: string[]): Promise<void> {
 
 export async function commandImport(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandImport(argv);
-}
-
-export async function commandList(argv: string[]): Promise<void> {
-  return (await import('./browser.js')).commandList(argv);
-}
-
-export async function commandRemove(argv: string[]): Promise<void> {
-  return (await import('./library.js')).commandRemove(argv);
 }
 
 export async function commandSearch(argv: string[]): Promise<void> {
@@ -34,78 +22,6 @@ export async function interactiveList(
   initialTab: BrowserTab = 'project'
 ): Promise<void> {
   return (await import('./browser.js')).interactiveList(initialQuery, initialTab);
-}
-
-export async function commandUpdate(argv: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      all: { type: 'boolean' },
-      yes: { type: 'boolean', short: 'y' },
-    },
-  });
-  const updateable = (await listCollection()).filter((skill) => skill.source.type === 'git');
-  let selected: CollectedSkill[];
-  if (positionals.length) {
-    selected = positionals.flatMap((name) => {
-      const skill = updateable.find((item) => item.name === name);
-      return skill ? [skill] : [];
-    });
-    const found = new Set(selected.map((skill) => skill.name));
-    const missing = positionals.filter((name) => !found.has(name));
-    if (missing.length) throw new Error(`没有可更新的来源：${missing.join(', ')}`);
-  } else if (values.all) {
-    selected = updateable;
-  } else if (process.stdin.isTTY) {
-    const { chooseMany } = await import('../ui/prompts.js');
-    selected = await chooseMany(updateable, '选择要更新的技能：');
-  } else {
-    throw new Error('请指定技能名称或使用 --all');
-  }
-
-  const results: Array<{ name: string; status: UpdateStatus | 'error'; error?: string }> = [];
-  for (const skill of selected) {
-    try {
-      const allowDelete = values.yes ?? false;
-      results.push({
-        name: skill.name,
-        status: await updateGitSkill(skill, allowDelete, {
-          confirmDelete: async (links) => {
-            if (!process.stdin.isTTY) {
-              throw new Error(`上游已删除 ${skill.name}；确认后使用 --yes`);
-            }
-            console.log(`上游已删除 ${skill.name}，以下位置会受影响：`);
-            links.forEach((link) => console.log(`- ${link.path} (${link.kind})`));
-            const { confirm } = await import('../ui/prompts.js');
-            return confirm('执行收藏夹移除流程吗？');
-          },
-        }),
-      });
-    } catch (error) {
-      results.push({ name: skill.name, status: 'error', error: errorMessage(error) });
-    }
-  }
-  for (const result of results) {
-    console.log(`${result.name}: ${result.status}${result.error ? ` — ${result.error}` : ''}`);
-    if (result.status === 'conflict') {
-      const conflict = (await readState()).conflicts.find(
-        (item) => item.type === 'source' && item.skill === result.name
-      );
-      if (conflict?.type === 'source') {
-        console.log(`  请在 ${conflict.path} 中手动解决并提交 Git 合并。`);
-      }
-    }
-  }
-  if (results.some((result) => result.status === 'error')) process.exitCode = 1;
-}
-
-export async function commandSync(argv: string[] = []): Promise<void> {
-  const { values } = parseArgs({
-    args: argv,
-    options: { background: { type: 'boolean' } },
-  });
-  await syncCollection(values.background ?? false);
 }
 
 export async function commandInit(argv: string[] = []): Promise<void> {
@@ -129,14 +45,10 @@ export async function commandInit(argv: string[] = []): Promise<void> {
 const COMMAND_HELP: Record<string, string> = {
   search: `用法：
   iskills search [关键词]
-  iskills search <关键词> --json
-  iskills search --collect <resultId> [--replace]
 
 实时搜索 skills.sh，选择后保存到收藏夹。
 
 选项：
-  --json             以 JSON 输出搜索结果
-  --collect <ID>     按搜索结果 ID 收藏，不依赖交互排名
   --replace          替换异源同名收藏
   -h, --help         显示帮助
 `,
@@ -167,50 +79,6 @@ const COMMAND_HELP: Record<string, string> = {
   -y, --yes          跳过确认
   -h, --help         显示帮助
 `,
-  list: `用法：
-  iskills list [关键词] [选项]
-
-交互浏览当前项目、收藏夹和 Agent 全局技能；JSON 输出项目与收藏夹。
-
-选项：
-  --json             以 JSON 格式输出
-  --note <文本>      编辑收藏夹技能的备注（需指定技能名）
-  --tags <标签>      编辑收藏夹技能的标签，逗号分隔（需指定技能名）
-  --source <类型>    绑定来源类型（需指定技能名和 --source-path）
-  --ref <引用>       绑定来源引用
-  --source-path <路径>  绑定来源路径
-  -h, --help         显示帮助
-`,
-  remove: `用法：
-  iskills remove <技能> [选项]
-
-从当前项目或收藏夹移除技能。
-
-选项：
-  -g, --global       从收藏夹移除（还回原始位置）
-  --from <目录>      限定移除范围
-  -y, --yes          跳过确认
-  -h, --help         显示帮助
-`,
-  update: `用法：
-  iskills update [技能...] [选项]
-
-更新 Git 来源的技能。
-
-选项：
-  --all              更新全部可更新的技能
-  -y, --yes          自动接受远端变更
-  -h, --help         显示帮助
-`,
-  sync: `用法：
-  iskills sync [选项]
-
-同步收藏夹 Git 仓库。
-
-选项：
-  --background       后台异步同步
-  -h, --help         显示帮助
-`,
   init: `用法：
   iskills init [选项]
 
@@ -228,6 +96,7 @@ export function printHelp(command?: string): void {
     console.log(help);
     return;
   }
+  if (command) throw new Error(`未知命令：${command}`);
   console.log(`Skill 收藏夹
 
 用法：
@@ -237,11 +106,7 @@ export function printHelp(command?: string): void {
   search [关键词]    搜索技能并保存到收藏夹
   add [技能...]      从收藏夹添加到当前项目
   import [来源]      导入本地路径或 Git 来源
-  list [关键词]      浏览当前项目、收藏夹和全局技能
-  remove <技能>      从当前项目或收藏夹移除
-  update [技能...]   更新 Git 来源技能
   init               初始化收藏夹 Git
-  sync               同步收藏夹 Git
 
 选项：
   -h, --help         显示帮助（可用 iskills help <命令>）

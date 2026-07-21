@@ -17,6 +17,7 @@ import {
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type {
   AgentConfig,
   CollectedSkill,
@@ -438,9 +439,8 @@ export async function isExactSymlink(path: string, target: string): Promise<bool
 
 function startBackgroundSync(): void {
   if (process.env.SK_NO_BACKGROUND_SYNC === '1' || process.env.SK_SYNC_CHILD === '1') return;
-  const entry = process.argv[1];
-  if (!entry) return;
-  const child = spawn(process.execPath, [entry, 'sync', '--background'], {
+  const entry = fileURLToPath(new URL('../background-sync.js', import.meta.url));
+  const child = spawn(process.execPath, [entry], {
     detached: true,
     stdio: 'ignore',
     env: { ...process.env, SK_SYNC_CHILD: '1' },
