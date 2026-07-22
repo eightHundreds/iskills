@@ -1,4 +1,4 @@
-// Semantic terminal palette. Keep its usage aligned with VISUAL-1 in the TUI guidelines.
+// Semantic terminal palette. Keep keys/values aligned with DESIGN.md V2/V3.
 export const termcnColors = {
   primary: '#7C3AED',
   foreground: '#FFFFFF',
