@@ -35,7 +35,7 @@ iskills init --remote <Git URL>  # 配置或更新 origin
 
 ## 开发文档
 
-- [设计准则（CLI/TUI 交互规范）](docs/design/README.md)
+- [CLI/TUI 交互规范](docs/cli-tui.md)
 - [终端 UI 架构 ADR](docs/adr/0001-terminal-ui-runtime.md)
 - [Agent Skills 目录支持调研](docs/agent-skills-support.md)
 

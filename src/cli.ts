@@ -54,8 +54,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   try {
     await run(argv);
   } catch (error) {
-    if (error instanceof InterruptError) {
-      process.exitCode = error.exitCode;
+    if (
+      error instanceof InterruptError ||
+      (error instanceof Error && error.name === 'InterruptError')
+    ) {
+      process.exitCode = 130;
       return;
     }
     throw error;

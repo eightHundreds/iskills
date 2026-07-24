@@ -1,7 +1,7 @@
 import type { CollectedSkill, Skill } from '../domain/types.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
-export type BrowserFocus = 'tabs' | 'agents' | 'list';
+export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list';
 
 export interface BrowserState {
   tab: BrowserTab;

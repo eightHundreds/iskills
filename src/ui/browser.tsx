@@ -1,6 +1,6 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { Provider, useAtom, useAtomValue } from 'jotai';
-import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import type {
   BrowserFocus,
   BrowserResult,
@@ -16,7 +16,6 @@ import {
   browserSelectionAtom,
   createBrowserStore,
 } from './browser-state.js';
-import { InkSession } from './session.js';
 import { skillFieldLabels } from './skill-labels.js';
 import {
   Modal,
@@ -26,7 +25,7 @@ import {
   termcnColors,
   type ModalBackgroundLine,
 } from './components/termcn.js';
-import { textWidth, wrapColumns } from './components/terminal-layout.js';
+import { padColumns, sliceColumns, textWidth, wrapColumns } from './components/terminal-layout.js';
 
 export type {
   BrowserFocus,
@@ -63,8 +62,10 @@ function useSpinner(active: boolean): string {
   return spinnerFrames[index] ?? '⠋';
 }
 
+const UNTAGGED_LABEL = '未标签';
+
 function skillGroups(skill: Skill): string[] {
-  return [...new Set(skill.tags?.length ? skill.tags : ['未分组'])];
+  return [...new Set(skill.tags?.length ? skill.tags : [UNTAGGED_LABEL])];
 }
 
 function groupedRows(skills: Skill[], query: string): SkillRow[] {
@@ -83,9 +84,9 @@ function groupedRows(skills: Skill[], query: string): SkillRow[] {
   }
   const sorted = [...groups].sort(([left], [right]) => {
     if (left === right) return 0;
-    return left === '未分组' ? 1 : right === '未分组' ? -1 : left.localeCompare(right);
+    return left === UNTAGGED_LABEL ? 1 : right === UNTAGGED_LABEL ? -1 : left.localeCompare(right);
   });
-  if (sorted.length === 1 && sorted[0]?.[0] === '未分组') {
+  if (sorted.length === 1 && sorted[0]?.[0] === UNTAGGED_LABEL) {
     return sorted[0][1].map((skill) => ({ type: 'skill', group: '', skill }));
   }
   const rows: SkillRow[] = [];
@@ -100,6 +101,117 @@ function flatRows(skills: Skill[], query: string): SkillRow[] {
   return skills
     .filter((skill) => matchesSkill(skill, query))
     .map((skill) => ({ type: 'skill', group: '', skill }));
+}
+
+const TAG_FILTER_ALL = '__all__';
+
+export function masterDetailLayout(
+  columns: number | undefined,
+  rows: number | undefined
+): boolean {
+  return (columns ?? 80) >= 100 && (rows ?? 24) >= 24;
+}
+
+function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
+  if (tag === TAG_FILTER_ALL) return skills;
+  if (tag === UNTAGGED_LABEL) {
+    return skills.filter((skill) => {
+      const groups = skillGroups(skill);
+      return groups.length === 1 && groups[0] === UNTAGGED_LABEL;
+    });
+  }
+  return skills.filter((skill) => skillGroups(skill).includes(tag));
+}
+
+function tagFilterOptions(
+  skills: Skill[],
+  groups: Extract<SkillRow, { type: 'group' }>[]
+): { key: string; label: string; skills: Skill[] }[] {
+  return [
+    { key: TAG_FILTER_ALL, label: '全部', skills },
+    ...groups.map((group) => ({
+      key: group.name,
+      label: group.name,
+      skills: group.skills,
+    })),
+  ];
+}
+
+function masterDetailWidths(
+  totalWidth: number,
+  divided = false
+): {
+  tagWidth: number;
+  peekWidth: number;
+  listWidth: number;
+} {
+  const dividers = divided ? 2 : 0;
+  const tagWidth = Math.min(18, Math.max(12, Math.floor(totalWidth * 0.14)));
+  const bodyWidth = totalWidth - tagWidth - dividers;
+  if (divided) {
+    const listWidth = Math.max(24, Math.floor(bodyWidth * 0.6));
+    const peekWidth = Math.max(22, bodyWidth - listWidth);
+    return { tagWidth, peekWidth, listWidth };
+  }
+  const peekWidth = Math.min(34, Math.max(22, Math.floor(totalWidth * 0.24)));
+  const listWidth = Math.max(24, totalWidth - tagWidth - peekWidth);
+  return { tagWidth, peekWidth, listWidth };
+}
+
+function masterDetailBlankRow(
+  tagWidth: number,
+  listWidth: number,
+  peekWidth: number
+): ReactNode {
+  const divider = '│';
+  return (
+    <Box flexDirection="row">
+      <Box width={tagWidth + 1} flexDirection="row">
+        <Text wrap="truncate-end">{padColumns('', tagWidth)}</Text>
+        <Text color={termcnColors.border}>{divider}</Text>
+      </Box>
+      <Box width={listWidth + 1} flexDirection="row">
+        <Text wrap="truncate-end">{padColumns('', listWidth)}</Text>
+        <Text color={termcnColors.border}>{divider}</Text>
+      </Box>
+      <Box width={peekWidth}>
+        <Text wrap="truncate-end">{padColumns('', peekWidth)}</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function masterDetailSeparator(
+  tagWidth: number,
+  listWidth: number,
+  peekWidth: number,
+  end: 'top' | 'bottom',
+  divided = false
+): string {
+  const left = '─'.repeat(tagWidth);
+  const middle = '─'.repeat(listWidth);
+  const right = '─'.repeat(peekWidth);
+  if (divided) {
+    const join = end === 'top' ? '┬' : '┴';
+    return `${left}${join}${middle}${join}${right}`;
+  }
+  return end === 'top'
+    ? `${left}┬${middle}┬${right}`
+    : `${left}┴${middle}┴${right}`;
+}
+
+function listSkillSummary(skill: Skill, preferNote: boolean, maxColumns: number): string {
+  const raw = (preferNote && skill.note?.trim()) || skill.description?.trim() || '';
+  if (!raw || maxColumns <= 0) return '';
+  if (textWidth(raw) <= maxColumns) return raw;
+  return `${sliceColumns(raw, 0, Math.max(1, maxColumns - 1))}…`;
+}
+
+function masterDetailViewportHeight(
+  rows: number | undefined,
+  chromeRows: number
+): number {
+  return Math.max(3, (rows ?? 24) - chromeRows - 1);
 }
 
 function selectableSkills(row: SkillRow): Skill[] {
@@ -134,14 +246,14 @@ export function browserFrameDimensions({
   hasProjectAgents: boolean;
   hasGlobalAgents: boolean;
 }): BrowserFrameDimensions {
-  const listViewportHeight = Math.max(3, (rows ?? 24) - 10);
+  const listViewportHeight = Math.max(3, (rows ?? 24) - 8);
   const tabContentHeight = Math.max(
     paneHeight(projectRows, listViewportHeight) + (hasProjectAgents ? 1 : 0),
     paneHeight(globalRows, listViewportHeight) + (hasGlobalAgents ? 1 : 0),
     paneHeight(collectionRows, listViewportHeight)
   );
   return {
-    frameHeight: tabContentHeight + 2,
+    frameHeight: tabContentHeight + 1,
     frameWidth: columns ?? 80,
     listViewportHeight,
   };
@@ -218,10 +330,10 @@ function shortcutModalContent(): string[] {
   return [
     '↑/↓ 移动焦点或列表项',
     '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
-    'Space 选择当前项或当前分组',
+    'Space 选择当前技能或当前标签下全部技能',
     'Enter 查看、添加或提交当前选择',
     '/ 搜索技能',
-    'g 跳转到分组（当前项目/收藏夹有分组时）',
+    'g 跳转到分组（有分组时）',
     'i 加入收藏夹（当前项目/全局已选择本地技能时）',
     't 批量加标签（收藏夹已选择技能时）',
     's 同步 Git（收藏夹可同步时）',
@@ -251,6 +363,10 @@ function SkillPane({
   cursor,
   isActive,
   preferNote = false,
+  compact = false,
+  layout = 'default',
+  columnWidth,
+  showPagination = true,
   showSource = false,
   showReferences = false,
   showGroup = false,
@@ -263,6 +379,10 @@ function SkillPane({
   cursor: number;
   isActive: boolean;
   preferNote?: boolean;
+  compact?: boolean;
+  layout?: 'default' | 'master';
+  columnWidth?: number | undefined;
+  showPagination?: boolean;
   showSource?: boolean;
   showReferences?: boolean;
   showGroup?: boolean;
@@ -274,11 +394,12 @@ function SkillPane({
   const { stdout } = useStdout();
   const selected = useAtomValue(browserSelectionAtom);
   const paneHeight = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
-  const height = rows.length > paneHeight ? Math.max(3, paneHeight - 1) : paneHeight;
+  const height = rows.length > paneHeight ? Math.max(3, paneHeight - (showPagination ? 1 : 0)) : paneHeight;
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
-  const paneWidth = Math.max(20, (stdout.columns ?? 80) - 4);
+  const paneWidth = columnWidth ?? Math.max(20, (stdout.columns ?? 80) - 4);
+  const summaryWidth = Math.max(8, paneWidth - 4);
   const rowText = (row: SkillRow, index: number): string => {
     if (row.type === 'group') {
       const groupSkills = row.skills;
@@ -288,7 +409,9 @@ function SkillPane({
       return `${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`;
     }
     const skill = row.skill;
-    const summary = (preferNote && skill.note) || skill.description;
+    const summary = compact || layout === 'master'
+      ? ''
+      : listSkillSummary(skill, preferNote, summaryWidth);
     const selectionMarker = selected.has(skill.path) ? '●' : '○';
     const name = showReferences && skill.isReference
       ? `引用 · ${skill.name}`
@@ -316,36 +439,45 @@ function SkillPane({
       );
     }
     const skill = row.skill;
-    const summary = (preferNote && skill.note) || skill.description;
+    const current = isActive && index === active;
+    const summary = compact || layout === 'master'
+      ? ''
+      : listSkillSummary(skill, preferNote, summaryWidth);
+    const inlineSummary = summary;
     const selectionMarker = selected.has(skill.path) ? '●' : '○';
-    return (
-      <Text
-        key={`${row.group}:${skill.path}:${index}`}
-        wrap="truncate-end"
-        {...(isActive && index === active ? { color: termcnColors.primary } : {})}
-      >
-        {`  ${isActive && index === active ? '›' : ' '} ${selectionMarker} `}
+    const nameLine = (
+      <>
+        {`  ${current ? '›' : ' '} ${selectionMarker} `}
         {showGroup && row.group && (
           <Text color={termcnColors.muted}>{row.group} / </Text>
         )}
         {showReferences && skill.isReference ? (
           <>
             <Text color={termcnColors.muted}>引用 · </Text>
-            <Text bold={isActive && index === active}>{skill.name}</Text>
+            <Text bold={current}>{skill.name}</Text>
           </>
         ) : showSource && !skill.fromCollection ? (
           `本地 · ${skill.name}`
         ) : (
-          <Text bold={isActive && index === active}>{skill.name}</Text>
+          <Text bold={current}>{skill.name}</Text>
         )}
         {updatingSkillName === skill.name ? (
           <Text color={termcnColors.primary}> 更新中</Text>
         ) : updates.has(skill.name) ? (
           <Text color={termcnColors.primary}> ↑</Text>
         ) : null}
-        {summary && (
-          <Text color={termcnColors.muted}> — {summary}</Text>
+        {inlineSummary && (
+          <Text color={termcnColors.muted}> — {inlineSummary}</Text>
         )}
+      </>
+    );
+    return (
+      <Text
+        key={`${row.group}:${skill.path}:${index}`}
+        wrap="truncate-end"
+        {...(current ? { color: termcnColors.primary } : {})}
+      >
+        {nameLine}
       </Text>
     );
   };
@@ -372,7 +504,7 @@ function SkillPane({
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
       )}
-      {rows.length > height && (
+      {showPagination && rows.length > height && (
         <Text color={termcnColors.muted}>
           {offset + 1}–{Math.min(offset + height, rows.length)} / {rows.length}
         </Text>
@@ -391,21 +523,486 @@ function AgentTabs({
   focused: boolean;
 }) {
   return (
-    <Box paddingLeft={1}>
-      {groups.map((group, index) => (
-        <Box key={group.agent}>
+    <Box paddingLeft={1} gap={2}>
+      {groups.map((group) => {
+        const active = group.agent === agent;
+        // Keyboard focus only: never use foreground/white for "current agent".
+        // Unfocused row stays fully muted so switching main tabs does not look
+        // like the agent row is already selected.
+        const highlighted = focused && active;
+        return (
           <Text
-            color={group.agent === agent ? termcnColors.primary : termcnColors.muted}
-            bold={group.agent === agent}
-            underline={group.agent === agent}
-            inverse={focused && group.agent === agent}
+            key={group.agent}
+            color={highlighted ? termcnColors.primary : termcnColors.muted}
+            underline={highlighted}
           >
-            {group.agent} ({group.skills.length})
+            {`${group.agent} ${group.skills.length}`}
           </Text>
-          {index < groups.length - 1 && <Text color={termcnColors.border}> │ </Text>}
+        );
+      })}
+    </Box>
+  );
+}
+
+function tagSidebarLine(
+  current: boolean,
+  marker: string,
+  label: string,
+  count: number,
+  width: number
+): string {
+  const prefix = `${current ? '›' : ' '} ${marker} ${label}`;
+  const countText = String(count);
+  const gap = Math.max(1, width - textWidth(prefix) - textWidth(countText));
+  return `${prefix}${' '.repeat(gap)}${countText}`;
+}
+
+function categorySidebarLine(
+  current: boolean,
+  label: string,
+  count: number,
+  width: number
+): string {
+  const prefix = current ? '› ' : '  ';
+  const countText = String(count);
+  const labelPart = `${prefix}${label}`;
+  const gap = Math.max(1, width - textWidth(labelPart) - textWidth(countText));
+  return padColumns(`${labelPart}${' '.repeat(gap)}${countText}`, width);
+}
+
+function collectionSourceLabel(skill: CollectedSkill): string {
+  const source = skill.source;
+  if (!source) return '未知';
+  if (source.type === 'git' && source.url) return 'Git';
+  if (source.type === 'local' || source.path) return '本地';
+  if (source.type === 'unknown' && source.path) return '本地';
+  if (source.type === 'unknown') return '本地';
+  return source.type;
+}
+
+function collectionVersionLabel(skill: CollectedSkill): string | undefined {
+  const version = skill.source?.commit ?? skill.source?.ref;
+  return version?.trim() || undefined;
+}
+
+function collectionCategoryLines(
+  options: { key: string; label: string; skills: Skill[] }[],
+  cursor: number,
+  isActive: boolean,
+  width: number,
+  viewportHeight: number
+): string[] {
+  const active = Math.max(0, Math.min(cursor, options.length - 1));
+  const offset = Math.max(
+    0,
+    Math.min(active - Math.floor(viewportHeight / 2), options.length - viewportHeight)
+  );
+  const visible = options.slice(offset, offset + viewportHeight);
+  const lines = visible.map((option, visibleIndex) => {
+    const index = offset + visibleIndex;
+    return categorySidebarLine(isActive && index === active, option.label, option.skills.length, width);
+  });
+  while (lines.length < viewportHeight) lines.push('');
+  return lines.slice(0, viewportHeight);
+}
+
+function masterSkillNameLine(
+  row: Extract<SkillRow, { type: 'skill' }>,
+  index: number,
+  active: number,
+  isActive: boolean,
+  selected: Set<string>,
+  updates: Set<string>,
+  updatingSkillName: string | undefined,
+  showGroup: boolean
+): string {
+  const skill = row.skill;
+  const current = isActive && index === active;
+  const selectionMarker = selected.has(skill.path) ? '●' : '○';
+  const update = updatingSkillName === skill.name
+    ? ' 更新中'
+    : updates.has(skill.name)
+      ? ' ↑'
+      : '';
+  const group = showGroup && row.group ? `${row.group} / ` : '';
+  return `${current ? '›' : ' '} ${selectionMarker} ${group}${skill.name}${update}`;
+}
+
+function masterTagColumnLines(
+  options: { key: string; label: string; skills: Skill[] }[],
+  _activeTag: string,
+  cursor: number,
+  isActive: boolean,
+  selected: Set<string>,
+  width: number,
+  viewportHeight: number
+): string[] {
+  const active = Math.max(0, Math.min(cursor, options.length - 1));
+  const offset = Math.max(0, Math.min(active - Math.floor(viewportHeight / 2), options.length - viewportHeight));
+  const visible = options.slice(offset, offset + viewportHeight);
+  const lines = visible.map((option, visibleIndex) => {
+    const index = offset + visibleIndex;
+    const count = option.skills.filter((skill) => selected.has(skill.path)).length;
+    const marker =
+      count === 0 ? '○' : count === option.skills.length && option.skills.length ? '●' : '◐';
+    const current = isActive && index === active;
+    return tagSidebarLine(current, marker, option.label, option.skills.length, width);
+  });
+  while (lines.length < viewportHeight) lines.push('');
+  return lines.slice(0, viewportHeight);
+}
+
+const COLLECTION_SKILL_PREFIX_WIDTH = 4;
+
+function collectionSkillPrefix(current: boolean, picked: boolean): string {
+  return `${current ? '›' : ' '} ${picked ? '▣' : ' '} `;
+}
+
+function collectionSkillNameLine(
+  row: Extract<SkillRow, { type: 'skill' }>,
+  index: number,
+  active: number,
+  isActive: boolean,
+  selected: Set<string>,
+  updates: Set<string>,
+  updatingSkillName: string | undefined,
+  listWidth: number
+): string {
+  const skill = row.skill;
+  const current = isActive && index === active;
+  const picked = selected.has(skill.path);
+  const prefix = collectionSkillPrefix(current, picked);
+  const badges = [
+    updatingSkillName === skill.name ? '更新中' : updates.has(skill.name) ? '↑' : '',
+  ].filter(Boolean);
+  const badgeText = badges.length ? ` ${badges.join(' ')}` : '';
+  return padColumns(`${prefix}${skill.name}${badgeText}`, listWidth);
+}
+
+function collectionListColumnLines(
+  rows: SkillRow[],
+  cursor: number,
+  isActive: boolean,
+  preferNote: boolean,
+  listWidth: number,
+  viewportHeight: number,
+  selected: Set<string>,
+  updates: Set<string>,
+  updatingSkillName: string | undefined
+): { lines: string[]; skillOffset: number; activeLineIndexes: Set<number>; selectedLineIndexes: Set<number> } {
+  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
+  const active = Math.max(0, Math.min(cursor, rows.length - 1));
+  const skillOffset = Math.max(
+    0,
+    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, rows.length - skillViewport))
+  );
+  const visible = rows.slice(skillOffset, skillOffset + skillViewport);
+  const summaryWidth = Math.max(8, listWidth - 2);
+  const lines: string[] = [];
+  const activeLineIndexes = new Set<number>();
+  const selectedLineIndexes = new Set<number>();
+  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
+    const row = visible[visibleIndex];
+    if (row?.type !== 'skill') continue;
+    const index = skillOffset + visibleIndex;
+    const nameLineIndex = lines.length;
+    lines.push(collectionSkillNameLine(
+      row,
+      index,
+      active,
+      isActive,
+      selected,
+      updates,
+      updatingSkillName,
+      listWidth
+    ));
+    const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
+    const summaryPrefix = ' '.repeat(COLLECTION_SKILL_PREFIX_WIDTH);
+    lines.push(summary ? `${summaryPrefix}${summary}` : summaryPrefix);
+    if (isActive && index === active) {
+      activeLineIndexes.add(nameLineIndex);
+      activeLineIndexes.add(nameLineIndex + 1);
+    } else if (selected.has(row.skill.path)) {
+      selectedLineIndexes.add(nameLineIndex);
+    }
+  }
+  while (lines.length < viewportHeight) lines.push('');
+  return {
+    lines: lines.slice(0, viewportHeight),
+    skillOffset,
+    activeLineIndexes,
+    selectedLineIndexes,
+  };
+}
+
+function masterListColumnLines(
+  rows: SkillRow[],
+  cursor: number,
+  isActive: boolean,
+  preferNote: boolean,
+  listWidth: number,
+  viewportHeight: number,
+  selected: Set<string>,
+  updates: Set<string>,
+  updatingSkillName: string | undefined,
+  showGroup: boolean
+): { lines: string[]; skillOffset: number } {
+  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
+  const active = Math.max(0, Math.min(cursor, rows.length - 1));
+  const skillOffset = Math.max(
+    0,
+    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, rows.length - skillViewport))
+  );
+  const visible = rows.slice(skillOffset, skillOffset + skillViewport);
+  const summaryWidth = Math.max(8, listWidth - 2);
+  const lines: string[] = [];
+  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
+    const row = visible[visibleIndex];
+    if (row?.type !== 'skill') continue;
+    const index = skillOffset + visibleIndex;
+    lines.push(masterSkillNameLine(
+      row,
+      index,
+      active,
+      isActive,
+      selected,
+      updates,
+      updatingSkillName,
+      showGroup
+    ));
+    const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
+    lines.push(summary ? `  ${summary}` : '  ');
+  }
+  while (lines.length < viewportHeight) lines.push('');
+  return { lines: lines.slice(0, viewportHeight), skillOffset };
+}
+
+interface CollectionDetailRow {
+  text: string;
+  bold?: boolean;
+  muted?: boolean;
+  primary?: boolean;
+}
+
+function browseDetailRows(
+  skill: Skill | undefined,
+  width: number,
+  viewportHeight: number,
+  collection: boolean,
+  updates: Set<string>,
+  updatingSkillName: string | undefined
+): CollectionDetailRow[] {
+  if (!skill) {
+    return [{ text: '选择技能查看', muted: true }];
+  }
+  const title = skill.isReference ? `引用 · ${skill.name}` : skill.name;
+  const descriptionLines = peekFieldLines(
+    '描述',
+    skill.description || '无描述',
+    width,
+    Math.max(2, Math.floor(viewportHeight * 0.35))
+  ).map((line) => ({ text: line, muted: true } satisfies CollectionDetailRow));
+  const metadataRows: CollectionDetailRow[] = [
+    {
+      text: `${title}${
+        updatingSkillName === skill.name
+          ? ' 更新中'
+          : updates.has(skill.name)
+            ? ' ↑'
+            : ''
+      }`,
+      bold: true,
+      primary: true,
+    },
+    { text: '' },
+  ];
+  if (collection) {
+    const collected = skill as CollectedSkill;
+    const version = collectionVersionLabel(collected) ?? '--';
+    metadataRows.push(
+      ...peekFieldLines('来源', collectionSourceLabel(collected), width, 1).map((line) => ({
+        text: line,
+      })),
+      ...peekFieldLines('版本', version, width, 1).map((line) => ({ text: line }))
+    );
+    const triggerTags = collected.tags?.length
+      ? collected.tags.map((tag) => `[${tag}]`).join(' ')
+      : '--';
+    metadataRows.push(
+      { text: '' },
+      ...peekFieldLines('标签', triggerTags, width, 2).map((line) => ({
+        text: line,
+        muted: true,
+      }))
+    );
+  } else {
+    metadataRows.push(...peekFieldLines('位置', skill.path, width, 2).map((line) => ({ text: line })));
+  }
+  // 描述长度最不稳定，放在固定元数据之后，切换技能时上方字段位置不跳。
+  // 不要用空行撑到视口底，否则看起来像「贴底」。
+  return [...metadataRows, { text: '' }, ...descriptionLines].slice(0, viewportHeight);
+}
+
+function masterPeekColumnLines(
+  skill: Skill | undefined,
+  collection: boolean,
+  width: number,
+  viewportHeight: number
+): string[] {
+  if (!skill) {
+    return Array.from({ length: viewportHeight }, (_, index) =>
+      index === 0 ? '选择技能查看' : ''
+    );
+  }
+  const tags = collection
+    ? (skill as CollectedSkill).tags?.length
+      ? (skill as CollectedSkill).tags!.join(', ')
+      : '无'
+    : skillGroups(skill).join(', ') || '无';
+  const note = collection ? (skill as CollectedSkill).note?.trim() || '无' : '';
+  const source = collection && (skill as CollectedSkill).source
+    ? (skill as CollectedSkill).source!.url ?? (skill as CollectedSkill).source!.type
+    : '';
+  const descriptionBudget = Math.max(3, viewportHeight - (collection ? 8 : 6));
+  const fields = [
+    skill.name,
+    ...peekFieldLines('描述', skill.description || '无描述', width, descriptionBudget),
+    ...peekFieldLines('标签', tags, width, 1),
+    ...(collection ? [
+      ...peekFieldLines('备注', note, width, 1),
+      ...peekFieldLines('来源', source || '无', width, 1),
+    ] : [
+      ...peekFieldLines('位置', skill.path, width, 2),
+    ]),
+    collection ? '→ 全屏详情 · Space 选中' : 'Enter 查看 · Space 选中',
+  ];
+  while (fields.length < viewportHeight) fields.push('');
+  return fields.slice(0, viewportHeight);
+}
+
+function masterDetailColumnText(
+  line: string,
+  width: number,
+  options: {
+    color?: string;
+    bold?: boolean;
+    inverse?: boolean;
+    muted?: boolean;
+  } = {}
+): ReactNode {
+  const padded = padColumns(sliceColumns(line, 0, width), width);
+  return (
+    <Text
+      wrap="truncate-end"
+      {...(options.color ? { color: options.color } : {})}
+      {...(options.bold ? { bold: true } : {})}
+      {...(options.inverse ? { inverse: true } : {})}
+      {...(options.muted ? { color: termcnColors.muted } : {})}
+    >
+      {padded}
+    </Text>
+  );
+}
+
+function MasterDetailBody({
+  tagLines,
+  listLines,
+  peekLines,
+  tagWidth,
+  listWidth,
+  peekWidth,
+  tagActive,
+  listActive,
+  collectionHome = false,
+  listActiveLineIndexes,
+  listSelectedLineIndexes,
+  detailRows,
+}: {
+  tagLines: string[];
+  listLines: string[];
+  peekLines: string[];
+  tagWidth: number;
+  listWidth: number;
+  peekWidth: number;
+  tagActive: boolean;
+  listActive: boolean;
+  collectionHome?: boolean;
+  listActiveLineIndexes?: Set<number>;
+  listSelectedLineIndexes?: Set<number>;
+  detailRows?: CollectionDetailRow[];
+}): ReactNode {
+  const rows = Math.max(tagLines.length, listLines.length, peekLines.length);
+  const divided = collectionHome;
+  const divider = divided ? '│' : '';
+  const tagColumnWidth = tagWidth + (divider ? 1 : 0);
+  const listColumnWidth = listWidth + (divider ? 1 : 0);
+  return (
+    <>
+      {Array.from({ length: rows }, (_, index) => (
+        <Box key={`master-detail-row:${index}`} flexDirection="row">
+          <Box width={tagColumnWidth} flexDirection="row">
+            {masterDetailColumnText(tagLines[index] ?? '', tagWidth, {
+              ...(tagActive && tagLines[index]?.startsWith('›')
+                ? collectionHome
+                  ? { inverse: true }
+                  : { color: termcnColors.primary }
+                : {}),
+            })}
+            {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
+          </Box>
+          <Box width={listColumnWidth} flexDirection="row">
+            {masterDetailColumnText(listLines[index] ?? '', listWidth, {
+              ...(listActiveLineIndexes?.has(index)
+                ? { inverse: true }
+                : listSelectedLineIndexes?.has(index)
+                  ? { color: termcnColors.primary, bold: true }
+                  : listActive && listLines[index]?.startsWith('›')
+                    ? { color: termcnColors.primary, bold: true }
+                    : index % 2 === 1 && listLines[index]?.trim()
+                      ? { muted: true }
+                      : {}),
+            })}
+            {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
+          </Box>
+          <Box width={peekWidth}>
+            {detailRows?.[index] ? (
+              <Text
+                wrap="truncate-end"
+                {...(detailRows[index]?.primary ? { color: termcnColors.primary } : {})}
+                {...(detailRows[index]?.muted ? { color: termcnColors.muted } : {})}
+                {...(detailRows[index]?.bold ? { bold: true } : {})}
+              >
+                {padColumns(sliceColumns(detailRows[index]?.text ?? '', 0, peekWidth), peekWidth)}
+              </Text>
+            ) : (
+              <Text
+                wrap="truncate-end"
+                color={index === 0 && peekLines[index] !== '选择技能查看' ? termcnColors.primary : termcnColors.muted}
+                bold={index === 0 && peekLines[index] !== '选择技能查看'}
+              >
+                {padColumns(sliceColumns(peekLines[index] ?? '', 0, peekWidth), peekWidth)}
+              </Text>
+            )}
+          </Box>
         </Box>
       ))}
-    </Box>
+    </>
+  );
+}
+
+function peekFieldLines(
+  label: string,
+  value: string,
+  width: number,
+  maxLines: number
+): string[] {
+  const labelWidth = 6;
+  const valueWidth = Math.max(1, width - labelWidth);
+  const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
+  return lines.map((line, index) =>
+    index === 0
+      ? `${padColumns(`${label}`, labelWidth)}${line}`
+      : `${' '.repeat(labelWidth)}${line}`
   );
 }
 
@@ -520,7 +1117,46 @@ function BrowserContent({
   const selectedGlobalLocal = globalGroups.flatMap((group) =>
     group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
   );
-  const currentRow = rows[cursor];
+  const global = globalGroups.flatMap((group) => group.skills);
+  const groupRows = useMemo(
+    () => groupedRows(
+      tab === 'project' ? project : tab === 'global' ? global : collection,
+      ''
+    ),
+    [collection, global, project, tab]
+  );
+  const groups = groupRows.filter(
+    (row): row is Extract<SkillRow, { type: 'group' }> => row.type === 'group'
+  );
+  const { stdout } = useStdout();
+  const useBrowseHome =
+    masterDetailLayout(stdout.columns, stdout.rows) &&
+    !query.trim();
+  const useMasterDetail = useBrowseHome;
+  const tabSkills =
+    tab === 'collection'
+      ? collection
+      : tab === 'project'
+        ? projectGroup?.skills ?? []
+        : tab === 'global'
+          ? globalGroup?.skills ?? []
+          : [];
+  const tagOptions = useMemo(
+    () => tagFilterOptions(tabSkills, groups),
+    [groups, tabSkills]
+  );
+  const [tagFilter, setTagFilter] = useState(TAG_FILTER_ALL);
+  const [tagCursor, setTagCursor] = useState(0);
+  const masterDetailSkills = useMemo(
+    () => skillsForTagFilter(tabSkills, tagFilter),
+    [tabSkills, tagFilter]
+  );
+  const masterDetailRows = useMemo(
+    () => flatRows(masterDetailSkills, query),
+    [masterDetailSkills, query]
+  );
+  const listRows = useMasterDetail ? masterDetailRows : rows;
+  const currentRow = listRows[cursor];
   const actionSkills = tab === 'project'
     ? selectedProject.length
       ? selectedProject
@@ -533,19 +1169,13 @@ function BrowserContent({
     focus === 'list' &&
     actionSkills.length > 0 &&
     actionSkills.every((skill) => skill.isReference);
-  const groupRows = useMemo(
-    () => groupedRows(tab === 'project' ? project : collection, ''),
-    [collection, project, tab]
-  );
-  const groups = groupRows.filter(
-    (row): row is Extract<SkillRow, { type: 'group' }> => row.type === 'group'
-  );
-
   const previousTab = useRef(tab);
   useEffect(() => {
     if (previousTab.current !== tab) {
       setCursor(0);
       setSelected(new Set());
+      setTagFilter(TAG_FILTER_ALL);
+      setTagCursor(0);
       previousTab.current = tab;
     }
   }, [tab]);
@@ -557,8 +1187,8 @@ function BrowserContent({
     }
   }, [agent]);
   useEffect(() => {
-    if (focus === 'agents' && !hasAgentTabs) setFocus('list');
-  }, [focus, hasAgentTabs]);
+    if (focus === 'agents' && !hasAgentTabs) setFocus(useMasterDetail ? 'tags' : 'list');
+  }, [focus, hasAgentTabs, useMasterDetail]);
   const checkedUpdates = useRef(false);
   useEffect(() => {
     if (tab !== 'collection' || checkedUpdates.current) return;
@@ -630,7 +1260,6 @@ function BrowserContent({
         }
     : undefined;
   const activeConfirmation = confirmation ?? localConfirmation;
-  const { stdout } = useStdout();
   const frame = browserFrameDimensions({
     rows: stdout.rows,
     columns: stdout.columns,
@@ -642,6 +1271,33 @@ function BrowserContent({
   });
   const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
   const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
+  const masterDetailInnerWidth = Math.max(40, frame.frameWidth - 2);
+  const masterDetailColumns = masterDetailWidths(masterDetailInnerWidth, useBrowseHome);
+  const masterDetailBrowseHeight = (withAgents: boolean): number =>
+    masterDetailViewportHeight(stdout.rows, 1 + 2 + 3 + (withAgents ? 1 : 0));
+  const browseViewportHeight = (withAgents: boolean): number =>
+    useMasterDetail
+      ? masterDetailBrowseHeight(withAgents)
+      : withAgents
+        ? agentPaneViewportHeight
+        : collectionPaneViewportHeight;
+  const masterListVisibleHeight = Math.max(1, Math.floor(masterDetailBrowseHeight(false) / 2));
+  const masterListOffset = useMasterDetail
+    ? Math.max(
+        0,
+        Math.min(
+          cursor - Math.floor(masterListVisibleHeight / 2),
+          Math.max(0, listRows.length - masterListVisibleHeight)
+        )
+      )
+    : 0;
+  const listScrollHint = useBrowseHome && listRows.length
+    ? `${cursor + 1}/${listRows.length}`
+    : useMasterDetail && listRows.length > masterListVisibleHeight
+      ? `${masterListOffset + 1}–${Math.min(masterListOffset + masterListVisibleHeight, listRows.length)} / ${listRows.length}`
+      : '';
+  const peekSkill =
+    focus === 'list' && currentRow?.type === 'skill' ? currentRow.skill : undefined;
   const modal: BrowserModal | undefined = activeConfirmation
     ? {
         title: ` ${activeConfirmation.title} `,
@@ -691,6 +1347,9 @@ function BrowserContent({
     },
     { isActive: showActions && !activeConfirmation }
   );
+  useEffect(() => {
+    if (focus === 'tags' && !useMasterDetail) setFocus('list');
+  }, [focus, useMasterDetail, setFocus]);
   useInput(
     (input, key) => {
       if (input === '?') return setShowShortcuts(true);
@@ -700,14 +1359,18 @@ function BrowserContent({
         setCursorBeforeSearch(cursorRef.current);
         return setSearching(true);
       }
-      if (input === 'g' && tab !== 'global' && groups.length) {
+      if (input === 'g' && groups.length) {
         return setChoosingGroup(true);
       }
       if (input === 's' && tab === 'collection' && canSync) {
         return finish({ ...browserState(), type: 'sync' });
       }
       if (focus === 'tabs') {
-        if (key.downArrow) return setFocus(hasAgentTabs ? 'agents' : 'list');
+        if (key.downArrow) {
+          if (hasAgentTabs) return setFocus('agents');
+          if (useMasterDetail) return setFocus('tags');
+          return setFocus('list');
+        }
         if (key.leftArrow || key.rightArrow) {
           const order: BrowserTab[] = ['project', 'global', 'collection'];
           const index = order.indexOf(tab);
@@ -718,7 +1381,7 @@ function BrowserContent({
       }
       if (focus === 'agents') {
         if (key.upArrow) return setFocus('tabs');
-        if (key.downArrow) return setFocus('list');
+        if (key.downArrow) return setFocus(useMasterDetail ? 'tags' : 'list');
         if (key.leftArrow || key.rightArrow) {
           const names = currentAgentGroups.map((group) => group.agent);
           const index = names.indexOf(activeAgent);
@@ -727,7 +1390,47 @@ function BrowserContent({
         }
         return;
       }
-      const row = rows[cursorRef.current];
+      if (focus === 'tags') {
+        const selectTag = (index: number): void => {
+          const option = tagOptions[index];
+          if (!option) return;
+          setTagFilter(option.key);
+          setTagCursor(index);
+          setCursor(0);
+        };
+        if (key.upArrow) {
+          if (tagCursor === 0) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+          selectTag(tagCursor - 1);
+          return;
+        }
+        if (key.downArrow) {
+          if (tagCursor >= tagOptions.length - 1) return setFocus('list');
+          selectTag(tagCursor + 1);
+          return;
+        }
+        if (key.leftArrow) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+        if (key.rightArrow) {
+          selectTag(tagCursor);
+          return setFocus('list');
+        }
+        const tagOption = tagOptions[tagCursor];
+        if (input === ' ' && tagOption) {
+          const paths = tagOption.skills.map((skill) => skill.path);
+          return setSelected((previous) => {
+            const next = new Set(previous);
+            const allSelected = paths.every((path) => previous.has(path));
+            for (const path of paths) allSelected ? next.delete(path) : next.add(path);
+            return next;
+          });
+        }
+        if (key.return || input.includes('\r') || input.includes('\n')) {
+          selectTag(tagCursor);
+          return setFocus('list');
+        }
+        return;
+      }
+      if (focus !== 'list') return;
+      const row = listRows[cursorRef.current];
       if (input === 'm' && canOpenActions) return setShowActions(true);
       if (input === 'u' && tab === 'collection') {
         const updateable = selectedCollection.length
@@ -774,12 +1477,16 @@ function BrowserContent({
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
         return finish({ ...browserState(), type: 'import', skills: selectedLocal });
       }
+      if (key.leftArrow && useMasterDetail) return setFocus('tags');
       if (key.upArrow) {
-        if (cursorRef.current === 0) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+        if (cursorRef.current === 0) {
+          if (useMasterDetail) return setFocus('tags');
+          return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+        }
         return setCursor((index) => index - 1);
       }
       if (key.downArrow) {
-        return setCursor((index) => Math.min(Math.max(0, rows.length - 1), index + 1));
+        return setCursor((index) => Math.min(Math.max(0, listRows.length - 1), index + 1));
       }
       if (input === ' ' && row) {
         const paths = selectableSkills(row).map((skill) => skill.path);
@@ -791,13 +1498,16 @@ function BrowserContent({
           return next;
         });
       }
-      if (key.rightArrow && row?.type === 'skill') {
+      if (key.rightArrow && row?.type === 'skill' && !useBrowseHome) {
         if (tab === 'collection') return openDetail(row.skill, true);
         if (row.skill.fromCollection) return openDetail(row.skill, true);
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {
         if (tab === 'collection' && selectedCollection.length) {
           return finish({ ...browserState(), type: 'add', skills: selectedCollection });
+        }
+        if (tab === 'collection' && row?.type === 'skill') {
+          return openDetail(row.skill, true);
         }
         if (tab !== 'collection') {
           if (row?.type === 'skill') openDetail(row.skill, false);
@@ -822,27 +1532,147 @@ function BrowserContent({
     { isActive: choosingGroup }
   );
 
+  const renderBrowsePane = (
+    paneRows: SkillRow[],
+    viewportHeight: number,
+    options: {
+      preferNote?: boolean;
+      showSource?: boolean;
+      showReferences?: boolean;
+      showGroup?: boolean;
+      collection?: boolean;
+      updates?: Set<string>;
+      updatingSkillName?: string | undefined;
+    } = {}
+  ): ReactNode => {
+    if (useBrowseHome) {
+      const { tagWidth, listWidth, peekWidth } = masterDetailColumns;
+      const chromeHeight = viewportHeight + 3;
+      const selectedPaths = selected;
+      if (modal) {
+        return (
+          <Modal
+            open
+            title={modal.title}
+            content={modal.content}
+            width={modal.width}
+            viewportWidth={masterDetailInnerWidth}
+            viewportHeight={chromeHeight}
+            backgroundLines={Array.from({ length: chromeHeight }, (_, index) => ({
+              text: '',
+              content: <Text key={`master-detail-modal-bg:${index}`}> </Text>,
+            }))}
+            onEscape={modal.onEscape}
+            {...(modal.muteLastContent ? { muteLastContent: true } : {})}
+          />
+        );
+      }
+      const tagLines = collectionCategoryLines(
+        tagOptions,
+        tagCursor,
+        focus === 'tags',
+        tagWidth,
+        viewportHeight
+      );
+      const {
+        lines: listLines,
+        activeLineIndexes: listActiveLineIndexes,
+        selectedLineIndexes: listSelectedLineIndexes,
+      } = collectionListColumnLines(
+        paneRows,
+        cursor,
+        focus === 'list',
+        options.preferNote ?? false,
+        listWidth,
+        viewportHeight,
+        selectedPaths,
+        options.updates ?? new Set<string>(),
+        options.updatingSkillName
+      );
+      const detailRows = browseDetailRows(
+        peekSkill,
+        peekWidth,
+        viewportHeight,
+        options.collection ?? false,
+        options.updates ?? new Set<string>(),
+        options.updatingSkillName
+      );
+      const headerLine = (left: string, middle: string, right: string): ReactNode => (
+        <Box flexDirection="row">
+          <Box width={tagWidth + 1} flexDirection="row">
+            <Text bold color={termcnColors.muted} wrap="truncate-end">
+              {padColumns(left, tagWidth)}
+            </Text>
+            <Text color={termcnColors.border}>│</Text>
+          </Box>
+          <Box width={listWidth + 1} flexDirection="row">
+            <Text bold color={termcnColors.muted} wrap="truncate-end">
+              {padColumns(middle, listWidth)}
+            </Text>
+            <Text color={termcnColors.border}>│</Text>
+          </Box>
+          <Box width={peekWidth}>
+            <Text bold color={termcnColors.muted} wrap="truncate-end">
+              {padColumns(right, peekWidth)}
+            </Text>
+          </Box>
+        </Box>
+      );
+      return (
+        <Box flexDirection="column">
+          <Text color={termcnColors.border} wrap="truncate-end">
+            {masterDetailSeparator(tagWidth, listWidth, peekWidth, 'top', true)}
+          </Text>
+          {headerLine('标签', '技能', '详情')}
+          {masterDetailBlankRow(tagWidth, listWidth, peekWidth)}
+          <MasterDetailBody
+            tagLines={tagLines}
+            listLines={listLines}
+            peekLines={[]}
+            tagWidth={tagWidth}
+            listWidth={listWidth}
+            peekWidth={peekWidth}
+            tagActive={focus === 'tags'}
+            listActive={focus === 'list'}
+            collectionHome
+            {...(listActiveLineIndexes ? { listActiveLineIndexes } : {})}
+            {...(listSelectedLineIndexes ? { listSelectedLineIndexes } : {})}
+            detailRows={detailRows}
+          />
+          <Text color={termcnColors.border} wrap="truncate-end">
+            {masterDetailSeparator(tagWidth, listWidth, peekWidth, 'bottom', true)}
+          </Text>
+        </Box>
+      );
+    }
+    return (
+      <SkillPane
+        rows={paneRows}
+        cursor={cursor}
+        isActive={focus === 'list'}
+        viewportHeight={viewportHeight}
+        modal={modal}
+        {...options}
+      />
+    );
+  };
+
   const tabs = [
     {
       key: 'project',
       label: `当前项目 ${project.length}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
+        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
             groups={visibleProjectGroups}
             agent={activeProjectAgent}
-            focused={focus === 'agents'}
+            focused={!searching && !modal && focus === 'agents'}
           />
-          <SkillPane
-            rows={projectRows}
-            cursor={cursor}
-            isActive={focus === 'list'}
-            viewportHeight={agentPaneViewportHeight}
-            modal={modal}
-            showSource
-            showReferences
-            showGroup={Boolean(query.trim())}
-          />
+          {renderBrowsePane(listRows, browseViewportHeight(true), {
+            showSource: true,
+            showReferences: true,
+            showGroup: Boolean(query.trim()),
+          })}
         </Box>
       ),
     },
@@ -850,20 +1680,16 @@ function BrowserContent({
       key: 'global',
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
+        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
             groups={visibleGlobalGroups}
             agent={activeGlobalAgent}
-            focused={focus === 'agents'}
+            focused={!searching && !modal && focus === 'agents'}
           />
-          <SkillPane
-            rows={globalRows}
-            cursor={cursor}
-            isActive={focus === 'list'}
-            viewportHeight={agentPaneViewportHeight}
-            modal={modal}
-            showSource
-          />
+          {renderBrowsePane(listRows, browseViewportHeight(true), {
+            showSource: true,
+            showGroup: Boolean(query.trim()),
+          })}
         </Box>
       ),
     },
@@ -871,18 +1697,14 @@ function BrowserContent({
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 2}>
-          <SkillPane
-            rows={collectionRows}
-            cursor={cursor}
-            isActive={focus === 'list'}
-            viewportHeight={collectionPaneViewportHeight}
-            modal={modal}
-            preferNote
-            showGroup={Boolean(query.trim())}
-            updates={updateCheck.updates}
-            updatingSkillName={updatingSkillName}
-          />
+        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
+          {renderBrowsePane(listRows, browseViewportHeight(false), {
+            preferNote: true,
+            collection: true,
+            showGroup: Boolean(query.trim()),
+            updates: updateCheck.updates,
+            updatingSkillName,
+          })}
         </Box>
       ),
     },
@@ -898,9 +1720,17 @@ function BrowserContent({
           value: group.name,
         }))}
         onSubmit={(name) => {
-          setQuery('');
-          setCursor(groupRows.findIndex((row) => row.type === 'group' && row.name === name));
-          setFocus('list');
+          if (useMasterDetail) {
+            const index = tagOptions.findIndex((option) => option.key === name);
+            setTagFilter(name);
+            setTagCursor(Math.max(0, index));
+            setCursor(0);
+            setFocus('list');
+          } else {
+            setQuery('');
+            setCursor(groupRows.findIndex((row) => row.type === 'group' && row.name === name));
+            setFocus('list');
+          }
           setChoosingGroup(false);
         }}
       />
@@ -940,6 +1770,51 @@ function BrowserContent({
     visibleStatus,
     query ? `搜索：${query}` : '',
   ].filter(Boolean);
+  const navigationHint = updatingSkillName
+    ? `正在${workingAction} · 请稍候`
+    : activeConfirmation
+      ? '等待确认'
+      : showActions
+        ? 'Enter 执行 · Esc 返回'
+        : showShortcuts
+          ? 'Esc 关闭'
+          : focus === 'tabs'
+            ? `←/→ 切换 Tab · ↓ 进入 · / 筛选 · ?`
+            : focus === 'agents'
+              ? `←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 筛选 · ?`
+              : focus === 'tags'
+                ? useBrowseHome
+                  ? `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 搜索 · ?`
+                  : `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 筛选 · ?`
+                : useBrowseHome && focus === 'list'
+                  ? tab === 'collection' && selectedCollection.length
+                    ? `↑↓ 移动 · Enter 添加 · Space 选中 · d 删除 · / 搜索 · ?`
+                    : `↑↓ 移动 · Enter 详情 · Space 选中 · d 删除 · / 搜索 · ?`
+                  : useMasterDetail && canViewWithRightArrow
+                  ? `← 标签 · Space 选中 · → 全屏详情 · d 删除 · / 筛选 · ?`
+                  : useMasterDetail && canViewWithEnter
+                    ? `← 标签 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
+                    : useMasterDetail
+                      ? `← 标签 · Space 选中 · d 删除 · / 筛选 · ?`
+                      : currentRow?.type === 'group'
+                        ? `↑/↓ 移动 · Space 选中组 · / 筛选 · ?`
+                        : canViewWithRightArrow
+                          ? `↑/↓ 移动 · Space 选中 · → 查看 · d 删除 · / 筛选 · ?`
+                          : canViewWithEnter
+                            ? `↑/↓ 移动 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
+                            : canDelete
+                              ? `↑/↓ 移动 · Space 选中 · d 删除 · / 筛选 · ?`
+                              : focus === 'list'
+                                ? `↑/↓ 移动 · Space 选中 · / 筛选 · ?`
+                                : `/ 筛选 · ?`;
+  const footerBody = [
+    listScrollHint,
+    navigationHint,
+    selected.size ? `已选 ${selected.size}` : '',
+    ...actions,
+  ].filter(Boolean).join(' · ');
+  const footerHint = footerBody ? `${footerBody} · q 退出` : 'q 退出';
+  const statusHint = activity.filter(Boolean).join(' · ');
 
   return (
     <Box flexDirection="column">
@@ -951,6 +1826,13 @@ function BrowserContent({
         enableArrowNav={false}
         focused={!searching && !modal && focus === 'tabs'}
         width={frame.frameWidth}
+        bordered={false}
+        chip={useBrowseHome}
+        trailing={
+          useMasterDetail && !searching && !modal ? (
+            <Text color={termcnColors.muted}>/ 搜索技能…</Text>
+          ) : undefined
+        }
       />
       {searching ? (
         <TextInput
@@ -972,44 +1854,24 @@ function BrowserContent({
         />
       ) : (
         <Box flexDirection="column">
-          {(selected.size > 0 || actions.length > 0) && (
-            <Text color={termcnColors.muted} wrap="truncate-end">
-              {[...actions, selected.size ? `已选 ${selected.size}` : ''].filter(Boolean).join(' · ')}
-            </Text>
-          )}
           <Text color={termcnColors.muted} wrap="truncate-end">
-            {updatingSkillName
-              ? `正在${workingAction} · 请稍候`
-              : activeConfirmation
-              ? '等待确认'
-              : showActions
-              ? 'Enter 执行 · Esc 返回'
-              : showShortcuts
-              ? 'Esc 关闭'
-              : focus === 'tabs'
-              ? '←/→ 切换 Tab · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
-              : focus === 'agents'
-                ? '←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 搜索 · ? 快捷键 · q 退出'
-                : canViewWithRightArrow
-                  ? '→ 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                  : canViewWithEnter
-                    ? 'Enter 查看 · d 删除 · / 搜索 · ? 快捷键 · q 退出'
-                    : canDelete
-                      ? 'd 删除 · / 搜索 · ? 快捷键 · q 退出'
-                    : '/ 搜索 · ? 快捷键 · q 退出'}
+            {footerHint}
           </Text>
-          {activity.length > 0 && (
-            <Text color={updateCheck.failed ? termcnColors.error : termcnColors.muted} wrap="truncate-end">
-              {activity.join(' · ')}
+          {statusHint ? (
+            <Text
+              color={updateCheck.failed ? termcnColors.error : termcnColors.muted}
+              wrap="truncate-end"
+            >
+              {statusHint}
             </Text>
-          )}
+          ) : null}
         </Box>
       )}
     </Box>
   );
 }
 
-function Browser({ state, ...props }: BrowserProps) {
+export function Browser({ state, ...props }: BrowserProps) {
   const [store] = useState(() => {
     const agents = [...props.projectGroups, ...props.globalGroups]
       .filter((group) => group.skills.length > 0)
@@ -1026,7 +1888,7 @@ function Browser({ state, ...props }: BrowserProps) {
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';
 
-function Detail({
+export function Detail({
   skill,
   metadata,
   links,
@@ -1103,73 +1965,3 @@ function Detail({
   );
 }
 
-export function browseSkillDetail(
-  skill: Skill,
-  metadata: SkillMetadata,
-  links: SkillLink[],
-  collection: boolean,
-  frameHeight: number,
-  frameWidth: number,
-  session: InkSession
-): Promise<DetailAction> {
-  return session.show<DetailAction>('back', (finish) => (
-      <Detail
-        skill={skill}
-        metadata={metadata}
-        links={links}
-        collection={collection}
-        frameHeight={frameHeight}
-        frameWidth={frameWidth}
-        finish={finish}
-      />
-  ), false);
-}
-
-export function browseSkills(
-  input: BrowserViewInput,
-  session: InkSession
-): Promise<BrowserResult> {
-  return session.show<BrowserResult>({ type: 'quit' }, (finish) => (
-      <Browser {...input} finish={finish} />
-  ), false);
-}
-
-export interface BrowserConfirmationRequest {
-  message: string;
-  details?: string[];
-  title?: string;
-}
-
-export function confirmBrowseAction(
-  input: BrowserViewInput,
-  session: InkSession,
-  { message, details = [], title = '确认' }: BrowserConfirmationRequest
-): Promise<boolean> {
-  return session.show<boolean>(false, (finish) => (
-      <Browser
-        {...input}
-        confirmation={{
-          title,
-          message,
-          details,
-          onConfirm: () => finish(true),
-          onCancel: () => finish(false),
-        }}
-        finish={() => undefined}
-      />
-  ), false);
-}
-
-export function displayBrowseSkills(
-  input: BrowserViewInput,
-  session: InkSession,
-  onInterrupt?: () => void
-): void {
-  session.display(
-    <Browser
-      {...input}
-      finish={() => undefined}
-    />,
-    onInterrupt
-  );
-}

@@ -47,6 +47,14 @@ function DisplayInterruptBoundary({
   return <>{children}</>;
 }
 
+/**
+ * 跨屏 Ink 渲染协调器：在同一条 TTY 上管理挂载、切换、取消与卸载。
+ *
+ * `show()` 以 Promise 驱动一屏交互，Esc 返回 cancelledValue，Ctrl+C 抛出 InterruptError。
+ * `display()` 仅 rerender 进度画面，不阻塞调用方。
+ * `persistent` 模式复用同一 Ink instance（主浏览器），屏间递增 key 防止 state 泄漏；
+ * 完成时只清空 UI，由 `close()` 统一释放终端。
+ */
 export class InkSession {
   private instance: Instance | undefined;
   private screen = 0;
