@@ -47,7 +47,7 @@ import {
   type SkillRow,
   visibleAgentGroups,
 } from './format.js';
-import { useModal, useShellBusy } from '../shell/app-shell.js';
+import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { FramedPanel } from '../components/framed-panel.js';
 import {
   Select,
@@ -397,7 +397,7 @@ export function Browser({
   finish,
 }: BrowserProps) {
   const modal = useModal();
-  const shellBusy = useShellBusy();
+  const shellBusy = useOverlayBusy();
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
   const navigationRef = useRef(navigation);

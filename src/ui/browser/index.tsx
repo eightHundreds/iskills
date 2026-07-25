@@ -13,7 +13,8 @@ import {
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../shell/terminal.js';
-import { AppShell, useLayer, useModal } from '../shell/app-shell.js';
+import { useLayer, useModal } from '../overlay/host.js';
+import { AppShell } from '../shell/app-shell.js';
 import { Select, TagEditor, TextInput } from '../components/termcn.js';
 import { InstallReview } from '../install/index.js';
 import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';

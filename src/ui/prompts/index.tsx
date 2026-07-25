@@ -1,22 +1,28 @@
 /**
- * Generic interactive I/O adapters (confirm / select / input).
+ * CLI interactive I/O adapters (runScreen / overlay confirm).
  *
- * Presentation host is always `runScreen` here; feature screens live under
- * `ui/install` and `ui/import` and may also be mounted as layer/modal.
+ * Browser tree-local prompts (editTags / editInput / reviewInstall / …)
+ * live under `ui/browser` via useLayer — not duplicated here.
  */
 import {
-  Confirm,
   MultiSelect,
   Select,
-  TagEditor,
   TextInput,
 } from '../components/termcn.js';
 import { ImportReview, SkillMultiSelect } from '../import/index.js';
 import type { ImportReviewItem, ImportReviewResult } from '../import/types.js';
-import { InstallReview } from '../install/index.js';
-import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
+import { confirm as overlayConfirm } from '../overlay/confirm.js';
+// Registers overlay bootstrap for command-facing confirm.
 import { runScreen } from '../shell/run.js';
 import type { Choice, Skill } from '../../domain/types.js';
+
+/** Command confirm — same ModalApi.confirm as Browser (panel). */
+export function confirm(
+  message: string,
+  defaultValue = false
+): Promise<boolean> {
+  return overlayConfirm(message, defaultValue);
+}
 
 export function input(message: string): Promise<string | undefined> {
   return runScreen<string | undefined>(
@@ -30,27 +36,6 @@ export function input(message: string): Promise<string | undefined> {
     ),
     false
   );
-}
-
-export function editInput(
-  message: string,
-  initialValue: string
-): Promise<string | undefined> {
-  return runScreen<string | undefined>(undefined, (finish) => (
-    <TextInput
-      key={message}
-      label={message}
-      initialValue={initialValue}
-      onCancel={() => finish(undefined)}
-      onSubmit={(value) => finish(value.trim())}
-    />
-  ), false);
-}
-
-export function confirm(message: string, defaultValue = false): Promise<boolean> {
-  return runScreen(false, (finish) => (
-    <Confirm message={message} defaultValue={defaultValue} onSubmit={finish} />
-  ));
 }
 
 export function chooseMany<T extends Skill>(skills: T[], title: string): Promise<T[]> {
@@ -124,33 +109,5 @@ export function reviewImport<T extends Skill>(
       existingTags={existingTags}
       onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
-  ));
-}
-
-/** CLI host: mount install review via runScreen. */
-export function reviewInstall(
-  skills: Skill[],
-  targets: InstallReviewTarget[],
-  defaultProjectAgents: string[],
-  defaultGlobalAgents: string[]
-): Promise<InstallReviewResult | undefined> {
-  return runScreen<InstallReviewResult | undefined>(undefined, (finish) => (
-    <InstallReview
-      skills={skills}
-      targets={targets}
-      defaultProjectAgents={defaultProjectAgents}
-      defaultGlobalAgents={defaultGlobalAgents}
-      onSubmit={(result) => finish(result.confirmed ? result : undefined)}
-    />
-  ));
-}
-
-export function editTags(
-  tags: string[],
-  initialValues: string[],
-  title = '编辑标签'
-): Promise<string[] | undefined> {
-  return runScreen<string[] | undefined>(undefined, (finish) => (
-    <TagEditor tags={tags} initialValues={initialValues} title={title} onSubmit={finish} />
   ));
 }

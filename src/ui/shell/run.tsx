@@ -1,5 +1,10 @@
 import { render, useApp, type Instance } from 'ink';
 import type { ReactNode } from 'react';
+import {
+  getActiveOverlayHost,
+  setOverlayBootstrap,
+  type OverlayHostHandle,
+} from '../overlay/bridge.js';
 import { InterruptError } from './terminal.js';
 import { AppShell } from './app-shell.js';
 
@@ -9,6 +14,7 @@ import { AppShell } from './app-shell.js';
  * - `mountInk` / `closeInk` — process-level active instance
  * - `runScreen` — one-shot Promise screen (`ui/prompts` / `ui/search`)
  * - `startApp` / `runApp` — long-lived tree (`ui/browser`); remount via handle
+ * - registers overlay bootstrap so command `confirm` can spin a temporary host
  */
 
 // ─── mount registry ─────────────────────────────────────────────────────────
@@ -171,3 +177,83 @@ export function startApp(node: ReactNode): RunAppHandle {
     },
   };
 }
+
+// ─── overlay bootstrap (CLI confirm without a pre-mounted tree) ─────────────
+
+function waitForOverlayHost(timeoutMs = 5000): Promise<OverlayHostHandle> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = (): void => {
+      const host = getActiveOverlayHost();
+      if (host) {
+        resolve(host);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        reject(new Error('OverlayHost bootstrap timed out'));
+        return;
+      }
+      setTimeout(tick, 0);
+    };
+    tick();
+  });
+}
+
+/**
+ * Temporary AppShell + OverlayHost for imperative confirm when no UI is mounted.
+ * Registered for `ui/overlay` withOverlayHost — overlay never imports this module.
+ */
+setOverlayBootstrap(async () => {
+  let finished = false;
+  let exit: ((error?: Error | undefined) => void) | undefined;
+  let instance: Instance;
+
+  const dispose = (): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (finished) {
+        resolve();
+        return;
+      }
+      finished = true;
+      const exited = instance.waitUntilExit();
+      if (exit) exit();
+      else instance.unmount();
+      void exited.then(
+        () => {
+          releaseInk(instance);
+          setTimeout(resolve, 10);
+        },
+        (error: unknown) => {
+          releaseInk(instance);
+          reject(error);
+        }
+      );
+    });
+
+  instance = mountInk(
+    <AppShell
+      cancelOnEscape
+      onCancel={() => {
+        getActiveOverlayHost()?.modal.destroyAll();
+        void dispose();
+      }}
+      onCtrlC={() => {
+        void dispose().finally(() => {
+          // Interrupt is surfaced by the caller if needed; tear down the shell.
+        });
+      }}
+    >
+      <ExitBridge
+        register={(value) => {
+          exit = value;
+        }}
+      />
+    </AppShell>
+  );
+
+  const host = await waitForOverlayHost();
+  return {
+    host,
+    dispose,
+  };
+});

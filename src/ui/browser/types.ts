@@ -114,11 +114,8 @@ export interface BrowserAppLaunchOptions {
 /** Full navigation snapshot including multi-select paths (host / actions). */
 export interface BrowserNavigationSnapshot extends BrowserState {}
 
-/** In-app / host prompt surface — subset of the shared PromptPort. */
-export type BrowserPromptBridge = Pick<
-  PromptPort,
-  'editInput' | 'editTags' | 'chooseOne' | 'reviewInstall'
->;
+/** In-app host prompt surface (layer) — same as {@link PromptPort}. */
+export type BrowserPromptBridge = PromptPort;
 
 export interface BrowserActionHost {
   lifecycle: BrowserAppLifecycle;

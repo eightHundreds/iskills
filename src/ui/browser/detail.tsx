@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
-import { useShellBusy } from '../shell/app-shell.js';
+import { useOverlayBusy } from '../overlay/host.js';
 import { termcnColors } from '../components/termcn.js';
 import { detailContentLines } from './format.js';
 import { detailFrameDimensions } from './layout.js';
@@ -37,7 +37,7 @@ export function Detail({
   const maxOffset = Math.max(0, lines.length - viewportHeight);
   const offset = Math.min(detailOffset, maxOffset);
   const visibleLines = lines.slice(offset, offset + viewportHeight);
-  const shellBusy = useShellBusy();
+  const shellBusy = useOverlayBusy();
   useInput(
     (input, key) => {
       if (key.upArrow && maxOffset) {

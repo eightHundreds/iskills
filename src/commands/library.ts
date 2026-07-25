@@ -45,7 +45,7 @@ type PromptsModule = typeof import('../ui/prompts/index.js');
 
 let promptsLoader: (() => Promise<PromptsModule>) | undefined;
 
-/** Inject a PromptPort-compatible adapter (tests / alternate runtimes). */
+/** Inject CLI `ui/prompts` module (tests / alternate runtimes). */
 export function setLibraryPromptsLoader(loader: (() => Promise<PromptsModule>) | undefined): void {
   promptsLoader = loader;
 }
