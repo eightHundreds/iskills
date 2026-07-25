@@ -4,7 +4,7 @@
  */
 import { Text, useApp } from 'ink';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
   handleBrowserResult,
   handleDetailAction,
@@ -25,6 +25,7 @@ import {
 } from '../run.js';
 import {
   activeAbortAtom,
+  browserConfirmAtom,
   browserDataAtom,
   browserNavigationAtom,
   browserPhaseAtom,
@@ -121,6 +122,7 @@ function useBrowserPromptActions(): BrowserPromptBridge {
     editInput: (label, initialValue) =>
       present<string | undefined>((finish) => (
         <TextInput
+          key={label}
           label={label}
           initialValue={initialValue}
           onCancel={() => finish(undefined)}
@@ -130,6 +132,7 @@ function useBrowserPromptActions(): BrowserPromptBridge {
     editTags: (tags, initialValues, title) =>
       present<string[] | undefined>((finish) => (
         <TagEditor
+          key={title}
           title={title}
           tags={tags}
           initialValues={initialValues}
@@ -139,9 +142,11 @@ function useBrowserPromptActions(): BrowserPromptBridge {
     chooseOne: (options, title) =>
       present<string | undefined>((finish) => (
         <Select
+          key={title}
           label={title}
           options={options}
           onSubmit={(value) => finish(value)}
+          onCancel={() => finish(undefined)}
         />
       )),
     reviewInstall: (
@@ -152,6 +157,7 @@ function useBrowserPromptActions(): BrowserPromptBridge {
     ) =>
       present<InstallReviewResult | undefined>((finish) => (
         <InstallReview
+          key={skills.map((skill) => skill.name).join('\0')}
           skills={skills}
           targets={targets}
           defaultProjectAgents={defaultProjectAgents}
@@ -192,8 +198,8 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
+  const confirmState = useAtomValue(browserConfirmAtom);
   const promptActions = useBrowserPromptActions();
-  const [confirmation, setConfirmation] = useState<BrowserConfirmation | undefined>();
 
   const reloadData = useCallback(async () => {
     const snapshot = await loadBrowserData();
@@ -209,22 +215,26 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const requestConfirm = useCallback(
     (request: BrowserConfirmRequest) =>
       new Promise<boolean>((resolve) => {
-        setConfirmation({
-          title: request.title,
-          message: request.message,
-          ...(request.details ? { details: request.details } : {}),
-          onConfirm: () => {
-            setConfirmation(undefined);
-            resolve(true);
-          },
-          onCancel: () => {
-            setConfirmation(undefined);
-            resolve(false);
+        store.set(browserConfirmAtom, {
+          ...request,
+          resolve: (ok) => {
+            store.set(browserConfirmAtom, null);
+            resolve(ok);
           },
         });
       }),
-    []
+    [store]
   );
+
+  const confirmation: BrowserConfirmation | undefined = confirmState
+    ? {
+        title: confirmState.title,
+        message: confirmState.message,
+        ...(confirmState.details ? { details: confirmState.details } : {}),
+        onConfirm: () => confirmState.resolve(true),
+        onCancel: () => confirmState.resolve(false),
+      }
+    : undefined;
 
   const actionHost = useMemo((): BrowserActionHost => ({
     lifecycle,

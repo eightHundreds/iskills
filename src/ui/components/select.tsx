@@ -15,16 +15,19 @@ function OptionSelect({
   options,
   visibleCount,
   onChange,
+  onCancel,
 }: {
   options: InternalOption[];
   visibleCount: number;
   onChange: (value: string) => void;
+  onCancel?: () => void;
 }): ReactNode {
   const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
     options.length,
     visibleCount
   );
   useInput((input, key) => {
+    if (key.escape) return onCancel?.();
     if (key.downArrow) return focusNext();
     if (key.upArrow) return focusPrevious();
     if (isReturn(input, key.return)) {
@@ -52,16 +55,19 @@ export function Select<T>({
   label,
   options,
   onSubmit,
+  onCancel,
   numbered = false,
 }: {
   label?: string;
   options: Option<T>[];
   onSubmit: (value: T) => void;
+  onCancel?: () => void;
   numbered?: boolean;
 }): ReactNode {
   const { stdout } = useStdout();
   const inkOptions = useMemo(() => toInkOptions(options, numbered), [numbered, options]);
-  useInput((input) => {
+  useInput((input, key) => {
+    if (key.escape) return onCancel?.();
     if (!numbered || !/^[1-9]$/.test(input)) return;
     const option = options[Number(input) - 1];
     if (option) onSubmit(option.value);
@@ -76,6 +82,7 @@ export function Select<T>({
           const resolved = resolveOptionValue(options, value);
           if (resolved !== undefined) onSubmit(resolved);
         }}
+        {...(onCancel ? { onCancel } : {})}
       />
       <Text color={termcnColors.muted}>
         {numbered ? `1–${Math.min(options.length, 9)} 快选 · ` : ''}↑/↓ 选择 · Enter 确认 · Esc 取消

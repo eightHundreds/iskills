@@ -1,6 +1,7 @@
 import { atom, createStore } from 'jotai';
 import type {
   BrowserAppPhase,
+  BrowserConfirmRequest,
   BrowserDataSnapshot,
   BrowserNavigationSnapshot,
   BrowserState,
@@ -9,6 +10,11 @@ import type {
   DetailViewContext,
   WorkingProgressSnapshot,
 } from './types.js';
+
+/** Survives AppShell layer remounts (requestConfirm must not use unmounted setState). */
+export type BrowserConfirmState = BrowserConfirmRequest & {
+  resolve: (ok: boolean) => void;
+};
 
 /** Navigation without multi-select — selection is a separate atom. */
 export type BrowserNavigationState = Omit<BrowserState, 'selected'>;
@@ -34,6 +40,7 @@ export const browserNavigationAtom = atom<BrowserNavigationState | null>(null);
 export const browserSelectionAtom = atom<Set<string>>(new Set<string>());
 export const detailContextAtom = atom<DetailViewContext | null>(null);
 export const workingProgressAtom = atom<WorkingProgressSnapshot | null>(null);
+export const browserConfirmAtom = atom<BrowserConfirmState | null>(null);
 export const activeAbortAtom = atom<AbortController | null>(null);
 
 export type BrowserAppStore = ReturnType<typeof createBrowserAppStore>;

@@ -148,6 +148,8 @@ export function InstallReview({
   };
 
   useInput((input, key) => {
+    if (key.escape) return finish(false);
+
     if (activeTab === 'confirm') {
       if (key.leftArrow) return moveTab(-1);
       if (input.trim().toLowerCase() === 'n') return finish(false);
