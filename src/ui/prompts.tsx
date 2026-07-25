@@ -12,9 +12,11 @@ import {
   SkillMultiSelect,
   type ImportReviewItem,
   type ImportReviewResult,
-  type InstallReviewResult,
-  type InstallReviewTarget,
 } from './reviews.js';
+import type {
+  InstallReviewResult,
+  InstallReviewTarget,
+} from '../contracts/install-review.js';
 import { InkSession } from './session.js';
 import { registerPromptCloser } from './prompt-lifecycle.js';
 import type { Choice, Skill } from '../domain/types.js';

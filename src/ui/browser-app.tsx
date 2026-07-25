@@ -1,10 +1,9 @@
 import { render, Text, useApp, type Instance } from 'ink';
-import { Provider, useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
+import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { BrowserResult, BrowserViewInput } from '../contracts/browser.js';
 import type { BrowserAppLifecycle, BrowserConfirmRequest, DetailViewContext } from '../contracts/browser-app.js';
-import type { DetailEditorContext } from '../contracts/browser-app-actions.js';
-import type { BrowserActionHost } from '../contracts/browser-app-actions.js';
+import type { BrowserActionHost, DetailEditorContext } from '../contracts/browser-app-actions.js';
 import {
   handleBrowserResult,
   handleDetailAction,
@@ -19,14 +18,14 @@ import {
   browserDataAtom,
   browserNavigationAtom,
   browserPhaseAtom,
-  browserScreenKeyAtom,
+  browserSelectionAtom,
   browserStatusAtom,
-  bumpBrowserScreen,
   clearTransientStatus,
   detailContextAtom,
   inAppPromptAtom,
   readNavigation,
   setBrowserStatus,
+  writeNavigation,
   workingProgressAtom,
   type BrowserAppStore,
 } from './browser-app-store.js';
@@ -75,13 +74,12 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const store = useStore() as BrowserAppStore;
   const promptActive = useAtomValue(inAppPromptAtom);
   const [data, setData] = useAtom(browserDataAtom);
-  const [status, setStatus] = useAtom(browserStatusAtom);
+  const [status] = useAtom(browserStatusAtom);
   const [phase, setPhase] = useAtom(browserPhaseAtom);
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
-  const [screenKey, setScreenKey] = useAtom(browserScreenKeyAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const setNavigation = useSetAtom(browserNavigationAtom);
+  const selection = useAtomValue(browserSelectionAtom);
   const promptActions = useInAppPromptActions();
   const [confirmation, setConfirmation] = useState<BrowserConfirmation | undefined>();
 
@@ -123,10 +121,10 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     setStatus: (text, transient) => setBrowserStatus(store, text, transient),
     reloadData,
     getNavigation: () => readNavigation(store),
-    setNavigation: (value) => setNavigation(value),
+    setNavigation: (value) => writeNavigation(store, value),
     prompts: promptActions,
     setAbortController: (controller) => store.set(activeAbortAtom, controller),
-  }), [lifecycle, promptActions, reloadData, requestConfirm, setNavigation, setWorking, store]);
+  }), [lifecycle, promptActions, reloadData, requestConfirm, setWorking, store]);
 
   const handleCtrlC = useCallback(() => {
     store.get(activeAbortAtom)?.abort();
@@ -140,14 +138,7 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
         return;
       }
       if (result.type === 'open') {
-        setNavigation({
-          tab: result.tab,
-          query: result.query,
-          cursor: result.cursor,
-          selected: result.selected,
-          agent: result.agent,
-          focus: result.focus,
-        });
+        // Navigation already current in the single owner store.
         const detailContext = await loadDetailContext(
           result.skill,
           result.collection,
@@ -156,13 +147,9 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
         );
         setDetail(detailContext);
         setPhase('detail');
-        bumpBrowserScreen(store);
-        setScreenKey(store.get(browserScreenKeyAtom));
         return;
       }
       await handleBrowserResult(actionHost, result);
-      bumpBrowserScreen(store);
-      setScreenKey(store.get(browserScreenKeyAtom));
     } catch (error) {
       if (error instanceof InterruptError) {
         exit(error);
@@ -170,15 +157,20 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
       }
       throw error;
     }
-  }, [actionHost, exit, setDetail, setNavigation, setPhase, setScreenKey, store]);
+  }, [actionHost, exit, setDetail, setPhase, store]);
 
   if (!data || !navigation) return <Text>加载中…</Text>;
+
+  const viewState = {
+    ...navigation,
+    selected: [...selection],
+  };
 
   const viewInput: BrowserViewInput = {
     projectGroups: data.projectGroups,
     collection: data.collection,
     globalGroups: data.globalGroups,
-    state: navigation,
+    state: viewState,
     canSync: data.canSync,
     status: status.text,
     transientStatus: status.transient,
@@ -200,20 +192,6 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     );
   }
 
-  const browser = (
-    <Browser
-      key={screenKey}
-      {...viewInput}
-      state={navigation}
-      confirmation={confirmation}
-      finish={(result) => {
-        void dispatchResult(result).catch((error) => {
-          if (error instanceof InterruptError) exit(error);
-        });
-      }}
-    />
-  );
-
   if (phase === 'detail' && detail) {
     return (
       <AppShell onCtrlC={handleCtrlC}>
@@ -221,8 +199,6 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
           onBack={() => {
             setPhase('browse');
             setDetail(null);
-            bumpBrowserScreen(store);
-            setScreenKey(store.get(browserScreenKeyAtom));
           }}
           onAction={async (context, action) => {
             await handleDetailAction(actionHost, context, action);
@@ -243,7 +219,16 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
 
   return (
     <AppShell onCtrlC={handleCtrlC}>
-      {browser}
+      <Browser
+        {...viewInput}
+        state={viewState}
+        confirmation={confirmation}
+        finish={(result) => {
+          void dispatchResult(result).catch((error) => {
+            if (error instanceof InterruptError) exit(error);
+          });
+        }}
+      />
     </AppShell>
   );
 }

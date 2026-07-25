@@ -1,10 +1,9 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { Provider, useAtom, useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import type {
   BrowserFocus,
   BrowserResult,
-  BrowserState,
   BrowserTab,
   BrowserViewInput,
   SkillGroup,
@@ -14,8 +13,23 @@ import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../domain/
 import {
   browserNavigationAtom,
   browserSelectionAtom,
-  createBrowserStore,
-} from './browser-state.js';
+} from './browser-app-store.js';
+import {
+  browserFrameDimensions,
+  detailFrameDimensions,
+  masterDetailLayout,
+  masterDetailSeparator,
+  masterDetailViewportHeight,
+  masterDetailWidths,
+} from './browser-layout.js';
+import {
+  focusAfterDownFromAgents,
+  focusAfterDownFromTabs,
+  focusAfterUpFromList,
+  focusAfterUpFromTags,
+  nextAgent,
+  nextMainTab,
+} from './browser-intent.js';
 import { skillFieldLabels } from './skill-labels.js';
 import {
   Modal,
@@ -37,6 +51,13 @@ export type {
   BrowserViewInput,
   SkillGroup,
 } from '../contracts/browser.js';
+
+export {
+  browserFrameDimensions,
+  detailFrameDimensions,
+  masterDetailLayout,
+  type BrowserFrameDimensions,
+} from './browser-layout.js';
 interface BrowserConfirmation {
   title: string;
   message: string;
@@ -105,13 +126,6 @@ function flatRows(skills: Skill[], query: string): SkillRow[] {
 
 const TAG_FILTER_ALL = '__all__';
 
-export function masterDetailLayout(
-  columns: number | undefined,
-  rows: number | undefined
-): boolean {
-  return (columns ?? 80) >= 100 && (rows ?? 24) >= 24;
-}
-
 function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
   if (tag === TAG_FILTER_ALL) return skills;
   if (tag === UNTAGGED_LABEL) {
@@ -137,27 +151,6 @@ function tagFilterOptions(
   ];
 }
 
-function masterDetailWidths(
-  totalWidth: number,
-  divided = false
-): {
-  tagWidth: number;
-  peekWidth: number;
-  listWidth: number;
-} {
-  const dividers = divided ? 2 : 0;
-  const tagWidth = Math.min(18, Math.max(12, Math.floor(totalWidth * 0.14)));
-  const bodyWidth = totalWidth - tagWidth - dividers;
-  if (divided) {
-    const listWidth = Math.max(24, Math.floor(bodyWidth * 0.6));
-    const peekWidth = Math.max(22, bodyWidth - listWidth);
-    return { tagWidth, peekWidth, listWidth };
-  }
-  const peekWidth = Math.min(34, Math.max(22, Math.floor(totalWidth * 0.24)));
-  const listWidth = Math.max(24, totalWidth - tagWidth - peekWidth);
-  return { tagWidth, peekWidth, listWidth };
-}
-
 function masterDetailBlankRow(
   tagWidth: number,
   listWidth: number,
@@ -181,25 +174,6 @@ function masterDetailBlankRow(
   );
 }
 
-function masterDetailSeparator(
-  tagWidth: number,
-  listWidth: number,
-  peekWidth: number,
-  end: 'top' | 'bottom',
-  divided = false
-): string {
-  const left = '─'.repeat(tagWidth);
-  const middle = '─'.repeat(listWidth);
-  const right = '─'.repeat(peekWidth);
-  if (divided) {
-    const join = end === 'top' ? '┬' : '┴';
-    return `${left}${join}${middle}${join}${right}`;
-  }
-  return end === 'top'
-    ? `${left}┬${middle}┬${right}`
-    : `${left}┴${middle}┴${right}`;
-}
-
 function listSkillSummary(skill: Skill, preferNote: boolean, maxColumns: number): string {
   const raw = (preferNote && skill.note?.trim()) || skill.description?.trim() || '';
   if (!raw || maxColumns <= 0) return '';
@@ -207,67 +181,8 @@ function listSkillSummary(skill: Skill, preferNote: boolean, maxColumns: number)
   return `${sliceColumns(raw, 0, Math.max(1, maxColumns - 1))}…`;
 }
 
-function masterDetailViewportHeight(
-  rows: number | undefined,
-  chromeRows: number
-): number {
-  return Math.max(3, (rows ?? 24) - chromeRows - 1);
-}
-
 function selectableSkills(row: SkillRow): Skill[] {
   return row.type === 'group' ? row.skills : [row.skill];
-}
-
-function paneHeight(rowCount: number, viewportHeight: number): number {
-  const visibleRows = Math.max(3, Math.min(rowCount, viewportHeight));
-  return visibleRows + (rowCount > viewportHeight ? 1 : 0);
-}
-
-export interface BrowserFrameDimensions {
-  frameHeight: number;
-  frameWidth: number;
-  listViewportHeight: number;
-}
-
-export function browserFrameDimensions({
-  rows,
-  columns,
-  projectRows,
-  globalRows,
-  collectionRows,
-  hasProjectAgents,
-  hasGlobalAgents,
-}: {
-  rows: number | undefined;
-  columns: number | undefined;
-  projectRows: number;
-  globalRows: number;
-  collectionRows: number;
-  hasProjectAgents: boolean;
-  hasGlobalAgents: boolean;
-}): BrowserFrameDimensions {
-  const listViewportHeight = Math.max(3, (rows ?? 24) - 8);
-  const tabContentHeight = Math.max(
-    paneHeight(projectRows, listViewportHeight) + (hasProjectAgents ? 1 : 0),
-    paneHeight(globalRows, listViewportHeight) + (hasGlobalAgents ? 1 : 0),
-    paneHeight(collectionRows, listViewportHeight)
-  );
-  return {
-    frameHeight: tabContentHeight + 1,
-    frameWidth: columns ?? 80,
-    listViewportHeight,
-  };
-}
-
-export function detailFrameDimensions(
-  frameHeight: number,
-  frameWidth: number,
-  terminalRows: number | undefined
-): { height: number; width: number } {
-  return {
-    height: Math.min(frameHeight, Math.max(5, (terminalRows ?? 24) - 4)),
-    width: frameWidth,
-  };
 }
 
 interface DetailContentLine {
@@ -1029,8 +944,25 @@ function BrowserContent({
   confirmation,
   finish,
 }: Omit<BrowserProps, 'state'>) {
-  const [navigation, setNavigation] = useAtom(browserNavigationAtom);
-  const { tab, query, cursor, agent, focus } = navigation;
+  const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
+  const [selected, setSelected] = useAtom(browserSelectionAtom);
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+  /** Keep ref in lockstep so multi-key stdin never reads a stale focus/tab. */
+  const setNavigation = (
+    value: Parameters<typeof setNavigationState>[0]
+  ): void => {
+    setNavigationState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      navigationRef.current = next;
+      return next;
+    });
+  };
+  const tab = navigation?.tab ?? 'project';
+  const query = navigation?.query ?? '';
+  const cursor = navigation?.cursor ?? 0;
+  const agent = navigation?.agent ?? '';
+  const focus = navigation?.focus ?? 'tabs';
   const [visibleStatus, setVisibleStatus] = useState(status);
   const visibleProjectGroups = useMemo(() => visibleAgentGroups(projectGroups), [projectGroups]);
   const visibleGlobalGroups = useMemo(() => visibleAgentGroups(globalGroups), [globalGroups]);
@@ -1064,22 +996,23 @@ function BrowserContent({
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
   const setTab = (value: BrowserTab): void => {
-    setNavigation((current) => ({ ...current, tab: value }));
+    setNavigation((current) => (current ? { ...current, tab: value } : current));
   };
   const setQuery = (value: string): void => {
-    setNavigation((current) => ({ ...current, query: value }));
+    setNavigation((current) => (current ? { ...current, query: value } : current));
   };
   const setAgent = (value: string): void => {
-    setNavigation((current) => ({ ...current, agent: value }));
+    setNavigation((current) => (current ? { ...current, agent: value } : current));
   };
   const setFocus = (value: BrowserFocus): void => {
-    setNavigation((current) => ({ ...current, focus: value }));
+    setNavigation((current) => (current ? { ...current, focus: value } : current));
   };
   const setCursor = (value: SetStateAction<number>): void => {
     setNavigation((current) => {
-      const cursor = typeof value === 'function' ? value(current.cursor) : value;
-      cursorRef.current = cursor;
-      return { ...current, cursor };
+      if (!current) return current;
+      const nextCursor = typeof value === 'function' ? value(current.cursor) : value;
+      cursorRef.current = nextCursor;
+      return { ...current, cursor: nextCursor };
     });
   };
   const [searching, setSearching] = useState(false);
@@ -1092,7 +1025,6 @@ function BrowserContent({
   } | undefined>();
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(query);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const [selected, setSelected] = useAtom(browserSelectionAtom);
   const [updateCheck, setUpdateCheck] = useState<{
     checking: boolean;
     updates: Set<string>;
@@ -1207,18 +1139,8 @@ function BrowserContent({
     };
   }, [checkUpdates, collection, tab]);
 
-  const browserState = (): BrowserState => ({
-    tab,
-    query,
-    cursor: cursorRef.current,
-    selected: [...selected],
-    agent: activeAgent,
-    focus,
-  });
-
   const openDetail = (skill: Skill, collection: boolean) =>
     finish({
-      ...browserState(),
       type: 'open',
       skill,
       collection,
@@ -1235,11 +1157,11 @@ function BrowserContent({
           details: removeConfirmation.skills.length > 1
             ? [`技能：${removeConfirmation.skills.map((skill) => skill.name).join(', ')}`]
             : [],
-          onConfirm: () => finish({
-            ...browserState(),
-            type: 'removeCollection',
-            skills: removeConfirmation.skills as CollectedSkill[],
-          }),
+          onConfirm: () => {
+            const skills = removeConfirmation.skills as CollectedSkill[];
+            setRemoveConfirmation(undefined);
+            finish({ type: 'removeCollection', skills });
+          },
           onCancel: () => setRemoveConfirmation(undefined),
         }
       : {
@@ -1251,11 +1173,11 @@ function BrowserContent({
             '将永久删除以下位置；收藏夹内容（如有）保留。',
             ...removeConfirmation.skills.map((skill) => skill.path),
           ],
-          onConfirm: () => finish({
-            ...browserState(),
-            type: 'removeLocations',
-            skills: removeConfirmation.skills,
-          }),
+          onConfirm: () => {
+            const skills = removeConfirmation.skills;
+            setRemoveConfirmation(undefined);
+            finish({ type: 'removeLocations', skills });
+          },
           onCancel: () => setRemoveConfirmation(undefined),
         }
     : undefined;
@@ -1342,7 +1264,8 @@ function BrowserContent({
   useInput(
     (input, key) => {
       if (key.return || input.includes('\r') || input.includes('\n')) {
-        return finish({ ...browserState(), type: 'materialize', skills: actionSkills });
+        setShowActions(false);
+        return finish({ type: 'materialize', skills: actionSkills });
       }
     },
     { isActive: showActions && !activeConfirmation }
@@ -1352,6 +1275,9 @@ function BrowserContent({
   }, [focus, useMasterDetail, setFocus]);
   useInput(
     (input, key) => {
+      const live = navigationRef.current;
+      const liveFocus = live?.focus ?? 'tabs';
+      const liveTab = live?.tab ?? 'project';
       if (input === '?') return setShowShortcuts(true);
       if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
@@ -1362,35 +1288,71 @@ function BrowserContent({
       if (input === 'g' && groups.length) {
         return setChoosingGroup(true);
       }
-      if (input === 's' && tab === 'collection' && canSync) {
-        return finish({ ...browserState(), type: 'sync' });
+      if (input === 's' && liveTab === 'collection' && canSync) {
+        return finish({ type: 'sync' });
       }
-      if (focus === 'tabs') {
-        if (key.downArrow) {
-          if (hasAgentTabs) return setFocus('agents');
-          if (useMasterDetail) return setFocus('tags');
-          return setFocus('list');
+      // Focus ladder + tab/agent switching: always branch on the live ref so
+      // multi-key stdin batches each advance from the latest navigation.
+      if (key.downArrow || key.upArrow || key.leftArrow || key.rightArrow) {
+        if (liveFocus === 'tabs' || liveFocus === 'agents' || liveFocus === 'tags') {
+          const direction = key.leftArrow ? -1 : key.rightArrow ? 1 : 0;
+          setNavigation((current) => {
+            if (!current) return current;
+            const groups =
+              current.tab === 'project'
+                ? visibleProjectGroups
+                : current.tab === 'global'
+                  ? visibleGlobalGroups
+                  : [];
+            const hasAgents = groups.length > 0;
+            const names = groups.map((group) => group.agent);
+            if (current.focus === 'tabs') {
+              if (key.downArrow) {
+                return {
+                  ...current,
+                  focus: focusAfterDownFromTabs(hasAgents, useMasterDetail),
+                };
+              }
+              if (key.leftArrow || key.rightArrow) {
+                const next = nextMainTab(current.tab, direction as -1 | 1);
+                return next ? { ...current, tab: next } : current;
+              }
+              return current;
+            }
+            if (current.focus === 'agents') {
+              if (key.upArrow) return { ...current, focus: 'tabs' };
+              if (key.downArrow) {
+                return {
+                  ...current,
+                  focus: focusAfterDownFromAgents(useMasterDetail),
+                };
+              }
+              if (key.leftArrow || key.rightArrow) {
+                const next = nextAgent(names, current.agent || names[0] || '', direction as -1 | 1);
+                return next ? { ...current, agent: next } : current;
+              }
+              return current;
+            }
+            if (current.focus === 'tags') {
+              if (key.downArrow) return { ...current, focus: 'list' };
+              if (key.upArrow) return { ...current, focus: focusAfterUpFromTags(hasAgents) };
+              if (key.leftArrow) return { ...current, focus: focusAfterUpFromTags(hasAgents) };
+              if (key.rightArrow) return { ...current, focus: 'list' };
+            }
+            return current;
+          });
+          // Tag index moves stay on the tags-local path below when still on tags.
+          if (liveFocus !== 'tags' || key.leftArrow || key.rightArrow) return;
+          if (key.downArrow || key.upArrow) {
+            // After functional update, live ref may already be list/tabs.
+            if (navigationRef.current?.focus !== 'tags') return;
+          }
         }
-        if (key.leftArrow || key.rightArrow) {
-          const order: BrowserTab[] = ['project', 'global', 'collection'];
-          const index = order.indexOf(tab);
-          const next = order[index + (key.leftArrow ? -1 : 1)];
-          if (next) setTab(next);
-        }
+      }
+      if (liveFocus === 'tabs' || liveFocus === 'agents') {
         return;
       }
-      if (focus === 'agents') {
-        if (key.upArrow) return setFocus('tabs');
-        if (key.downArrow) return setFocus(useMasterDetail ? 'tags' : 'list');
-        if (key.leftArrow || key.rightArrow) {
-          const names = currentAgentGroups.map((group) => group.agent);
-          const index = names.indexOf(activeAgent);
-          const next = names[index + (key.leftArrow ? -1 : 1)];
-          if (next) setAgent(next);
-        }
-        return;
-      }
-      if (focus === 'tags') {
+      if (liveFocus === 'tags' || focus === 'tags') {
         const selectTag = (index: number): void => {
           const option = tagOptions[index];
           if (!option) return;
@@ -1399,7 +1361,7 @@ function BrowserContent({
           setCursor(0);
         };
         if (key.upArrow) {
-          if (tagCursor === 0) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+          if (tagCursor === 0) return setFocus(focusAfterUpFromTags(hasAgentTabs));
           selectTag(tagCursor - 1);
           return;
         }
@@ -1408,7 +1370,7 @@ function BrowserContent({
           selectTag(tagCursor + 1);
           return;
         }
-        if (key.leftArrow) return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+        if (key.leftArrow) return setFocus(focusAfterUpFromTags(hasAgentTabs));
         if (key.rightArrow) {
           selectTag(tagCursor);
           return setFocus('list');
@@ -1429,21 +1391,21 @@ function BrowserContent({
         }
         return;
       }
-      if (focus !== 'list') return;
+      if ((navigationRef.current?.focus ?? focus) !== 'list') return;
       const row = listRows[cursorRef.current];
       if (input === 'm' && canOpenActions) return setShowActions(true);
-      if (input === 'u' && tab === 'collection') {
+      if (input === 'u' && (navigationRef.current?.tab ?? tab) === 'collection') {
         const updateable = selectedCollection.length
           ? selectedUpdates
           : row?.type === 'skill' && updateCheck.updates.has(row.skill.name)
             ? [row.skill as CollectedSkill]
             : [];
         if (updateable.length) {
-          return finish({ ...browserState(), type: 'update', skills: updateable });
+          return finish({ type: 'update', skills: updateable });
         }
       }
       if (input === 't' && tab === 'collection' && selectedCollection.length) {
-        return finish({ ...browserState(), type: 'tags', skills: selectedCollection });
+        return finish({ type: 'tags', skills: selectedCollection });
       }
       const removableCollection = tab === 'collection'
         ? selectedCollection.length
@@ -1475,13 +1437,12 @@ function BrowserContent({
       }
       const selectedLocal = tab === 'project' ? selectedProjectLocal : selectedGlobalLocal;
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
-        return finish({ ...browserState(), type: 'import', skills: selectedLocal });
+        return finish({ type: 'import', skills: selectedLocal });
       }
       if (key.leftArrow && useMasterDetail) return setFocus('tags');
       if (key.upArrow) {
         if (cursorRef.current === 0) {
-          if (useMasterDetail) return setFocus('tags');
-          return setFocus(hasAgentTabs ? 'agents' : 'tabs');
+          return setFocus(focusAfterUpFromList(useMasterDetail, hasAgentTabs));
         }
         return setCursor((index) => index - 1);
       }
@@ -1504,7 +1465,7 @@ function BrowserContent({
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {
         if (tab === 'collection' && selectedCollection.length) {
-          return finish({ ...browserState(), type: 'add', skills: selectedCollection });
+          return finish({ type: 'add', skills: selectedCollection });
         }
         if (tab === 'collection' && row?.type === 'skill') {
           return openDetail(row.skill, true);
@@ -1871,19 +1832,12 @@ function BrowserContent({
   );
 }
 
-export function Browser({ state, ...props }: BrowserProps) {
-  const [store] = useState(() => {
-    const agents = [...props.projectGroups, ...props.globalGroups]
-      .filter((group) => group.skills.length > 0)
-      .map((group) => group.agent);
-    const agent = agents.includes(state.agent) ? state.agent : agents[0] ?? '';
-    return createBrowserStore({ ...state, agent });
-  });
-  return (
-    <Provider store={store}>
-      <BrowserContent {...props} />
-    </Provider>
-  );
+/**
+ * Pure browser view. Navigation/selection must live in a parent Jotai Provider
+ * (BrowserApp store). Does not create a nested store.
+ */
+export function Browser({ state: _state, ...props }: BrowserProps) {
+  return <BrowserContent {...props} />;
 }
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';

@@ -3,7 +3,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import type { ReactNode } from 'react';
 import type { CollectedSkill } from '../domain/types.js';
 import type { InAppPromptRequest } from '../contracts/browser-app.js';
-import type { InstallReviewResult, InstallReviewTarget } from './reviews.js';
+import type { InstallReviewResult, InstallReviewTarget } from '../contracts/install-review.js';
 import { inAppPromptAtom } from './browser-app-store.js';
 import { Select, TagEditor, TextInput } from './components/termcn.js';
 import { InstallReview } from './reviews.js';

@@ -8,7 +8,6 @@ import type {
   BrowserActionHost,
   BrowserConfirmRequest,
   BrowserDataSnapshot,
-  BrowserNavigationSnapshot,
   BrowserPromptBridge,
   DetailEditorContext,
   InstallReviewTarget,
@@ -79,18 +78,6 @@ export async function loadBrowserData(): Promise<BrowserDataSnapshot> {
   return { projectGroups, collection, globalGroups, canSync };
 }
 
-function navigationFromResult(result: BrowserResult): BrowserNavigationSnapshot | null {
-  if (result.type === 'quit' || result.type === 'open') return null;
-  return {
-    tab: result.tab,
-    query: result.query,
-    cursor: result.cursor,
-    selected: result.selected,
-    agent: result.agent,
-    focus: result.focus,
-  };
-}
-
 const INSTALL_TARGETS: InstallReviewTarget[] = [
   {
     value: 'agents',
@@ -149,9 +136,8 @@ export async function handleBrowserResult(
   result: BrowserResult
 ): Promise<'quit' | 'continue'> {
   if (result.type === 'quit') return 'quit';
-
-  const navigation = navigationFromResult(result);
-  if (navigation) host.setNavigation(navigation);
+  // Navigation is owned by the app store; intents never re-ship BrowserState.
+  if (result.type === 'open') return 'continue';
 
   switch (result.type) {
     case 'sync':
@@ -177,8 +163,6 @@ export async function handleBrowserResult(
       break;
     case 'import':
       await handleImport(host, result.skills);
-      break;
-    case 'open':
       break;
     default:
       break;

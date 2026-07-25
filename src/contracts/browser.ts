@@ -17,25 +17,27 @@ export interface SkillGroup {
   skills: Skill[];
 }
 
+/**
+ * Intent-only results from the browser view.
+ * Navigation/selection live in the app store — not re-serialized here.
+ */
 export type BrowserResult =
   | { type: 'quit' }
-  | (BrowserState & (
-      | { type: 'sync' }
-      | { type: 'tags'; skills: Skill[] }
-      | { type: 'update'; skills: CollectedSkill[] }
-      | { type: 'add'; skills: CollectedSkill[] }
-      | { type: 'removeCollection'; skills: CollectedSkill[] }
-      | { type: 'removeLocations'; skills: Skill[] }
-      | { type: 'materialize'; skills: Skill[] }
-      | { type: 'import'; skills: Skill[] }
-      | {
-          type: 'open';
-          skill: Skill;
-          collection: boolean;
-          frameHeight: number;
-          frameWidth: number;
-        }
-    ));
+  | { type: 'sync' }
+  | { type: 'tags'; skills: Skill[] }
+  | { type: 'update'; skills: CollectedSkill[] }
+  | { type: 'add'; skills: CollectedSkill[] }
+  | { type: 'removeCollection'; skills: CollectedSkill[] }
+  | { type: 'removeLocations'; skills: Skill[] }
+  | { type: 'materialize'; skills: Skill[] }
+  | { type: 'import'; skills: Skill[] }
+  | {
+      type: 'open';
+      skill: Skill;
+      collection: boolean;
+      frameHeight: number;
+      frameWidth: number;
+    };
 
 export interface BrowserUpdateCheck {
   updates: Set<string>;

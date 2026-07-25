@@ -4,23 +4,13 @@ import type {
   BrowserDataSnapshot,
   BrowserNavigationSnapshot,
 } from './browser-app.js';
-import type { CollectedSkill } from '../domain/types.js';
-import type { InstallReviewResult, InstallReviewTarget } from '../ui/reviews.js';
+import type { PromptPort } from './prompt-port.js';
 
-export interface BrowserPromptBridge {
-  editInput: (label: string, initialValue: string) => Promise<string | undefined>;
-  editTags: (tags: string[], initialValues: string[], title: string) => Promise<string[] | undefined>;
-  chooseOne: (
-    options: { label: string; value: string }[],
-    title: string
-  ) => Promise<string | undefined>;
-  reviewInstall: (
-    skills: CollectedSkill[],
-    targets: InstallReviewTarget[],
-    defaultProjectAgents: string[],
-    defaultGlobalAgents: string[]
-  ) => Promise<InstallReviewResult | undefined>;
-}
+/** In-app / host prompt surface — subset of the shared PromptPort. */
+export type BrowserPromptBridge = Pick<
+  PromptPort,
+  'editInput' | 'editTags' | 'chooseOne' | 'reviewInstall'
+>;
 
 export interface BrowserActionHost {
   lifecycle: BrowserAppLifecycle;
@@ -46,4 +36,9 @@ export interface DetailEditorContext {
   metadata: import('../domain/types.js').SkillMetadata;
 }
 
-export type { BrowserConfirmRequest, BrowserDataSnapshot, BrowserNavigationSnapshot, InstallReviewTarget };
+export type {
+  BrowserConfirmRequest,
+  BrowserDataSnapshot,
+  BrowserNavigationSnapshot,
+} from './browser-app.js';
+export type { InstallReviewResult, InstallReviewTarget } from './install-review.js';

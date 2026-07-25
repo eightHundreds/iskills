@@ -1,7 +1,6 @@
-import type { BrowserState, BrowserTab } from './browser.js';
+import type { BrowserState, BrowserTab, SkillGroup } from './browser.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../domain/types.js';
-import type { InstallReviewResult, InstallReviewTarget } from '../ui/reviews.js';
-import type { SkillGroup } from './browser.js';
+import type { InstallReviewResult, InstallReviewTarget } from './install-review.js';
 
 export type BrowserAppPhase = 'browse' | 'detail';
 
@@ -85,9 +84,5 @@ export type InAppPromptRequest =
   | PromptChooseRequest
   | PromptInstallReviewRequest;
 
+/** Full navigation snapshot including multi-select paths (host / actions). */
 export interface BrowserNavigationSnapshot extends BrowserState {}
-
-export interface DetailEditorContext {
-  skill: Skill;
-  metadata: SkillMetadata;
-}

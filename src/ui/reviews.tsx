@@ -93,18 +93,14 @@ export interface ImportReviewResult {
   tags: string[];
 }
 
-export interface InstallReviewTarget {
-  value: string;
-  projectLabel?: string;
-  globalLabel?: string;
-}
-
-export interface InstallReviewResult {
-  confirmed: boolean;
-  destination: 'project' | 'global';
-  copy: boolean;
-  agents: string[];
-}
+export type {
+  InstallReviewResult,
+  InstallReviewTarget,
+} from '../contracts/install-review.js';
+import type {
+  InstallReviewResult,
+  InstallReviewTarget,
+} from '../contracts/install-review.js';
 
 export function InstallReview({
   skills,

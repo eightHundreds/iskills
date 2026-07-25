@@ -41,8 +41,17 @@ import type {
   SkillMetadata,
 } from '../domain/types.js';
 
-function prompts(): Promise<typeof import('../ui/prompts.js')> {
-  return import('../ui/prompts.js');
+type PromptsModule = typeof import('../ui/prompts.js');
+
+let promptsLoader: (() => Promise<PromptsModule>) | undefined;
+
+/** Inject a PromptPort-compatible adapter (tests / alternate runtimes). */
+export function setLibraryPromptsLoader(loader: (() => Promise<PromptsModule>) | undefined): void {
+  promptsLoader = loader;
+}
+
+function prompts(): Promise<PromptsModule> {
+  return (promptsLoader ?? (() => import('../ui/prompts.js')))();
 }
 
 function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
