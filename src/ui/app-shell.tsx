@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
  * Pure Ink interactive root shell: first-frame visibility + global key callbacks.
  *
  * Does **not** own lifecycle — never calls `exit`, never throws InterruptError.
- * Hosts (`runScreen` / `BrowserApp`) decide how to settle or tear down.
+ * Hosts (`runScreen` / browser `index` shell) decide how to settle or tear down.
  *
  * - Ctrl+C → `onCtrlC` only
  * - Esc → `onCancel` when `cancelOnEscape`

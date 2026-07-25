@@ -8,29 +8,45 @@ import type {
   BrowserViewInput,
   SkillGroup,
 } from './types.js';
-import { matchesSkill } from '../../domain/skill-query.js';
-import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
+import type { CollectedSkill, Skill } from '../../domain/types.js';
 import {
   browserNavigationAtom,
   browserSelectionAtom,
 } from './browser-app-store.js';
 import {
   browserFrameDimensions,
-  detailFrameDimensions,
   masterDetailLayout,
   masterDetailSeparator,
   masterDetailViewportHeight,
   masterDetailWidths,
 } from './browser-layout.js';
 import {
+  TAG_FILTER_ALL,
+  browseDetailRows,
+  collectionCategoryLines,
+  collectionListColumnLines,
+  flatRows,
   focusAfterDownFromAgents,
   focusAfterDownFromTabs,
   focusAfterUpFromList,
   focusAfterUpFromTags,
+  groupedRows,
+  listSkillSummary,
+  masterListColumnLines,
+  masterPeekColumnLines,
+  masterTagColumnLines,
+  moreActionModalContent,
   nextAgent,
   nextMainTab,
-} from './browser-intent.js';
-import { skillFieldLabels } from '../skill-labels.js';
+  selectableSkills,
+  shortcutModalContent,
+  skillGroups,
+  skillsForTagFilter,
+  tagFilterOptions,
+  type CollectionDetailRow,
+  type SkillRow,
+  visibleAgentGroups,
+} from './browse-format.js';
 import {
   Modal,
   Select,
@@ -39,7 +55,7 @@ import {
   termcnColors,
   type ModalBackgroundLine,
 } from '../components/termcn.js';
-import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
+import { padColumns, sliceColumns } from '../components/terminal-layout.js';
 
 interface BrowserConfirmation {
   title: string;
@@ -48,9 +64,6 @@ interface BrowserConfirmation {
   onConfirm: () => void;
   onCancel: () => void;
 }
-type SkillRow =
-  | { type: 'group'; name: string; skills: Skill[] }
-  | { type: 'skill'; group: string; skill: Skill };
 
 const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -64,74 +77,6 @@ function useSpinner(active: boolean): string {
     return () => clearInterval(timer);
   }, [active]);
   return spinnerFrames[index] ?? '⠋';
-}
-
-const UNTAGGED_LABEL = '未标签';
-
-function skillGroups(skill: Skill): string[] {
-  return [...new Set(skill.tags?.length ? skill.tags : [UNTAGGED_LABEL])];
-}
-
-function groupedRows(skills: Skill[], query: string): SkillRow[] {
-  if (query.trim()) {
-    return skills
-      .filter((skill) => matchesSkill(skill, query))
-      .map((skill) => ({ type: 'skill', group: skillGroups(skill).join(' · '), skill }));
-  }
-  const groups = new Map<string, Skill[]>();
-  for (const skill of skills) {
-    for (const tag of skillGroups(skill)) {
-      const group = groups.get(tag) ?? [];
-      group.push(skill);
-      groups.set(tag, group);
-    }
-  }
-  const sorted = [...groups].sort(([left], [right]) => {
-    if (left === right) return 0;
-    return left === UNTAGGED_LABEL ? 1 : right === UNTAGGED_LABEL ? -1 : left.localeCompare(right);
-  });
-  if (sorted.length === 1 && sorted[0]?.[0] === UNTAGGED_LABEL) {
-    return sorted[0][1].map((skill) => ({ type: 'skill', group: '', skill }));
-  }
-  const rows: SkillRow[] = [];
-  for (const [name, group] of sorted) {
-    rows.push({ type: 'group', name, skills: group });
-    rows.push(...group.map((skill) => ({ type: 'skill' as const, group: name, skill })));
-  }
-  return rows;
-}
-
-function flatRows(skills: Skill[], query: string): SkillRow[] {
-  return skills
-    .filter((skill) => matchesSkill(skill, query))
-    .map((skill) => ({ type: 'skill', group: '', skill }));
-}
-
-const TAG_FILTER_ALL = '__all__';
-
-function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
-  if (tag === TAG_FILTER_ALL) return skills;
-  if (tag === UNTAGGED_LABEL) {
-    return skills.filter((skill) => {
-      const groups = skillGroups(skill);
-      return groups.length === 1 && groups[0] === UNTAGGED_LABEL;
-    });
-  }
-  return skills.filter((skill) => skillGroups(skill).includes(tag));
-}
-
-function tagFilterOptions(
-  skills: Skill[],
-  groups: Extract<SkillRow, { type: 'group' }>[]
-): { key: string; label: string; skills: Skill[] }[] {
-  return [
-    { key: TAG_FILTER_ALL, label: '全部', skills },
-    ...groups.map((group) => ({
-      key: group.name,
-      label: group.name,
-      skills: group.skills,
-    })),
-  ];
 }
 
 function masterDetailBlankRow(
@@ -155,97 +100,6 @@ function masterDetailBlankRow(
       </Box>
     </Box>
   );
-}
-
-function listSkillSummary(skill: Skill, preferNote: boolean, maxColumns: number): string {
-  const raw = (preferNote && skill.note?.trim()) || skill.description?.trim() || '';
-  if (!raw || maxColumns <= 0) return '';
-  if (textWidth(raw) <= maxColumns) return raw;
-  return `${sliceColumns(raw, 0, Math.max(1, maxColumns - 1))}…`;
-}
-
-function selectableSkills(row: SkillRow): Skill[] {
-  return row.type === 'group' ? row.skills : [row.skill];
-}
-
-interface DetailContentLine {
-  label?: string;
-  value: string;
-  muted?: boolean;
-}
-
-function detailFieldLines(
-  label: string,
-  value: string,
-  width: number,
-  muted = false
-): DetailContentLine[] {
-  const labelText = `${label}  `;
-  const indentation = ' '.repeat(textWidth(labelText));
-  const valueWidth = Math.max(1, width - textWidth(labelText));
-  return value
-    .split(/\r?\n/)
-    .flatMap((paragraph) => wrapColumns(paragraph, valueWidth))
-    .map((line, index) => index === 0
-      ? { label: labelText, value: line, muted }
-      : { value: `${indentation}${line}`, muted });
-}
-
-function detailContentLines(
-  skill: Skill,
-  metadata: SkillMetadata,
-  links: SkillLink[],
-  collection: boolean,
-  source: string,
-  frameWidth: number
-): DetailContentLine[] {
-  const width = Math.max(1, frameWidth - 4);
-  const lines = detailFieldLines(skillFieldLabels.description, skill.description || '无描述', width, true);
-  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels.location, skill.path, width)];
-
-  lines.push(
-    ...detailFieldLines(skillFieldLabels.tags, metadata.tags.length ? metadata.tags.join(', ') : '无', width),
-    ...detailFieldLines(skillFieldLabels.note, metadata.note || '无', width),
-    ...detailFieldLines(skillFieldLabels.source, source, width)
-  );
-  if (metadata.source.path) {
-    lines.push(...detailFieldLines(skillFieldLabels.path, metadata.source.path, width));
-  }
-  lines.push({ label: skillFieldLabels.relatedLocations, value: '' });
-  if (!links.length) return [...lines, { value: '  无', muted: true }];
-  return [
-    ...lines,
-    ...links.flatMap((link) => detailFieldLines(
-      link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖',
-      link.path,
-      width,
-      true
-    )),
-  ];
-}
-
-function shortcutModalContent(): string[] {
-  return [
-    '↑/↓ 移动焦点或列表项',
-    '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
-    'Space 选择当前技能或当前标签下全部技能',
-    'Enter 查看、添加或提交当前选择',
-    '/ 搜索技能',
-    'g 跳转到分组（有分组时）',
-    'i 加入收藏夹（当前项目/全局已选择本地技能时）',
-    't 批量加标签（收藏夹已选择技能时）',
-    's 同步 Git（收藏夹可同步时）',
-    'u 更新可更新的已选技能；无选择时更新当前技能',
-    'd/Delete 删除已选技能；无选择时删除当前技能',
-    'm 更多操作（当前项目引用可转换时）',
-    'q 退出 · Esc 取消当前上下文',
-    '',
-    'Esc 关闭',
-  ];
-}
-
-function moreActionModalContent(scope: string): string[] {
-  return [scope, '', '› 将引用转为副本'];
 }
 
 interface BrowserModal {
@@ -442,342 +296,6 @@ function AgentTabs({
   );
 }
 
-function tagSidebarLine(
-  current: boolean,
-  marker: string,
-  label: string,
-  count: number,
-  width: number
-): string {
-  const prefix = `${current ? '›' : ' '} ${marker} ${label}`;
-  const countText = String(count);
-  const gap = Math.max(1, width - textWidth(prefix) - textWidth(countText));
-  return `${prefix}${' '.repeat(gap)}${countText}`;
-}
-
-function categorySidebarLine(
-  current: boolean,
-  label: string,
-  count: number,
-  width: number
-): string {
-  const prefix = current ? '› ' : '  ';
-  const countText = String(count);
-  const labelPart = `${prefix}${label}`;
-  const gap = Math.max(1, width - textWidth(labelPart) - textWidth(countText));
-  return padColumns(`${labelPart}${' '.repeat(gap)}${countText}`, width);
-}
-
-function collectionSourceLabel(skill: CollectedSkill): string {
-  const source = skill.source;
-  if (!source) return '未知';
-  if (source.type === 'git' && source.url) return 'Git';
-  if (source.type === 'local' || source.path) return '本地';
-  if (source.type === 'unknown' && source.path) return '本地';
-  if (source.type === 'unknown') return '本地';
-  return source.type;
-}
-
-function collectionVersionLabel(skill: CollectedSkill): string | undefined {
-  const version = skill.source?.commit ?? skill.source?.ref;
-  return version?.trim() || undefined;
-}
-
-function collectionCategoryLines(
-  options: { key: string; label: string; skills: Skill[] }[],
-  cursor: number,
-  isActive: boolean,
-  width: number,
-  viewportHeight: number
-): string[] {
-  const active = Math.max(0, Math.min(cursor, options.length - 1));
-  const offset = Math.max(
-    0,
-    Math.min(active - Math.floor(viewportHeight / 2), options.length - viewportHeight)
-  );
-  const visible = options.slice(offset, offset + viewportHeight);
-  const lines = visible.map((option, visibleIndex) => {
-    const index = offset + visibleIndex;
-    return categorySidebarLine(isActive && index === active, option.label, option.skills.length, width);
-  });
-  while (lines.length < viewportHeight) lines.push('');
-  return lines.slice(0, viewportHeight);
-}
-
-function masterSkillNameLine(
-  row: Extract<SkillRow, { type: 'skill' }>,
-  index: number,
-  active: number,
-  isActive: boolean,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined,
-  showGroup: boolean
-): string {
-  const skill = row.skill;
-  const current = isActive && index === active;
-  const selectionMarker = selected.has(skill.path) ? '●' : '○';
-  const update = updatingSkillName === skill.name
-    ? ' 更新中'
-    : updates.has(skill.name)
-      ? ' ↑'
-      : '';
-  const group = showGroup && row.group ? `${row.group} / ` : '';
-  return `${current ? '›' : ' '} ${selectionMarker} ${group}${skill.name}${update}`;
-}
-
-function masterTagColumnLines(
-  options: { key: string; label: string; skills: Skill[] }[],
-  _activeTag: string,
-  cursor: number,
-  isActive: boolean,
-  selected: Set<string>,
-  width: number,
-  viewportHeight: number
-): string[] {
-  const active = Math.max(0, Math.min(cursor, options.length - 1));
-  const offset = Math.max(0, Math.min(active - Math.floor(viewportHeight / 2), options.length - viewportHeight));
-  const visible = options.slice(offset, offset + viewportHeight);
-  const lines = visible.map((option, visibleIndex) => {
-    const index = offset + visibleIndex;
-    const count = option.skills.filter((skill) => selected.has(skill.path)).length;
-    const marker =
-      count === 0 ? '○' : count === option.skills.length && option.skills.length ? '●' : '◐';
-    const current = isActive && index === active;
-    return tagSidebarLine(current, marker, option.label, option.skills.length, width);
-  });
-  while (lines.length < viewportHeight) lines.push('');
-  return lines.slice(0, viewportHeight);
-}
-
-const COLLECTION_SKILL_PREFIX_WIDTH = 4;
-
-function collectionSkillPrefix(current: boolean, picked: boolean): string {
-  return `${current ? '›' : ' '} ${picked ? '▣' : ' '} `;
-}
-
-function collectionSkillNameLine(
-  row: Extract<SkillRow, { type: 'skill' }>,
-  index: number,
-  active: number,
-  isActive: boolean,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined,
-  listWidth: number
-): string {
-  const skill = row.skill;
-  const current = isActive && index === active;
-  const picked = selected.has(skill.path);
-  const prefix = collectionSkillPrefix(current, picked);
-  const badges = [
-    updatingSkillName === skill.name ? '更新中' : updates.has(skill.name) ? '↑' : '',
-  ].filter(Boolean);
-  const badgeText = badges.length ? ` ${badges.join(' ')}` : '';
-  return padColumns(`${prefix}${skill.name}${badgeText}`, listWidth);
-}
-
-function collectionListColumnLines(
-  rows: SkillRow[],
-  cursor: number,
-  isActive: boolean,
-  preferNote: boolean,
-  listWidth: number,
-  viewportHeight: number,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined
-): { lines: string[]; skillOffset: number; activeLineIndexes: Set<number>; selectedLineIndexes: Set<number> } {
-  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
-  const active = Math.max(0, Math.min(cursor, rows.length - 1));
-  const skillOffset = Math.max(
-    0,
-    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, rows.length - skillViewport))
-  );
-  const visible = rows.slice(skillOffset, skillOffset + skillViewport);
-  const summaryWidth = Math.max(8, listWidth - 2);
-  const lines: string[] = [];
-  const activeLineIndexes = new Set<number>();
-  const selectedLineIndexes = new Set<number>();
-  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
-    const row = visible[visibleIndex];
-    if (row?.type !== 'skill') continue;
-    const index = skillOffset + visibleIndex;
-    const nameLineIndex = lines.length;
-    lines.push(collectionSkillNameLine(
-      row,
-      index,
-      active,
-      isActive,
-      selected,
-      updates,
-      updatingSkillName,
-      listWidth
-    ));
-    const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
-    const summaryPrefix = ' '.repeat(COLLECTION_SKILL_PREFIX_WIDTH);
-    lines.push(summary ? `${summaryPrefix}${summary}` : summaryPrefix);
-    if (isActive && index === active) {
-      activeLineIndexes.add(nameLineIndex);
-      activeLineIndexes.add(nameLineIndex + 1);
-    } else if (selected.has(row.skill.path)) {
-      selectedLineIndexes.add(nameLineIndex);
-    }
-  }
-  while (lines.length < viewportHeight) lines.push('');
-  return {
-    lines: lines.slice(0, viewportHeight),
-    skillOffset,
-    activeLineIndexes,
-    selectedLineIndexes,
-  };
-}
-
-function masterListColumnLines(
-  rows: SkillRow[],
-  cursor: number,
-  isActive: boolean,
-  preferNote: boolean,
-  listWidth: number,
-  viewportHeight: number,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined,
-  showGroup: boolean
-): { lines: string[]; skillOffset: number } {
-  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
-  const active = Math.max(0, Math.min(cursor, rows.length - 1));
-  const skillOffset = Math.max(
-    0,
-    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, rows.length - skillViewport))
-  );
-  const visible = rows.slice(skillOffset, skillOffset + skillViewport);
-  const summaryWidth = Math.max(8, listWidth - 2);
-  const lines: string[] = [];
-  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
-    const row = visible[visibleIndex];
-    if (row?.type !== 'skill') continue;
-    const index = skillOffset + visibleIndex;
-    lines.push(masterSkillNameLine(
-      row,
-      index,
-      active,
-      isActive,
-      selected,
-      updates,
-      updatingSkillName,
-      showGroup
-    ));
-    const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
-    lines.push(summary ? `  ${summary}` : '  ');
-  }
-  while (lines.length < viewportHeight) lines.push('');
-  return { lines: lines.slice(0, viewportHeight), skillOffset };
-}
-
-interface CollectionDetailRow {
-  text: string;
-  bold?: boolean;
-  muted?: boolean;
-  primary?: boolean;
-}
-
-function browseDetailRows(
-  skill: Skill | undefined,
-  width: number,
-  viewportHeight: number,
-  collection: boolean,
-  updates: Set<string>,
-  updatingSkillName: string | undefined
-): CollectionDetailRow[] {
-  if (!skill) {
-    return [{ text: '选择技能查看', muted: true }];
-  }
-  const title = skill.isReference ? `引用 · ${skill.name}` : skill.name;
-  const descriptionLines = peekFieldLines(
-    '描述',
-    skill.description || '无描述',
-    width,
-    Math.max(2, Math.floor(viewportHeight * 0.35))
-  ).map((line) => ({ text: line, muted: true } satisfies CollectionDetailRow));
-  const metadataRows: CollectionDetailRow[] = [
-    {
-      text: `${title}${
-        updatingSkillName === skill.name
-          ? ' 更新中'
-          : updates.has(skill.name)
-            ? ' ↑'
-            : ''
-      }`,
-      bold: true,
-      primary: true,
-    },
-    { text: '' },
-  ];
-  if (collection) {
-    const collected = skill as CollectedSkill;
-    const version = collectionVersionLabel(collected) ?? '--';
-    metadataRows.push(
-      ...peekFieldLines('来源', collectionSourceLabel(collected), width, 1).map((line) => ({
-        text: line,
-      })),
-      ...peekFieldLines('版本', version, width, 1).map((line) => ({ text: line }))
-    );
-    const triggerTags = collected.tags?.length
-      ? collected.tags.map((tag) => `[${tag}]`).join(' ')
-      : '--';
-    metadataRows.push(
-      { text: '' },
-      ...peekFieldLines('标签', triggerTags, width, 2).map((line) => ({
-        text: line,
-        muted: true,
-      }))
-    );
-  } else {
-    metadataRows.push(...peekFieldLines('位置', skill.path, width, 2).map((line) => ({ text: line })));
-  }
-  // 描述长度最不稳定，放在固定元数据之后，切换技能时上方字段位置不跳。
-  // 不要用空行撑到视口底，否则看起来像「贴底」。
-  return [...metadataRows, { text: '' }, ...descriptionLines].slice(0, viewportHeight);
-}
-
-function masterPeekColumnLines(
-  skill: Skill | undefined,
-  collection: boolean,
-  width: number,
-  viewportHeight: number
-): string[] {
-  if (!skill) {
-    return Array.from({ length: viewportHeight }, (_, index) =>
-      index === 0 ? '选择技能查看' : ''
-    );
-  }
-  const tags = collection
-    ? (skill as CollectedSkill).tags?.length
-      ? (skill as CollectedSkill).tags!.join(', ')
-      : '无'
-    : skillGroups(skill).join(', ') || '无';
-  const note = collection ? (skill as CollectedSkill).note?.trim() || '无' : '';
-  const source = collection && (skill as CollectedSkill).source
-    ? (skill as CollectedSkill).source!.url ?? (skill as CollectedSkill).source!.type
-    : '';
-  const descriptionBudget = Math.max(3, viewportHeight - (collection ? 8 : 6));
-  const fields = [
-    skill.name,
-    ...peekFieldLines('描述', skill.description || '无描述', width, descriptionBudget),
-    ...peekFieldLines('标签', tags, width, 1),
-    ...(collection ? [
-      ...peekFieldLines('备注', note, width, 1),
-      ...peekFieldLines('来源', source || '无', width, 1),
-    ] : [
-      ...peekFieldLines('位置', skill.path, width, 2),
-    ]),
-    collection ? '→ 全屏详情 · Space 选中' : 'Enter 查看 · Space 选中',
-  ];
-  while (fields.length < viewportHeight) fields.push('');
-  return fields.slice(0, viewportHeight);
-}
-
 function masterDetailColumnText(
   line: string,
   width: number,
@@ -886,26 +404,6 @@ function MasterDetailBody({
       ))}
     </>
   );
-}
-
-function peekFieldLines(
-  label: string,
-  value: string,
-  width: number,
-  maxLines: number
-): string[] {
-  const labelWidth = 6;
-  const valueWidth = Math.max(1, width - labelWidth);
-  const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
-  return lines.map((line, index) =>
-    index === 0
-      ? `${padColumns(`${label}`, labelWidth)}${line}`
-      : `${' '.repeat(labelWidth)}${line}`
-  );
-}
-
-function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {
-  return groups.filter((group) => group.skills.length > 0);
 }
 
 interface BrowserProps extends BrowserViewInput {
@@ -1815,85 +1313,6 @@ export function Browser({
           ) : null}
         </Box>
       )}
-    </Box>
-  );
-}
-
-export type DetailAction = 'note' | 'tags' | 'source' | 'back';
-
-export function Detail({
-  skill,
-  metadata,
-  links,
-  collection,
-  frameHeight,
-  frameWidth,
-  finish,
-}: {
-  skill: Skill;
-  metadata: SkillMetadata;
-  links: SkillLink[];
-  collection: boolean;
-  frameHeight: number;
-  frameWidth: number;
-  finish: (action: DetailAction) => void;
-}) {
-  const { stdout } = useStdout();
-  const detailFrame = detailFrameDimensions(frameHeight, frameWidth, stdout.rows);
-  const [detailOffset, setDetailOffset] = useState(0);
-  const source = metadata.source.url
-    ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
-    : metadata.source.type;
-  const lines = detailContentLines(skill, metadata, links, collection, source, detailFrame.width);
-  const viewportHeight = Math.max(1, detailFrame.height - 2);
-  const maxOffset = Math.max(0, lines.length - viewportHeight);
-  const offset = Math.min(detailOffset, maxOffset);
-  const visibleLines = lines.slice(offset, offset + viewportHeight);
-  useInput((input, key) => {
-    if (key.upArrow && maxOffset) {
-      setDetailOffset((current) => Math.max(0, current - 1));
-      return;
-    }
-    if (key.downArrow && maxOffset) {
-      setDetailOffset((current) => Math.min(maxOffset, current + 1));
-      return;
-    }
-    if (
-      key.escape ||
-      key.leftArrow ||
-      input === 'b' ||
-      input === 'q'
-    ) {
-      return finish('back');
-    }
-    if (collection && input === 'n') return finish('note');
-    if (collection && input === 't') return finish('tags');
-    if (collection && input === 's') return finish('source');
-  });
-  return (
-    <Box flexDirection="column">
-      <Text color={termcnColors.primary} bold>‹ {skill.name}</Text>
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor={termcnColors.border}
-        paddingX={1}
-        height={detailFrame.height}
-        width={detailFrame.width}
-        overflow="hidden"
-      >
-        {visibleLines.map((line, index) => (
-          <Text
-            key={`${offset + index}:${line.label ?? ''}:${line.value}`}
-            {...(line.muted ? { color: termcnColors.muted } : {})}
-          >
-            {line.label && <Text bold>{line.label}</Text>}{line.value}
-          </Text>
-        ))}
-      </Box>
-      <Text color={termcnColors.muted}>
-        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}${collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}`}
-      </Text>
     </Box>
   );
 }

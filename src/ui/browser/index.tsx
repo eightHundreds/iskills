@@ -1,3 +1,7 @@
+/**
+ * Browser TUI package entry: launch + phase shell.
+ * Screen bodies live in `browser.tsx` (list) and related modules.
+ */
 import { Text, useApp } from 'ink';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -9,16 +13,6 @@ import {
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../terminal.js';
-import type {
-  BrowserActionHost,
-  BrowserAppLifecycle,
-  BrowserConfirmRequest,
-  BrowserResult,
-  BrowserTab,
-  BrowserViewInput,
-  DetailEditorContext,
-  DetailViewContext,
-} from './types.js';
 import { AppShell } from '../app-shell.js';
 import {
   enterAlternateScreen,
@@ -40,8 +34,36 @@ import {
   workingProgressAtom,
   type BrowserAppStore,
 } from './browser-app-store.js';
-import { Browser, Detail, type DetailAction } from './browser.js';
+import { Browser } from './browser.js';
+import { Detail, type DetailAction } from './detail.js';
 import { InAppPromptHost, useInAppPromptActions } from './in-app-prompt.js';
+import type {
+  BrowserActionHost,
+  BrowserAppLifecycle,
+  BrowserConfirmRequest,
+  BrowserResult,
+  BrowserTab,
+  BrowserViewInput,
+  DetailEditorContext,
+  DetailViewContext,
+} from './types.js';
+
+export { Browser } from './browser.js';
+export { Detail, type DetailAction } from './detail.js';
+export {
+  browserFrameDimensions,
+  detailFrameDimensions,
+  masterDetailLayout,
+  type BrowserFrameDimensions,
+} from './browser-layout.js';
+export {
+  browserNavigationAtom,
+  browserSelectionAtom,
+  createBrowserStore,
+  createBrowserAppStore,
+  type BrowserNavigationState,
+  type BrowserAppStore,
+} from './browser-app-store.js';
 
 interface BrowserConfirmation {
   title: string;
@@ -80,6 +102,7 @@ function DetailScreen({
   );
 }
 
+/** Phase shell: prompt / detail / browse. */
 export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
   const store = useStore() as BrowserAppStore;
@@ -249,6 +272,7 @@ function browserRoot(
   );
 }
 
+/** Package run entry: alternate screen + mount until exit. */
 export async function runBrowserApp(
   initialQuery = '',
   initialTab: BrowserTab = 'project',
