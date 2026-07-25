@@ -70,7 +70,7 @@ function DetailScreen({
   );
 }
 
-function BrowserAppInner({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
+export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
   const store = useStore() as BrowserAppStore;
   const promptActive = useAtomValue(inAppPromptAtom);
@@ -248,10 +248,6 @@ function BrowserAppInner({ lifecycle }: { lifecycle: BrowserAppLifecycle }): Rea
   );
 }
 
-export function BrowserAppRoot({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
-  return <BrowserAppInner lifecycle={lifecycle} />;
-}
-
 const CLEAR_SCREEN = '\u001B[2J\u001B[H';
 const ENTER_ALTERNATE_SCREEN = '\u001B[?1049h';
 const LEAVE_ALTERNATE_SCREEN = '\u001B[?1049l';
@@ -280,7 +276,7 @@ export async function runBrowserApp(
         process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
         instance = render(
           <Provider store={appStore}>
-            <BrowserAppRoot lifecycle={lifecycle} />
+            <BrowserApp lifecycle={lifecycle} />
           </Provider>,
           { exitOnCtrlC: false }
         );
@@ -290,7 +286,7 @@ export async function runBrowserApp(
 
   instance = render(
     <Provider store={appStore}>
-      <BrowserAppRoot lifecycle={lifecycle} />
+      <BrowserApp lifecycle={lifecycle} />
     </Provider>,
     { exitOnCtrlC: false }
   );
