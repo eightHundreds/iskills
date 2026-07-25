@@ -18,11 +18,9 @@ import type {
   InstallReviewTarget,
 } from '../contracts/install-review.js';
 import { InkSession } from './session.js';
-import { registerPromptCloser } from './prompt-lifecycle.js';
 import type { Choice, Skill } from '../domain/types.js';
 
 const defaultSession = new InkSession();
-registerPromptCloser(() => defaultSession.close());
 
 function runPrompt<T>(
   cancelledValue: T,
@@ -33,6 +31,7 @@ function runPrompt<T>(
   return (session || defaultSession).show(cancelledValue, component, cancelOnEscape);
 }
 
+/** Tear down the default line-prompt InkSession (e.g. CLI main finally). */
 export function closePrompts(): void {
   defaultSession.close();
 }

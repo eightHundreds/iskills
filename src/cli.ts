@@ -9,7 +9,6 @@ import {
 } from './commands/index.js';
 import { commitCollection, ensureCollection, readState } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
-import { closeActivePrompts } from './ui/prompt-lifecycle.js';
 import { InterruptError } from './contracts/terminal.js';
 
 const packageVersion = (
@@ -63,6 +62,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     }
     throw error;
   } finally {
-    closeActivePrompts();
+    // Lazy: avoid static import of prompts (Ink) on every CLI entry; only load to tear down.
+    const { closePrompts } = await import('./ui/prompts.js');
+    closePrompts();
   }
 }
