@@ -3,6 +3,11 @@ import type { ReactNode } from 'react';
 /** Full-page replace slot options. */
 export interface LayerOpenOptions<T> {
   content: (close: (value: T) => void) => ReactNode;
+  /**
+   * Settled when the slot is destroyed without `close` (e.g. host teardown).
+   * Defaults to `undefined as T` — pass `[]` for multi-select cancel semantics.
+   */
+  destroyValue?: T;
 }
 
 export interface LayerApi {
@@ -28,6 +33,8 @@ export interface ModalInfoOptions {
 
 export interface ModalOpenOptions<T> {
   content: (close: (value: T) => void) => ReactNode;
+  /** Settled when the slot is destroyed without `close`. Default: `undefined as T`. */
+  destroyValue?: T;
 }
 
 export interface ModalApi {

@@ -16,11 +16,13 @@ function OptionMultiSelect({
   visibleCount,
   defaultValue = [],
   onSubmit,
+  onCancel,
 }: {
   options: InternalOption[];
   visibleCount: number;
   defaultValue?: string[];
   onSubmit: (values: string[]) => void;
+  onCancel?: () => void;
 }): ReactNode {
   const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
     options.length,
@@ -28,6 +30,7 @@ function OptionMultiSelect({
   );
   const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultValue));
   useInput((input, key) => {
+    if (key.escape) return onCancel?.();
     if (key.downArrow) return focusNext();
     if (key.upArrow) return focusPrevious();
     if (input === ' ') {
@@ -72,11 +75,13 @@ export function MultiSelect<T>({
   options,
   defaultValues = [],
   onSubmit,
+  onCancel,
 }: {
   label?: string;
   options: Option<T>[];
   defaultValues?: T[];
   onSubmit: (values: T[]) => void;
+  onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
   const inkOptions = useMemo(() => toInkOptions(options), [options]);
@@ -91,6 +96,7 @@ export function MultiSelect<T>({
         visibleCount={visibleOptionCount(stdout.rows ?? 24, label)}
         options={inkOptions}
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
+        {...(onCancel ? { onCancel } : {})}
       />
       <Text color={termcnColors.muted}>Space/空格 勾选 · Enter 确认 · Esc 取消</Text>
     </Box>

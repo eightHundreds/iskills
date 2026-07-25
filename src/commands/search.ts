@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from '../domain/core.js';
-import { confirm } from '../ui/prompts/index.js';
+import { Modal } from '../ui/overlay/static.js';
 import type { RemoteSkill, SkillMetadata } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search/index.js';
 import { importRemoteSkillToCollection } from './library.js';
@@ -89,15 +89,16 @@ export async function commandSearch(argv: string[]): Promise<void> {
     try {
       const result = await importRemoteSkillToCollection(selected.source, selected.name, {
         replace: values.replace ?? false,
-        confirmReplace: (current, incoming) => confirm(
-          `替换 ${selected.name}：${formatIdentity(current)} → ${formatIdentity(incoming)}？`
-        ),
+        confirmReplace: (current, incoming) => Modal.confirm({
+          title: '确认',
+          message: `替换 ${selected.name}：${formatIdentity(current)} → ${formatIdentity(incoming)}？`,
+        }),
       });
       printImportResult(result);
       return;
     } catch (error) {
       console.error(`收藏失败：${errorMessage(error)}`);
-      if (!(await confirm('重试收藏吗？'))) {
+      if (!(await Modal.confirm({ title: '确认', message: '重试收藏吗？' }))) {
         process.exitCode = 1;
         return;
       }

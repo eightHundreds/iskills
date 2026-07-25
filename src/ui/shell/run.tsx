@@ -12,9 +12,9 @@ import { AppShell } from './app-shell.js';
  * Ink UI runtime (shell package): mount registry + session runners + AppShell.
  *
  * - `mountInk` / `closeInk` — process-level active instance
- * - `runScreen` — one-shot Promise screen (`ui/prompts` / `ui/search`)
+ * - `runScreen` — low-level one-shot Promise screen (prefer Modal/Layer + bootstrap)
  * - `startApp` / `runApp` — long-lived tree (`ui/browser`); remount via handle
- * - registers overlay bootstrap so command `confirm` can spin a temporary host
+ * - registers overlay bootstrap so static Modal/Layer work without a pre-mounted tree
  */
 
 // ─── mount registry ─────────────────────────────────────────────────────────
@@ -200,13 +200,20 @@ function waitForOverlayHost(timeoutMs = 5000): Promise<OverlayHostHandle> {
 }
 
 /**
- * Temporary AppShell + OverlayHost for imperative confirm when no UI is mounted.
+ * Temporary AppShell + OverlayHost when no UI is mounted (CLI Modal/Layer).
  * Registered for `ui/overlay` withOverlayHost — overlay never imports this module.
  */
 setOverlayBootstrap(async () => {
   let finished = false;
   let exit: ((error?: Error | undefined) => void) | undefined;
   let instance: Instance;
+  let rejectInterrupt: ((error: InterruptError) => void) | undefined;
+
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    rejectInterrupt = reject;
+  });
+  // Avoid unhandled rejection if dispose wins the race first.
+  void interrupted.catch(() => undefined);
 
   const dispose = (): Promise<void> =>
     new Promise((resolve, reject) => {
@@ -230,17 +237,23 @@ setOverlayBootstrap(async () => {
       );
     });
 
+  const settleOverlays = (): void => {
+    const host = getActiveOverlayHost();
+    host?.modal.destroyAll();
+    host?.layer.destroyAll();
+  };
+
   instance = mountInk(
     <AppShell
       cancelOnEscape
       onCancel={() => {
-        getActiveOverlayHost()?.modal.destroyAll();
+        settleOverlays();
         void dispose();
       }}
       onCtrlC={() => {
-        void dispose().finally(() => {
-          // Interrupt is surfaced by the caller if needed; tear down the shell.
-        });
+        // Prefer InterruptError over destroyValue so CLI exits 130 (not soft-cancel).
+        rejectInterrupt?.(new InterruptError());
+        void dispose();
       }}
     >
       <ExitBridge
@@ -255,5 +268,6 @@ setOverlayBootstrap(async () => {
   return {
     host,
     dispose,
+    interrupted,
   };
 });

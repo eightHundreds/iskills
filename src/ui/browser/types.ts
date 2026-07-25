@@ -3,7 +3,6 @@
  * Commands may `import type` from here without depending on Ink implementations.
  */
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
-import type { PromptPort } from '../prompts/port.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
 export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list';
@@ -96,12 +95,6 @@ export interface DetailViewContext {
   links: SkillLink[];
 }
 
-export interface BrowserConfirmRequest {
-  title: string;
-  message: string;
-  details?: string[];
-}
-
 export interface BrowserAppLifecycle {
   suspendForSubprocess: (task: () => Promise<void>) => Promise<void>;
 }
@@ -114,12 +107,12 @@ export interface BrowserAppLaunchOptions {
 /** Full navigation snapshot including multi-select paths (host / actions). */
 export interface BrowserNavigationSnapshot extends BrowserState {}
 
-/** In-app host prompt surface (layer) — same as {@link PromptPort}. */
-export type BrowserPromptBridge = PromptPort;
-
+/**
+ * Browser action host: app chrome + data, not interactive UI.
+ * Prompts use static {@link import('../overlay/static.js').Modal} / Layer / present helpers.
+ */
 export interface BrowserActionHost {
   lifecycle: BrowserAppLifecycle;
-  requestConfirm: (request: BrowserConfirmRequest) => Promise<boolean>;
   setWorkingProgress: (
     progress: {
       skillName: string;
@@ -132,7 +125,6 @@ export interface BrowserActionHost {
   reloadData: () => Promise<BrowserDataSnapshot>;
   getNavigation: () => BrowserNavigationSnapshot;
   setNavigation: (navigation: BrowserNavigationSnapshot) => void;
-  prompts: BrowserPromptBridge;
   setAbortController: (controller: AbortController | null) => void;
 }
 

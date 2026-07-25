@@ -57,6 +57,10 @@ export function ImportReview<T extends Skill>({
   };
 
   useInput((input, key) => {
+    if (key.escape) {
+      submit(false);
+      return;
+    }
     if (activeTab === 'confirm') {
       if (key.leftArrow) {
         setActiveTab('tags');

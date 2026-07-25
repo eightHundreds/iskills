@@ -1,13 +1,15 @@
 /**
- * Remote search package entry: one-shot search screen via runScreen.
+ * Remote search package entry: one-shot search screen via static Layer.
  * Protocol types live in `types.ts`.
  */
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from './types.js';
 import type { RemoteSkill } from '../../domain/types.js';
-import { runScreen } from '../shell/run.js';
 import { TextInput, termcnColors } from '../components/termcn.js';
+import { Layer } from '../overlay/static.js';
+// Ensure CLI bootstrap is registered when search runs without a mounted tree.
+import '../shell/run.js';
 
 function formatInstalls(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -149,10 +151,12 @@ function SearchSkills({
 export function searchRemoteSkill(
   input: SearchViewInput
 ): Promise<RemoteSkill | undefined> {
-  return runScreen<RemoteSkill | undefined>(undefined, (finish) => (
-    <SearchSkills
-      {...input}
-      finish={finish}
-    />
-  ));
+  return Layer.open<RemoteSkill | undefined>({
+    content: (finish) => (
+      <SearchSkills
+        {...input}
+        finish={finish}
+      />
+    ),
+  });
 }

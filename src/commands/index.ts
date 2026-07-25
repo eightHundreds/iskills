@@ -24,8 +24,13 @@ export async function commandInit(argv: string[] = []): Promise<void> {
   console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
   let remote = values.remote;
   if (!remote && initialized && process.stdin.isTTY) {
-    const { confirm, input } = await import('../ui/prompts/index.js');
-    if (await confirm('是否配置远程仓库？')) remote = await input('远程仓库地址：');
+    const [{ Modal }, { promptText }] = await Promise.all([
+      import('../ui/overlay/static.js'),
+      import('../ui/prompts/present.js'),
+    ]);
+    if (await Modal.confirm({ title: '确认', message: '是否配置远程仓库？' })) {
+      remote = await promptText('远程仓库地址：');
+    }
   }
   if (remote) {
     await configureCollectionRemote(remote);

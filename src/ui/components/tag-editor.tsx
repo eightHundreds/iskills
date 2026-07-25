@@ -9,11 +9,13 @@ export function TagEditor({
   initialValues,
   title = '编辑标签',
   onSubmit,
+  onCancel,
 }: {
   tags: string[];
   initialValues: string[];
   title?: string;
   onSubmit: (tags: string[]) => void;
+  onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialValues));
@@ -30,6 +32,7 @@ export function TagEditor({
   ]);
 
   useInput((input, key) => {
+    if (key.escape) return onCancel?.();
     if (key.tab) {
       return setFocus((value) => tags.length && value === 'input' ? 'list' : 'input');
     }
@@ -74,6 +77,7 @@ export function TagEditor({
         label="新增标签（逗号分隔）"
         isActive={focus === 'input'}
         onSubmit={save}
+        {...(onCancel ? { onCancel } : {})}
       />
       <Text color={termcnColors.muted}>
         ↑/↓ 移动 · Space 选择 · Tab 切换区域 · Enter 保存 · Esc 取消

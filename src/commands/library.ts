@@ -41,17 +41,10 @@ import type {
   SkillMetadata,
 } from '../domain/types.js';
 
-type PromptsModule = typeof import('../ui/prompts/index.js');
+type PresentModule = typeof import('../ui/prompts/present.js');
 
-let promptsLoader: (() => Promise<PromptsModule>) | undefined;
-
-/** Inject CLI `ui/prompts` module (tests / alternate runtimes). */
-export function setLibraryPromptsLoader(loader: (() => Promise<PromptsModule>) | undefined): void {
-  promptsLoader = loader;
-}
-
-function prompts(): Promise<PromptsModule> {
-  return (promptsLoader ?? (() => import('../ui/prompts/index.js')))();
+function present(): Promise<PresentModule> {
+  return import('../ui/prompts/present.js');
 }
 
 function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
@@ -288,7 +281,10 @@ export async function importSkillsToCollection(
     }
     allowReplace = options.confirmReplace
       ? await options.confirmReplace(conflicts)
-      : await (await prompts()).confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+      : await (await import('../ui/overlay/static.js')).Modal.confirm({
+        title: '确认',
+        message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+      });
     if (!allowReplace) {
       selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
@@ -396,7 +392,7 @@ export async function commandImport(argv: string[]): Promise<void> {
     if (!values.all && (skills.length > 1 || !input)) {
       if (!process.stdin.isTTY) throw new Error('请使用 --all 或交互选择要导入的技能');
       const groups = globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }];
-      selected = await (await prompts()).chooseSkillMany(
+      selected = await (await present()).promptSkillGroups(
         groups,
         globalGroups
           ? '扫描全局 Skill 目录'
@@ -413,7 +409,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       const existingTags = [...new Set((await listCollection().catch(() => []))
         .flatMap((skill) => skill.tags))]
         .sort((a, b) => a.localeCompare(b));
-      const review = await (await prompts()).reviewImport(
+      const review = await (await present()).promptImportReview(
         selected.map((skill) => ({
           skill,
           detail: gitContext
@@ -448,7 +444,10 @@ export async function commandImport(argv: string[]): Promise<void> {
       if (!process.stdin.isTTY) {
         throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
       }
-      allowReplace = await (await prompts()).confirm(`替换同名收藏 ${conflicts.join(', ')} 吗？`);
+      allowReplace = await (await import('../ui/overlay/static.js')).Modal.confirm({
+        title: '确认',
+        message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+      });
       if (!allowReplace) selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
     let count = 0;
@@ -480,7 +479,7 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
     let names = requestedAgents;
     if (!names.length) {
       if (!process.stdin.isTTY) throw new Error('添加到全局目录时请指定 --agent');
-      names = await (await prompts()).chooseOptionsMany(
+      names = await (await present()).promptChoicesMany(
         Object.keys(AGENTS).map((name) => ({ label: name, value: name })),
         '选择全局 Agent 目录：'
       );
@@ -517,7 +516,7 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
   const unique = [...new Set(detected)];
   if (unique.length <= 1) return unique.length ? unique : [resolve('.agents/skills')];
   if (!process.stdin.isTTY) return [resolve('.agents/skills')];
-  return (await prompts()).chooseOptionsMany(
+  return (await present()).promptChoicesMany(
     unique.map((path) => ({ label: relative(process.cwd(), path), value: path })),
     '检测到多个 Agent 目录：'
   );
@@ -538,7 +537,8 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
   if (!process.stdin.isTTY) throw new Error('请指定技能名称');
   if (!skills.length) {
     let source: string | undefined;
-    source = await (await prompts()).chooseOne(
+    const ui = await present();
+    source = await ui.promptChoice(
       [
         { label: '扫描当前目录', value: 'current' },
         { label: '扫描常见全局 Agent 目录', value: 'global' },
@@ -546,14 +546,15 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
       ],
       '收藏夹还是空的，先从哪里导入技能？'
     );
-    if (source === 'custom') source = await (await prompts()).input('路径或 Git 来源：');
+    if (source === 'custom') source = await ui.promptText('路径或 Git 来源：');
     if (!source) return [];
     await commandImport(source === 'global' ? ['-g'] : source === 'current' ? [] : [source]);
     return listCollection();
   }
-  const query = await (await prompts()).input('搜索收藏夹：');
+  const ui = await present();
+  const query = await ui.promptText('搜索收藏夹：');
   if (query === undefined) return [];
-  return (await prompts()).chooseMany(
+  return ui.promptSkills(
     skills.filter((skill) => matchesSkill(skill, query)),
     '选择技能：'
   );
@@ -583,7 +584,10 @@ export async function addSkillsToProject(
         if (!replace && process.stdin.isTTY && !values.yes) {
           replace = values.confirmReplace
             ? await values.confirmReplace(target)
-            : await (await prompts()).confirm(`目标已存在，替换 ${target} 吗？`);
+            : await (await import('../ui/overlay/static.js')).Modal.confirm({
+              title: '确认',
+              message: `目标已存在，替换 ${target} 吗？`,
+            });
         }
         if (!replace) {
           if (process.stdin.isTTY && !values.yes) continue;

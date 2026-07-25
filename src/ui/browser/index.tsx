@@ -13,12 +13,7 @@ import {
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../shell/terminal.js';
-import { useLayer, useModal } from '../overlay/host.js';
 import { AppShell } from '../shell/app-shell.js';
-import { Select, TagEditor, TextInput } from '../components/termcn.js';
-import { InstallReview } from '../install/index.js';
-import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
-import type { CollectedSkill } from '../../domain/types.js';
 import {
   enterAlternateScreen,
   leaveAlternateScreen,
@@ -43,13 +38,10 @@ import { Detail, type DetailAction } from './detail.js';
 import type {
   BrowserActionHost,
   BrowserAppLifecycle,
-  BrowserConfirmRequest,
-  BrowserPromptBridge,
   BrowserResult,
   BrowserTab,
   BrowserViewInput,
   DetailEditorContext,
-  DetailViewContext,
 } from './types.js';
 
 export { Browser } from './browser.js';
@@ -98,65 +90,9 @@ function DetailScreen({
   );
 }
 
-/** Open termcn/review UI via AppShell layer (full-page replace). */
-function useBrowserPromptActions(): BrowserPromptBridge {
-  const layer = useLayer();
-  const present = <T,>(node: (finish: (value: T) => void) => ReactNode): Promise<T> =>
-    layer.open({ content: node });
-
-  return {
-    editInput: (label, initialValue) =>
-      present<string | undefined>((finish) => (
-        <TextInput
-          key={label}
-          label={label}
-          initialValue={initialValue}
-          onCancel={() => finish(undefined)}
-          onSubmit={(value) => finish(value.trim())}
-        />
-      )),
-    editTags: (tags, initialValues, title) =>
-      present<string[] | undefined>((finish) => (
-        <TagEditor
-          key={title}
-          title={title}
-          tags={tags}
-          initialValues={initialValues}
-          onSubmit={finish}
-        />
-      )),
-    chooseOne: (options, title) =>
-      present<string | undefined>((finish) => (
-        <Select
-          key={title}
-          label={title}
-          options={options}
-          onSubmit={(value) => finish(value)}
-          onCancel={() => finish(undefined)}
-        />
-      )),
-    reviewInstall: (
-      skills: CollectedSkill[],
-      targets: InstallReviewTarget[],
-      defaultProjectAgents: string[],
-      defaultGlobalAgents: string[]
-    ) =>
-      present<InstallReviewResult | undefined>((finish) => (
-        <InstallReview
-          key={skills.map((skill) => skill.name).join('\0')}
-          skills={skills}
-          targets={targets}
-          defaultProjectAgents={defaultProjectAgents}
-          defaultGlobalAgents={defaultGlobalAgents}
-          onSubmit={(result) => finish(result.confirmed ? result : undefined)}
-        />
-      )),
-  };
-}
-
 /**
  * Phase shell: detail / browse.
- * Full-screen prompts use {@link useLayer}; overlays use {@link useModal}.
+ * Imperative prompts use static Modal/Layer (active OverlayHost under AppShell).
  */
 export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
@@ -175,18 +111,16 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   );
 }
 
-/** Must render under AppShell so layer/modal hooks can open host slots. */
+/** Must render under AppShell so OverlayHost is registered for static Modal/Layer. */
 function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
   const store = useStore() as BrowserAppStore;
-  const modal = useModal();
   const [data, setData] = useAtom(browserDataAtom);
   const [status] = useAtom(browserStatusAtom);
   const [phase, setPhase] = useAtom(browserPhaseAtom);
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const promptActions = useBrowserPromptActions();
 
   const reloadData = useCallback(async () => {
     const snapshot = await loadBrowserData();
@@ -199,27 +133,15 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     void reloadData();
   }, [data, reloadData]);
 
-  const requestConfirm = useCallback(
-    (request: BrowserConfirmRequest) =>
-      modal.confirm({
-        title: request.title,
-        message: request.message,
-        ...(request.details ? { details: request.details } : {}),
-      }),
-    [modal]
-  );
-
   const actionHost = useMemo((): BrowserActionHost => ({
     lifecycle,
-    requestConfirm,
     setWorkingProgress: setWorking,
     setStatus: (text, transient) => setBrowserStatus(store, text, transient),
     reloadData,
     getNavigation: () => readNavigation(store),
     setNavigation: (value) => writeNavigation(store, value),
-    prompts: promptActions,
     setAbortController: (controller) => store.set(activeAbortAtom, controller),
-  }), [lifecycle, promptActions, reloadData, requestConfirm, setWorking, store]);
+  }), [lifecycle, reloadData, setWorking, store]);
 
   const dispatchResult = useCallback(async (result: BrowserResult) => {
     try {

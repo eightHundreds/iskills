@@ -21,9 +21,7 @@ export {
   useLayer,
   useModal,
   useOverlayBusy,
-  useShellBusy,
-} from '../overlay/host.js';
-export type {
+} from '../overlay/host.js';export type {
   AppModalConfirmOptions,
   AppModalInfoOptions,
   AppModalOpenOptions,

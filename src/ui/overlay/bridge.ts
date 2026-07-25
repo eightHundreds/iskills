@@ -9,6 +9,11 @@ export interface OverlayHostHandle {
 export interface OverlayBootstrapSession {
   host: OverlayHostHandle;
   dispose: () => Promise<void>;
+  /**
+   * Rejects with InterruptError when the temporary shell receives Ctrl+C.
+   * Raced against `work` so CLI one-shots exit 130 like `runScreen`.
+   */
+  interrupted: Promise<never>;
 }
 
 type OverlayBootstrap = () => Promise<OverlayBootstrapSession>;
@@ -27,7 +32,7 @@ export function getActiveOverlayHost(): OverlayHostHandle | null {
 
 /**
  * Shell registers how to spin up a temporary OverlayHost when none is active
- * (CLI one-shot confirm). Overlay never imports AppShell.
+ * (CLI Modal/Layer). Overlay never imports AppShell.
  */
 export function setOverlayBootstrap(fn: OverlayBootstrap | null): void {
   bootstrap = fn;
@@ -47,7 +52,7 @@ export async function withOverlayHost<T>(
   }
   const session = await bootstrap();
   try {
-    return await work(session.host);
+    return await Promise.race([work(session.host), session.interrupted]);
   } finally {
     await session.dispose();
   }

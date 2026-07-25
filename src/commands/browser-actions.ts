@@ -26,6 +26,13 @@ import {
 import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
 import type { InstallReviewTarget } from '../ui/install/types.js';
+import { Modal } from '../ui/overlay/static.js';
+import {
+  promptChoice,
+  promptInstallReview,
+  promptTags,
+  promptText,
+} from '../ui/prompts/present.js';
 import { InterruptError } from '../ui/shell/terminal.js';
 import type {
   BrowserActionHost,
@@ -191,7 +198,7 @@ async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): 
     try {
       const updateStatus = await updateGitSkill(skill, false, {
         quietDelete: true,
-        confirmDelete: (links) => host.requestConfirm({
+        confirmDelete: (links) => Modal.confirm({
           title: '上游删除',
           message: `上游已删除 ${skill.name}，执行收藏夹移除流程吗？`,
           details: links.map((link) => {
@@ -215,7 +222,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
   const collection = await listCollection();
   const existing = [...new Set(collection.flatMap((skill) => skill.tags))]
     .sort((left, right) => left.localeCompare(right));
-  const added = await host.prompts.editTags(
+  const added = await promptTags(
     existing,
     [],
     `为 ${skills.length} 个技能添加标签`
@@ -232,7 +239,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
   const { defaultProjectAgents, defaultGlobalAgents } = await defaultInstallAgents();
-  const install = await host.prompts.reviewInstall(
+  const install = await promptInstallReview(
     skills,
     INSTALL_TARGETS,
     defaultProjectAgents,
@@ -244,7 +251,7 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
       quiet: true,
       agent: install.agents,
       copy: install.copy,
-      confirmReplace: (target) => host.requestConfirm({
+      confirmReplace: (target) => Modal.confirm({
         title: '替换目标',
         message: `目标已存在，替换 ${target} 吗？`,
       }),
@@ -343,7 +350,7 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
   try {
     const { count } = await importSkillsToCollection(skills, {
       quiet: true,
-      confirmReplace: (conflicts) => host.requestConfirm({
+      confirmReplace: (conflicts) => Modal.confirm({
         title: '替换收藏',
         message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
       }),
@@ -362,7 +369,7 @@ export async function handleDetailAction(
 ): Promise<void> {
   const { skill, metadata } = context;
   if (action === 'note') {
-    const note = await host.prompts.editInput('编辑备注（Enter 保存，Esc 取消）', metadata.note);
+    const note = await promptText('编辑备注（Enter 保存，Esc 取消）', metadata.note);
     if (note === undefined) return;
     metadata.note = note;
     await writeMetadata(metadata);
@@ -372,7 +379,7 @@ export async function handleDetailAction(
   if (action === 'tags') {
     const existing = [...new Set((await listCollection()).flatMap((item) => item.tags))]
       .sort((left, right) => left.localeCompare(right));
-    const tags = await host.prompts.editTags(existing, metadata.tags, '编辑标签');
+    const tags = await promptTags(existing, metadata.tags, '编辑标签');
     if (tags === undefined) return;
     metadata.tags = tags;
     await writeMetadata(metadata);
@@ -380,7 +387,7 @@ export async function handleDetailAction(
     return;
   }
   if (action === 'source') {
-    const sourceValue = await host.prompts.editInput(
+    const sourceValue = await promptText(
       'Git 来源（Enter 继续，Esc 取消）',
       metadata.source.url || ''
     );
@@ -388,7 +395,7 @@ export async function handleDetailAction(
     const sourceInput = sourceValue.trim();
     if (!isGitSource(sourceInput)) throw new Error(`不是有效的 Git 来源：${sourceInput}`);
     const parsed = parseGitSource(sourceInput);
-    const refValue = await host.prompts.editInput(
+    const refValue = await promptText(
       '分支、Tag 或 Commit（Enter 继续，Esc 取消）',
       parsed.ref || metadata.source.ref || ''
     );
@@ -410,7 +417,7 @@ export async function handleDetailAction(
         .sort((left, right) => left.rank - right.rank || left.value.localeCompare(right.value))
         .map(({ label, value }) => ({ label, value }));
       if (!options.length) throw new Error('目标仓库中没有找到 SKILL.md');
-      const sourcePath = await host.prompts.chooseOne(options, '选择仓库内 Skill：');
+      const sourcePath = await promptChoice(options, '选择仓库内 Skill：');
       if (sourcePath === undefined) return;
       await bindMetadataSource(
         skill.name,

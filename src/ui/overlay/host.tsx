@@ -49,9 +49,6 @@ export function useOverlayBusy(): boolean {
   return useContext(BusyContext);
 }
 
-/** @deprecated Prefer useOverlayBusy */
-export const useShellBusy = useOverlayBusy;
-
 /**
  * Independent overlay root: Layer + Modal promise slots.
  * Does not own process lifecycle, Ctrl+C, or first-frame gating — compose under AppShell (or any host).
@@ -77,7 +74,10 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
     <T,>(options: LayerOpenOptions<T>): Promise<T> => {
       // Layer replaces the tree — drop any overlay first.
       destroyModal();
-      return openLayerSlot(options.content, undefined as T);
+      const destroyValue = ('destroyValue' in options
+        ? options.destroyValue
+        : undefined) as T;
+      return openLayerSlot(options.content, destroyValue);
     },
     [destroyModal, openLayerSlot]
   );
@@ -109,8 +109,12 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
   );
 
   const openModalContent = useCallback(
-    <T,>(options: ModalOpenOptions<T>): Promise<T> =>
-      openModal(undefined as T, options.content),
+    <T,>(options: ModalOpenOptions<T>): Promise<T> => {
+      const destroyValue = ('destroyValue' in options
+        ? options.destroyValue
+        : undefined) as T;
+      return openModal(destroyValue, options.content);
+    },
     [openModal]
   );
 
@@ -142,6 +146,7 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
   }, [layerApi, modalApi]);
 
   // Host-level dismiss for absolute overlays (child useInput can miss keys).
+  // Layer Esc is left to the content (nested screens use Esc to go back).
   useInput((input, key) => {
     if (!modalSlot.isOpen) return;
     const meta = modalSlot.peekMeta();
@@ -157,13 +162,16 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
     }
   });
 
+  // Keep `children` mounted while a layer is open so AppShell chrome (Ctrl+C,
+  // first-frame gate) and long-lived trees (Browser) stay alive. Layer content
+  // is a full-page visual replace only.
   return (
     <LayerContext.Provider value={layerApi}>
       <ModalContext.Provider value={modalApi}>
         <BusyContext.Provider value={busy}>
           <Box
             flexDirection="column"
-            {...(modalOpen
+            {...(modalOpen || layerOpen
               ? {
                   position: 'relative' as const,
                   width: cols,
@@ -172,24 +180,24 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
                 }
               : {})}
           >
-            {layerOpen ? (
-              layerSlot.node
-            ) : (
-              <>
-                {children}
-                {modalOpen ? (
-                  <Box
-                    position="absolute"
-                    width={cols}
-                    height={rows}
-                    justifyContent="center"
-                    alignItems="center"
-                  >
-                    {modalSlot.node}
-                  </Box>
-                ) : null}
-              </>
-            )}
+            <Box
+              flexDirection="column"
+              display={layerOpen ? 'none' : 'flex'}
+            >
+              {children}
+            </Box>
+            {layerOpen ? layerSlot.node : null}
+            {modalOpen ? (
+              <Box
+                position="absolute"
+                width={cols}
+                height={rows}
+                justifyContent="center"
+                alignItems="center"
+              >
+                {modalSlot.node}
+              </Box>
+            ) : null}
           </Box>
         </BusyContext.Provider>
       </ModalContext.Provider>
