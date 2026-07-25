@@ -2,8 +2,8 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { termcnColors } from '../components/termcn.js';
-import { detailFrameDimensions } from './browser-layout.js';
-import { detailContentLines } from './browse-format.js';
+import { detailContentLines } from './format.js';
+import { detailFrameDimensions } from './layout.js';
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';
 

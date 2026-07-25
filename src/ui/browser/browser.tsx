@@ -12,14 +12,14 @@ import type { CollectedSkill, Skill } from '../../domain/types.js';
 import {
   browserNavigationAtom,
   browserSelectionAtom,
-} from './browser-app-store.js';
+} from './store.js';
 import {
   browserFrameDimensions,
   masterDetailLayout,
   masterDetailSeparator,
   masterDetailViewportHeight,
   masterDetailWidths,
-} from './browser-layout.js';
+} from './layout.js';
 import {
   TAG_FILTER_ALL,
   browseDetailRows,
@@ -46,7 +46,7 @@ import {
   type CollectionDetailRow,
   type SkillRow,
   visibleAgentGroups,
-} from './browse-format.js';
+} from './format.js';
 import {
   Modal,
   Select,

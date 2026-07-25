@@ -1,4 +1,4 @@
-import { atom, createStore, type PrimitiveAtom } from 'jotai';
+import { atom, createStore } from 'jotai';
 import type {
   BrowserAppPhase,
   BrowserDataSnapshot,
@@ -7,7 +7,6 @@ import type {
   BrowserStatusSnapshot,
   BrowserTab,
   DetailViewContext,
-  InAppPromptRequest,
   WorkingProgressSnapshot,
 } from './types.js';
 
@@ -35,7 +34,6 @@ export const browserNavigationAtom = atom<BrowserNavigationState | null>(null);
 export const browserSelectionAtom = atom<Set<string>>(new Set<string>());
 export const detailContextAtom = atom<DetailViewContext | null>(null);
 export const workingProgressAtom = atom<WorkingProgressSnapshot | null>(null);
-export const inAppPromptAtom = atom<InAppPromptRequest | null>(null);
 export const activeAbortAtom = atom<AbortController | null>(null);
 
 export type BrowserAppStore = ReturnType<typeof createBrowserAppStore>;
@@ -88,17 +86,4 @@ export function writeNavigation(
   const { selected, ...rest } = navigation;
   store.set(browserNavigationAtom, rest);
   store.set(browserSelectionAtom, new Set(selected));
-}
-
-export function requestInAppPrompt<T>(
-  store: BrowserAppStore,
-  promptAtom: PrimitiveAtom<InAppPromptRequest | null>,
-  build: (resolve: (value: T) => void) => InAppPromptRequest
-): Promise<T> {
-  return new Promise((resolve) => {
-    store.set(promptAtom, build((value) => {
-      store.set(promptAtom, null);
-      resolve(value);
-    }));
-  });
 }

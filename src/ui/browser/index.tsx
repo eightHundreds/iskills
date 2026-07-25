@@ -13,7 +13,11 @@ import {
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../terminal.js';
-import { AppShell } from '../app-shell.js';
+import { AppShell, useAppShellLayer } from '../app-shell.js';
+import { Select, TagEditor, TextInput } from '../components/termcn.js';
+import { InstallReview } from '../reviews.js';
+import type { InstallReviewResult, InstallReviewTarget } from '../install-review.js';
+import type { CollectedSkill } from '../../domain/types.js';
 import {
   enterAlternateScreen,
   leaveAlternateScreen,
@@ -27,20 +31,19 @@ import {
   browserStatusAtom,
   clearTransientStatus,
   detailContextAtom,
-  inAppPromptAtom,
   readNavigation,
   setBrowserStatus,
   writeNavigation,
   workingProgressAtom,
   type BrowserAppStore,
-} from './browser-app-store.js';
+} from './store.js';
 import { Browser } from './browser.js';
 import { Detail, type DetailAction } from './detail.js';
-import { InAppPromptHost, useInAppPromptActions } from './in-app-prompt.js';
 import type {
   BrowserActionHost,
   BrowserAppLifecycle,
   BrowserConfirmRequest,
+  BrowserPromptBridge,
   BrowserResult,
   BrowserTab,
   BrowserViewInput,
@@ -55,7 +58,7 @@ export {
   detailFrameDimensions,
   masterDetailLayout,
   type BrowserFrameDimensions,
-} from './browser-layout.js';
+} from './layout.js';
 export {
   browserNavigationAtom,
   browserSelectionAtom,
@@ -63,7 +66,7 @@ export {
   createBrowserAppStore,
   type BrowserNavigationState,
   type BrowserAppStore,
-} from './browser-app-store.js';
+} from './store.js';
 
 interface BrowserConfirmation {
   title: string;
@@ -102,18 +105,94 @@ function DetailScreen({
   );
 }
 
-/** Phase shell: prompt / detail / browse. */
+/** Open termcn/review UI on AppShell layer (must run under AppShell). */
+function useBrowserPromptActions(): BrowserPromptBridge {
+  const layer = useAppShellLayer();
+  const present = <T,>(node: (finish: (value: T) => void) => ReactNode): Promise<T> =>
+    new Promise((resolve) => {
+      const finish = (value: T): void => {
+        layer.close();
+        resolve(value);
+      };
+      layer.open(node(finish));
+    });
+
+  return {
+    editInput: (label, initialValue) =>
+      present<string | undefined>((finish) => (
+        <TextInput
+          label={label}
+          initialValue={initialValue}
+          onCancel={() => finish(undefined)}
+          onSubmit={(value) => finish(value.trim())}
+        />
+      )),
+    editTags: (tags, initialValues, title) =>
+      present<string[] | undefined>((finish) => (
+        <TagEditor
+          title={title}
+          tags={tags}
+          initialValues={initialValues}
+          onSubmit={finish}
+        />
+      )),
+    chooseOne: (options, title) =>
+      present<string | undefined>((finish) => (
+        <Select
+          label={title}
+          options={options}
+          onSubmit={(value) => finish(value)}
+        />
+      )),
+    reviewInstall: (
+      skills: CollectedSkill[],
+      targets: InstallReviewTarget[],
+      defaultProjectAgents: string[],
+      defaultGlobalAgents: string[]
+    ) =>
+      present<InstallReviewResult | undefined>((finish) => (
+        <InstallReview
+          skills={skills}
+          targets={targets}
+          defaultProjectAgents={defaultProjectAgents}
+          defaultGlobalAgents={defaultGlobalAgents}
+          onSubmit={(result) => finish(result.confirmed ? result : undefined)}
+        />
+      )),
+  };
+}
+
+/**
+ * Phase shell: detail / browse. In-app prompts use {@link useAppShellLayer}.
+ */
 export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
   const store = useStore() as BrowserAppStore;
-  const promptActive = useAtomValue(inAppPromptAtom);
+
+  const handleCtrlC = useCallback(() => {
+    store.get(activeAbortAtom)?.abort();
+    // AppShell only notifies — host owns lifecycle.
+    exit(new InterruptError());
+  }, [exit, store]);
+
+  return (
+    <AppShell onCtrlC={handleCtrlC}>
+      <BrowserAppScreens lifecycle={lifecycle} />
+    </AppShell>
+  );
+}
+
+/** Must render under AppShell so prompt hooks can open the shell layer. */
+function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
+  const { exit } = useApp();
+  const store = useStore() as BrowserAppStore;
   const [data, setData] = useAtom(browserDataAtom);
   const [status] = useAtom(browserStatusAtom);
   const [phase, setPhase] = useAtom(browserPhaseAtom);
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const promptActions = useInAppPromptActions();
+  const promptActions = useBrowserPromptActions();
   const [confirmation, setConfirmation] = useState<BrowserConfirmation | undefined>();
 
   const reloadData = useCallback(async () => {
@@ -158,12 +237,6 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     prompts: promptActions,
     setAbortController: (controller) => store.set(activeAbortAtom, controller),
   }), [lifecycle, promptActions, reloadData, requestConfirm, setWorking, store]);
-
-  const handleCtrlC = useCallback(() => {
-    store.get(activeAbortAtom)?.abort();
-    // AppShell only notifies — host owns lifecycle.
-    exit(new InterruptError());
-  }, [exit, store]);
 
   const dispatchResult = useCallback(async (result: BrowserResult) => {
     try {
@@ -213,51 +286,39 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
       : {}),
   };
 
-  if (promptActive) {
-    return (
-      <AppShell onCtrlC={handleCtrlC}>
-        <InAppPromptHost />
-      </AppShell>
-    );
-  }
-
   if (phase === 'detail' && detail) {
     return (
-      <AppShell onCtrlC={handleCtrlC}>
-        <DetailScreen
-          onBack={() => {
-            setPhase('browse');
-            setDetail(null);
-          }}
-          onAction={async (context, action) => {
-            await handleDetailAction(actionHost, context, action);
-            await reloadData();
-            const current = store.get(detailContextAtom);
-            if (!current) return;
-            setDetail(await loadDetailContext(
-              current.skill,
-              current.collection,
-              current.frameHeight,
-              current.frameWidth
-            ));
-          }}
-        />
-      </AppShell>
+      <DetailScreen
+        onBack={() => {
+          setPhase('browse');
+          setDetail(null);
+        }}
+        onAction={async (context, action) => {
+          await handleDetailAction(actionHost, context, action);
+          await reloadData();
+          const current = store.get(detailContextAtom);
+          if (!current) return;
+          setDetail(await loadDetailContext(
+            current.skill,
+            current.collection,
+            current.frameHeight,
+            current.frameWidth
+          ));
+        }}
+      />
     );
   }
 
   return (
-    <AppShell onCtrlC={handleCtrlC}>
-      <Browser
-        {...viewInput}
-        confirmation={confirmation}
-        finish={(result) => {
-          void dispatchResult(result).catch((error) => {
-            if (error instanceof InterruptError) exit(error);
-          });
-        }}
-      />
-    </AppShell>
+    <Browser
+      {...viewInput}
+      confirmation={confirmation}
+      finish={(result) => {
+        void dispatchResult(result).catch((error) => {
+          if (error instanceof InterruptError) exit(error);
+        });
+      }}
+    />
   );
 }
 
@@ -278,7 +339,7 @@ export async function runBrowserApp(
   initialTab: BrowserTab = 'project',
   store?: BrowserAppStore
 ): Promise<void> {
-  const { createBrowserAppStore } = await import('./browser-app-store.js');
+  const { createBrowserAppStore } = await import('./store.js');
   const appStore = store ?? createBrowserAppStore(initialQuery, initialTab);
   const initialData = await loadBrowserData();
   appStore.set(browserDataAtom, initialData);

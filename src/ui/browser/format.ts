@@ -1,5 +1,5 @@
 /**
- * Pure browse view formatting + focus ladder (no Ink components).
+ * Pure view formatting + focus ladder (no Ink components).
  * Column/row strings, filters, modal copy, detail text model.
  */
 import type { BrowserFocus, BrowserTab, SkillGroup } from './types.js';
