@@ -6,10 +6,20 @@
 
 ## [未发布]
 
+## [0.2.28] - 2026-07-25
+
 ### 变更
 
 - 以主 TUI 统一浏览、删除、更新和 Git 同步，移除重复的 `list`、`remove`、`update`、`sync` 子命令。
 - 保留独立 `search [关键词]` TUI，移除 `search --json` 与 `search --collect` 自动化入口。
+- UI 按产品能力分包：`browser` / `search` / `import` / `install` / `prompts` / `overlay` / `shell`。
+- 抽出独立 `overlay` 包（Layer / Modal 槽引擎）；`AppShell` 仅作 chrome 组合。
+- 命令侧 `confirm` 与 Browser 共用 Modal 面板路径。
+- 主浏览器迁 Ink 单树；标签侧栏按当前 Agent 统计与导航。
+
+### 修复
+
+- 修复 AppShell layer 确认与连续 prompt 的生命周期问题。
 
 ## [0.2.27] - 2026-07-16
 
