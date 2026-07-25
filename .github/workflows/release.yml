@@ -22,7 +22,8 @@ jobs:
       - run: git config --global init.defaultBranch main
       - run: env -u CI pnpm test
       - run: test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./package.json').version")"
-      - run: pnpm publish
+      # Tag checkout is detached HEAD; pnpm git-checks expect master|main.
+      - run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag

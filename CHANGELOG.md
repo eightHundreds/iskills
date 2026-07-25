@@ -6,6 +6,13 @@
 
 ## [未发布]
 
+## [0.2.32] - 2026-07-25
+
+### 修复
+
+- 发布流水线：`pnpm publish --no-git-checks`，避免 tag 检出 detached HEAD 被 git-checks 拦截。
+- 稳定 TTY 发布阻塞用例：分组跳转 wait、混合选择 footer 断言与导航路径。
+
 ## [0.2.31] - 2026-07-25
 
 ### 修复
