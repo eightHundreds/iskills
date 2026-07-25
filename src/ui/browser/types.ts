@@ -3,7 +3,7 @@
  * Commands may `import type` from here without depending on Ink implementations.
  */
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
-import type { PromptPort } from '../prompt-port.js';
+import type { PromptPort } from '../prompts/port.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
 export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list';

@@ -1,10 +1,11 @@
-import type { CollectedSkill, Skill } from '../domain/types.js';
-import type { InstallReviewResult, InstallReviewTarget } from './install-review.js';
+import type { CollectedSkill, Skill } from '../../domain/types.js';
+import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
 
 /**
- * Shared prompt capability interface for CLI one-shot screens
- * (`runScreen` via prompts) and in-tree browser overlay adapters.
+ * Shared interactive I/O capability surface for CLI adapters and in-tree hosts.
  * Type-only seam — commands may `import type` this module.
+ *
+ * `reviewInstall` refers to the install feature contract, not a presentation mode.
  */
 export interface PromptPort {
   editInput: (label: string, initialValue: string) => Promise<string | undefined>;

@@ -2,7 +2,7 @@
 
 import { main } from '../dist/src/cli.js';
 
-import { InterruptError } from '../dist/src/ui/terminal.js';
+import { InterruptError } from '../dist/src/ui/shell/terminal.js';
 
 main().catch((error) => {
   if (

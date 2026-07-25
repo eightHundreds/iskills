@@ -1,4 +1,4 @@
-import type { RemoteSkill } from '../domain/types.js';
+import type { RemoteSkill } from '../../domain/types.js';
 
 /** Search screen protocol (type-only). */
 

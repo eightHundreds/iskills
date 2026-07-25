@@ -1,8 +1,8 @@
 import { parseArgs } from 'node:util';
 import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from '../domain/core.js';
-import { confirm } from '../ui/prompts.js';
+import { confirm } from '../ui/prompts/index.js';
 import type { RemoteSkill, SkillMetadata } from '../domain/types.js';
-import { searchRemoteSkill } from '../ui/search.js';
+import { searchRemoteSkill } from '../ui/search/index.js';
 import { importRemoteSkillToCollection } from './library.js';
 
 const GITHUB_SOURCE =

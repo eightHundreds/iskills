@@ -1,7 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
-import { useShellBusy } from '../app-shell.js';
+import { useShellBusy } from '../shell/app-shell.js';
 import { termcnColors } from '../components/termcn.js';
 import { detailContentLines } from './format.js';
 import { detailFrameDimensions } from './layout.js';

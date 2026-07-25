@@ -1,4 +1,7 @@
-/** Install / add destination review DTOs (UI protocol). */
+/**
+ * Install / add destination review protocol (type-only).
+ * Commands may `import type` without depending on Ink implementations.
+ */
 
 export interface InstallReviewTarget {
   value: string;

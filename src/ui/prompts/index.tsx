@@ -1,23 +1,22 @@
+/**
+ * Generic interactive I/O adapters (confirm / select / input).
+ *
+ * Presentation host is always `runScreen` here; feature screens live under
+ * `ui/install` and `ui/import` and may also be mounted as layer/modal.
+ */
 import {
   Confirm,
   MultiSelect,
   Select,
   TagEditor,
   TextInput,
-} from './components/termcn.js';
-import {
-  InstallReview,
-  ImportReview,
-  SkillMultiSelect,
-  type ImportReviewItem,
-  type ImportReviewResult,
-} from './reviews.js';
-import type {
-  InstallReviewResult,
-  InstallReviewTarget,
-} from './install-review.js';
-import { runScreen } from './run.js';
-import type { Choice, Skill } from '../domain/types.js';
+} from '../components/termcn.js';
+import { ImportReview, SkillMultiSelect } from '../import/index.js';
+import type { ImportReviewItem, ImportReviewResult } from '../import/types.js';
+import { InstallReview } from '../install/index.js';
+import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
+import { runScreen } from '../shell/run.js';
+import type { Choice, Skill } from '../../domain/types.js';
 
 export function input(message: string): Promise<string | undefined> {
   return runScreen<string | undefined>(
@@ -114,6 +113,7 @@ export function chooseOptionsMany<T extends string>(
   ));
 }
 
+/** CLI host: mount import review via runScreen. */
 export function reviewImport<T extends Skill>(
   items: ImportReviewItem<T>[],
   existingTags: string[]
@@ -127,6 +127,7 @@ export function reviewImport<T extends Skill>(
   ));
 }
 
+/** CLI host: mount install review via runScreen. */
 export function reviewInstall(
   skills: Skill[],
   targets: InstallReviewTarget[],

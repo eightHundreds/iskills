@@ -47,7 +47,7 @@ import {
   type SkillRow,
   visibleAgentGroups,
 } from './format.js';
-import { useModal, useShellBusy } from '../app-shell.js';
+import { useModal, useShellBusy } from '../shell/app-shell.js';
 import { FramedPanel } from '../components/framed-panel.js';
 import {
   Select,
@@ -704,19 +704,15 @@ export function Browser({
               return current;
             }
             if (current.focus === 'tags') {
-              if (key.downArrow) return { ...current, focus: 'list' };
-              if (key.upArrow) return { ...current, focus: focusAfterUpFromTags(hasAgents) };
+              // ↑/↓ move among tag rows (handled below). Only ←/→ change the focus ladder here.
               if (key.leftArrow) return { ...current, focus: focusAfterUpFromTags(hasAgents) };
               if (key.rightArrow) return { ...current, focus: 'list' };
+              return current;
             }
             return current;
           });
           // Tag index moves stay on the tags-local path below when still on tags.
           if (liveFocus !== 'tags' || key.leftArrow || key.rightArrow) return;
-          if (key.downArrow || key.upArrow) {
-            // After functional update, live ref may already be list/tabs.
-            if (navigationRef.current?.focus !== 'tags') return;
-          }
         }
       }
       if (liveFocus === 'tabs' || liveFocus === 'agents') {

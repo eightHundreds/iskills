@@ -8,7 +8,7 @@ import {
 } from './commands/index.js';
 import { commitCollection, ensureCollection, readState } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
-import { InterruptError } from './ui/terminal.js';
+import { InterruptError } from './ui/shell/terminal.js';
 
 const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }
@@ -63,7 +63,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     throw error;
   } finally {
     // Lazy: avoid static import of Ink UI on every CLI entry; only load to tear down.
-    const { closeInk } = await import('./ui/run.js');
+    const { closeInk } = await import('./ui/shell/run.js');
     closeInk();
   }
 }

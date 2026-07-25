@@ -9,8 +9,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { FramedPanel } from './components/framed-panel.js';
-import { isReturn } from './components/text.js';
+import { FramedPanel } from '../components/framed-panel.js';
+import { isReturn } from '../components/text.js';
 
 /**
  * Pure Ink interactive root shell: first-frame visibility + global key callbacks
@@ -83,7 +83,7 @@ const ShellBusyContext = createContext(false);
 
 /**
  * Full-page host slot. Replaces AppShell children until closed.
- * Use for InstallReview / Select / TextInput and other full-screen flows.
+ * Use for full-page feature screens (install/import review, Select, TextInput).
  */
 export function useLayer(): LayerApi {
   const api = useContext(LayerContext);

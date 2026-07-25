@@ -4,11 +4,11 @@ import { InterruptError } from './terminal.js';
 import { AppShell } from './app-shell.js';
 
 /**
- * Ink UI runtime: mount registry + session runners + `AppShell` composition.
+ * Ink UI runtime (shell package): mount registry + session runners + AppShell.
  *
  * - `mountInk` / `closeInk` — process-level active instance
- * - `runScreen` — one-shot Promise screen (prompts / search)
- * - `startApp` / `runApp` — long-lived tree (browser); remount via handle
+ * - `runScreen` — one-shot Promise screen (`ui/prompts` / `ui/search`)
+ * - `startApp` / `runApp` — long-lived tree (`ui/browser`); remount via handle
  */
 
 // ─── mount registry ─────────────────────────────────────────────────────────

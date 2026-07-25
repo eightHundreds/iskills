@@ -12,17 +12,17 @@ import {
   loadDetailContext,
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
-import { InterruptError } from '../terminal.js';
-import { AppShell, useLayer, useModal } from '../app-shell.js';
+import { InterruptError } from '../shell/terminal.js';
+import { AppShell, useLayer, useModal } from '../shell/app-shell.js';
 import { Select, TagEditor, TextInput } from '../components/termcn.js';
-import { InstallReview } from '../reviews.js';
-import type { InstallReviewResult, InstallReviewTarget } from '../install-review.js';
+import { InstallReview } from '../install/index.js';
+import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
 import type { CollectedSkill } from '../../domain/types.js';
 import {
   enterAlternateScreen,
   leaveAlternateScreen,
   startApp,
-} from '../run.js';
+} from '../shell/run.js';
 import {
   activeAbortAtom,
   browserDataAtom,

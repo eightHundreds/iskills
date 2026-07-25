@@ -25,8 +25,8 @@ import {
 } from '../domain/collection-write.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
-import type { InstallReviewTarget } from '../ui/install-review.js';
-import { InterruptError } from '../ui/terminal.js';
+import type { InstallReviewTarget } from '../ui/install/types.js';
+import { InterruptError } from '../ui/shell/terminal.js';
 import type {
   BrowserActionHost,
   BrowserDataSnapshot,
