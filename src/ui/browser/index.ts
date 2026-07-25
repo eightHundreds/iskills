@@ -4,12 +4,14 @@ export { runBrowserApp, BrowserApp } from './browser-app.js';
 export {
   Browser,
   Detail,
+  type DetailAction,
+} from './browser.js';
+export {
   browserFrameDimensions,
   detailFrameDimensions,
   masterDetailLayout,
   type BrowserFrameDimensions,
-  type DetailAction,
-} from './browser.js';
+} from './browser-layout.js';
 export {
   browserNavigationAtom,
   browserSelectionAtom,
@@ -18,4 +20,3 @@ export {
   type BrowserNavigationState,
   type BrowserAppStore,
 } from './browser-app-store.js';
-export type { BrowserFocus, BrowserState, BrowserTab } from '../../contracts/browser.js';

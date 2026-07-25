@@ -7,7 +7,7 @@ import type {
   BrowserTab,
   BrowserViewInput,
   SkillGroup,
-} from '../../contracts/browser.js';
+} from './types.js';
 import { matchesSkill } from '../../domain/skill-query.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import {
@@ -40,13 +40,6 @@ import {
   type ModalBackgroundLine,
 } from '../components/termcn.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
-
-export {
-  browserFrameDimensions,
-  detailFrameDimensions,
-  masterDetailLayout,
-  type BrowserFrameDimensions,
-} from './browser-layout.js';
 
 interface BrowserConfirmation {
   title: string;
@@ -920,7 +913,11 @@ interface BrowserProps extends BrowserViewInput {
   finish: (result: BrowserResult) => void;
 }
 
-function BrowserContent({
+/**
+ * Browser list view. Navigation/selection live in the parent Jotai Provider
+ * (BrowserApp store). Does not create a nested store.
+ */
+export function Browser({
   projectGroups,
   collection,
   globalGroups,
@@ -933,7 +930,7 @@ function BrowserContent({
   workingAction = '更新',
   confirmation,
   finish,
-}: Omit<BrowserProps, 'state'>) {
+}: BrowserProps) {
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
   const navigationRef = useRef(navigation);
@@ -1820,14 +1817,6 @@ function BrowserContent({
       )}
     </Box>
   );
-}
-
-/**
- * Pure browser view. Navigation/selection must live in a parent Jotai Provider
- * (BrowserApp store). Does not create a nested store.
- */
-export function Browser({ state: _state, ...props }: BrowserProps) {
-  return <BrowserContent {...props} />;
 }
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';

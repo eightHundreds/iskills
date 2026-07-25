@@ -3,7 +3,6 @@ import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from 
 import { confirm } from '../ui/prompts.js';
 import type { RemoteSkill, SkillMetadata } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search.js';
-import { InkSession } from '../ui/session.js';
 import { importRemoteSkillToCollection } from './library.js';
 
 const GITHUB_SOURCE =
@@ -79,20 +78,11 @@ export async function commandSearch(argv: string[]): Promise<void> {
   }
   const collection = await listCollection();
   const collectedNames = new Set(collection.map((skill) => skill.name.toLowerCase()));
-  const session = new InkSession();
-  let selected: RemoteSkill | undefined;
-  try {
-    selected = await searchRemoteSkill(
-      {
-        initialQuery: positionals.join(' ').trim(),
-        collectedNames,
-        search: searchSkills,
-      },
-      session
-    );
-  } finally {
-    session.close();
-  }
+  const selected = await searchRemoteSkill({
+    initialQuery: positionals.join(' ').trim(),
+    collectedNames,
+    search: searchSkills,
+  });
   if (!selected) return;
   while (true) {
     console.error('正在校验并收藏…');

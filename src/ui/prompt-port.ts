@@ -2,8 +2,9 @@ import type { CollectedSkill, Skill } from '../domain/types.js';
 import type { InstallReviewResult, InstallReviewTarget } from './install-review.js';
 
 /**
- * Shared prompt capability interface for CLI session adapters and
- * in-tree browser overlay adapters. Two adapters justify this seam.
+ * Shared prompt capability interface for CLI one-shot screens
+ * (`runScreen` via prompts) and in-tree browser overlay adapters.
+ * Type-only seam — commands may `import type` this module.
  */
 export interface PromptPort {
   editInput: (label: string, initialValue: string) => Promise<string | undefined>;

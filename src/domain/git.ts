@@ -20,12 +20,12 @@ import {
   sourceSkillFile,
   validateSkillTree,
   writeJson,
+  writeMetadata,
   writeState,
 } from './core.js';
 import {
   installMergedCollectionSkill,
   removeFromCollection,
-  saveCollectionMetadata,
 } from './collection-write.js';
 import type {
   GitImportContext,
@@ -452,7 +452,7 @@ export async function updateGitSkill(
     if (!gitObjectExists(repository, latestRef) && gitSource.ref) {
       if (gitObjectExists(repository, `refs/tags/${gitSource.ref}`)) {
         metadata.source.refType = 'tag';
-        await saveCollectionMetadata(metadata);
+        await writeMetadata(metadata);
         return 'pinned';
       }
       throw new Error(`来源分支不存在：${gitSource.ref}`);

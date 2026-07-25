@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import {
   Confirm,
   MultiSelect,
@@ -16,28 +15,12 @@ import {
 import type {
   InstallReviewResult,
   InstallReviewTarget,
-} from '../contracts/install-review.js';
-import { InkSession } from './session.js';
+} from './install-review.js';
+import { runScreen } from './run.js';
 import type { Choice, Skill } from '../domain/types.js';
 
-const defaultSession = new InkSession();
-
-function runPrompt<T>(
-  cancelledValue: T,
-  component: (finish: (value: T) => void) => ReactNode,
-  session?: InkSession,
-  cancelOnEscape = true
-): Promise<T> {
-  return (session || defaultSession).show(cancelledValue, component, cancelOnEscape);
-}
-
-/** Tear down the default line-prompt InkSession (e.g. CLI main finally). */
-export function closePrompts(): void {
-  defaultSession.close();
-}
-
 export function input(message: string): Promise<string | undefined> {
-  return runPrompt<string | undefined>(
+  return runScreen<string | undefined>(
     undefined,
     (finish) => (
       <TextInput
@@ -46,17 +29,15 @@ export function input(message: string): Promise<string | undefined> {
         onSubmit={(value) => finish(value.trim())}
       />
     ),
-    undefined,
     false
   );
 }
 
 export function editInput(
   message: string,
-  initialValue: string,
-  session?: InkSession
+  initialValue: string
 ): Promise<string | undefined> {
-  return runPrompt<string | undefined>(undefined, (finish) => (
+  return runScreen<string | undefined>(undefined, (finish) => (
     <TextInput
       key={message}
       label={message}
@@ -64,17 +45,17 @@ export function editInput(
       onCancel={() => finish(undefined)}
       onSubmit={(value) => finish(value.trim())}
     />
-  ), session, false);
+  ), false);
 }
 
 export function confirm(message: string, defaultValue = false): Promise<boolean> {
-  return runPrompt(false, (finish) => (
+  return runScreen(false, (finish) => (
     <Confirm message={message} defaultValue={defaultValue} onSubmit={finish} />
   ));
 }
 
 export function chooseMany<T extends Skill>(skills: T[], title: string): Promise<T[]> {
-  return runPrompt<T[]>([], (finish) => (
+  return runScreen<T[]>([], (finish) => (
     <MultiSelect<T>
       label={title}
       options={skills.map((skill) => ({
@@ -89,12 +70,9 @@ export function chooseMany<T extends Skill>(skills: T[], title: string): Promise
 
 export async function chooseSkillMany<T extends Skill>(
   groups: { agent: string; skills: T[] }[],
-  title: string,
-  options: {
-    session?: InkSession;
-  } = {}
+  title: string
 ): Promise<T[]> {
-  return runPrompt<T[]>(
+  return runScreen<T[]>(
     [],
     (finish) => (
       <SkillMultiSelect<T>
@@ -107,7 +85,6 @@ export async function chooseSkillMany<T extends Skill>(
         onSubmit={finish}
       />
     ),
-    options.session,
     false
   );
 }
@@ -115,52 +92,48 @@ export async function chooseSkillMany<T extends Skill>(
 export function chooseOne<T extends string>(
   options: Choice<T>[],
   title: string,
-  numbered = false,
-  session?: InkSession
+  numbered = false
 ): Promise<T | undefined> {
-  return runPrompt<T | undefined>(undefined, (finish) => (
+  return runScreen<T | undefined>(undefined, (finish) => (
     <Select<T> label={title} options={options} onSubmit={finish} numbered={numbered} />
-  ), session);
+  ));
 }
 
 export function chooseOptionsMany<T extends string>(
   options: Choice<T>[],
   title: string,
-  session?: InkSession,
   defaultValues: T[] = []
 ): Promise<T[]> {
-  return runPrompt<T[]>([], (finish) => (
+  return runScreen<T[]>([], (finish) => (
     <MultiSelect<T>
       label={title}
       options={options}
       defaultValues={defaultValues}
       onSubmit={finish}
     />
-  ), session);
+  ));
 }
 
 export function reviewImport<T extends Skill>(
   items: ImportReviewItem<T>[],
-  existingTags: string[],
-  session?: InkSession
+  existingTags: string[]
 ): Promise<ImportReviewResult | undefined> {
-  return runPrompt<ImportReviewResult | undefined>(undefined, (finish) => (
+  return runScreen<ImportReviewResult | undefined>(undefined, (finish) => (
     <ImportReview<T>
       items={items}
       existingTags={existingTags}
       onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
-  ), session);
+  ));
 }
 
 export function reviewInstall(
   skills: Skill[],
   targets: InstallReviewTarget[],
   defaultProjectAgents: string[],
-  defaultGlobalAgents: string[],
-  session: InkSession
+  defaultGlobalAgents: string[]
 ): Promise<InstallReviewResult | undefined> {
-  return runPrompt<InstallReviewResult | undefined>(undefined, (finish) => (
+  return runScreen<InstallReviewResult | undefined>(undefined, (finish) => (
     <InstallReview
       skills={skills}
       targets={targets}
@@ -168,16 +141,15 @@ export function reviewInstall(
       defaultGlobalAgents={defaultGlobalAgents}
       onSubmit={(result) => finish(result.confirmed ? result : undefined)}
     />
-  ), session);
+  ));
 }
 
 export function editTags(
   tags: string[],
   initialValues: string[],
-  session: InkSession,
   title = '编辑标签'
 ): Promise<string[] | undefined> {
-  return runPrompt<string[] | undefined>(undefined, (finish) => (
+  return runScreen<string[] | undefined>(undefined, (finish) => (
     <TagEditor tags={tags} initialValues={initialValues} title={title} onSubmit={finish} />
-  ), session);
+  ));
 }

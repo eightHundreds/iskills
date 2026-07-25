@@ -3,8 +3,6 @@ import {
   configureCollectionRemote,
   initCollectionGit,
 } from '../domain/git.js';
-import type { BrowserTab } from '../contracts/browser.js';
-
 export async function commandAdd(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandAdd(argv);
 }
@@ -15,13 +13,6 @@ export async function commandImport(argv: string[]): Promise<void> {
 
 export async function commandSearch(argv: string[]): Promise<void> {
   return (await import('./search.js')).commandSearch(argv);
-}
-
-export async function interactiveList(
-  initialQuery = '',
-  initialTab: BrowserTab = 'project'
-): Promise<void> {
-  return (await import('./browser.js')).interactiveList(initialQuery, initialTab);
 }
 
 export async function commandInit(argv: string[] = []): Promise<void> {

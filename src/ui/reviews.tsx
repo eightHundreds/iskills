@@ -96,7 +96,7 @@ export interface ImportReviewResult {
 import type {
   InstallReviewResult,
   InstallReviewTarget,
-} from '../contracts/install-review.js';
+} from './install-review.js';
 
 export function InstallReview({
   skills,

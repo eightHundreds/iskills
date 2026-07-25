@@ -1,9 +1,6 @@
-import { render, Text, useApp, type Instance } from 'ink';
+import { Text, useApp } from 'ink';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { BrowserResult, BrowserViewInput } from '../../contracts/browser.js';
-import type { BrowserAppLifecycle, BrowserConfirmRequest, DetailViewContext } from '../../contracts/browser-app.js';
-import type { BrowserActionHost, DetailEditorContext } from '../../contracts/browser-app-actions.js';
 import {
   handleBrowserResult,
   handleDetailAction,
@@ -11,14 +8,28 @@ import {
   loadDetailContext,
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
-import { InterruptError } from '../../contracts/terminal.js';
-import { AppShell } from './app-shell.js';
+import { InterruptError } from '../terminal.js';
+import type {
+  BrowserActionHost,
+  BrowserAppLifecycle,
+  BrowserConfirmRequest,
+  BrowserResult,
+  BrowserTab,
+  BrowserViewInput,
+  DetailEditorContext,
+  DetailViewContext,
+} from './types.js';
+import { AppShell } from '../app-shell.js';
+import {
+  enterAlternateScreen,
+  leaveAlternateScreen,
+  startApp,
+} from '../run.js';
 import {
   activeAbortAtom,
   browserDataAtom,
   browserNavigationAtom,
   browserPhaseAtom,
-  browserSelectionAtom,
   browserStatusAtom,
   clearTransientStatus,
   detailContextAtom,
@@ -79,7 +90,6 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const selection = useAtomValue(browserSelectionAtom);
   const promptActions = useInAppPromptActions();
   const [confirmation, setConfirmation] = useState<BrowserConfirmation | undefined>();
 
@@ -128,7 +138,9 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
 
   const handleCtrlC = useCallback(() => {
     store.get(activeAbortAtom)?.abort();
-  }, [store]);
+    // AppShell only notifies — host owns lifecycle.
+    exit(new InterruptError());
+  }, [exit, store]);
 
   const dispatchResult = useCallback(async (result: BrowserResult) => {
     try {
@@ -161,16 +173,10 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
 
   if (!data || !navigation) return <Text>加载中…</Text>;
 
-  const viewState = {
-    ...navigation,
-    selected: [...selection],
-  };
-
   const viewInput: BrowserViewInput = {
     projectGroups: data.projectGroups,
     collection: data.collection,
     globalGroups: data.globalGroups,
-    state: viewState,
     canSync: data.canSync,
     status: status.text,
     transientStatus: status.transient,
@@ -221,7 +227,6 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     <AppShell onCtrlC={handleCtrlC}>
       <Browser
         {...viewInput}
-        state={viewState}
         confirmation={confirmation}
         finish={(result) => {
           void dispatchResult(result).catch((error) => {
@@ -233,54 +238,49 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   );
 }
 
-const CLEAR_SCREEN = '\u001B[2J\u001B[H';
-const ENTER_ALTERNATE_SCREEN = '\u001B[?1049h';
-const LEAVE_ALTERNATE_SCREEN = '\u001B[?1049l';
+function browserRoot(
+  appStore: BrowserAppStore,
+  lifecycle: BrowserAppLifecycle
+): ReactNode {
+  return (
+    <Provider store={appStore}>
+      <BrowserApp lifecycle={lifecycle} />
+    </Provider>
+  );
+}
 
 export async function runBrowserApp(
   initialQuery = '',
-  initialTab: import('../../contracts/browser.js').BrowserTab = 'project',
+  initialTab: BrowserTab = 'project',
   store?: BrowserAppStore
 ): Promise<void> {
   const { createBrowserAppStore } = await import('./browser-app-store.js');
   const appStore = store ?? createBrowserAppStore(initialQuery, initialTab);
   const initialData = await loadBrowserData();
   appStore.set(browserDataAtom, initialData);
-  process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
 
-  let instance: Instance | undefined;
+  enterAlternateScreen();
+
+  let app!: ReturnType<typeof startApp>;
 
   const lifecycle: BrowserAppLifecycle = {
     suspendForSubprocess: async (task) => {
-      instance?.unmount();
-      instance?.cleanup();
-      process.stdout.write(LEAVE_ALTERNATE_SCREEN);
+      app.dispose();
+      leaveAlternateScreen();
       try {
         await task();
       } finally {
-        process.stdout.write(`${ENTER_ALTERNATE_SCREEN}${CLEAR_SCREEN}`);
-        instance = render(
-          <Provider store={appStore}>
-            <BrowserApp lifecycle={lifecycle} />
-          </Provider>,
-          { exitOnCtrlC: false }
-        );
+        enterAlternateScreen();
+        app = startApp(browserRoot(appStore, lifecycle));
       }
     },
   };
 
-  instance = render(
-    <Provider store={appStore}>
-      <BrowserApp lifecycle={lifecycle} />
-    </Provider>,
-    { exitOnCtrlC: false }
-  );
-
+  app = startApp(browserRoot(appStore, lifecycle));
   try {
-    await instance.waitUntilExit();
+    await app.waitUntilExit();
   } finally {
-    instance.unmount();
-    instance.cleanup();
-    process.stdout.write(LEAVE_ALTERNATE_SCREEN);
+    app.dispose();
+    leaveAlternateScreen();
   }
 }

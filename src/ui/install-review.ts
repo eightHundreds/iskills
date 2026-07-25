@@ -1,4 +1,4 @@
-/** Install / add destination review DTOs — owned by contracts, not UI. */
+/** Install / add destination review DTOs (UI protocol). */
 
 export interface InstallReviewTarget {
   value: string;

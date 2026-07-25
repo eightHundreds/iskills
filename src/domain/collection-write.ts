@@ -135,10 +135,6 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
   });
 }
 
-export async function saveCollectionMetadata(metadata: SkillMetadata): Promise<void> {
-  await writeMetadata(metadata);
-}
-
 export async function registerCollectionLinks(links: SkillLink[]): Promise<void> {
   if (!links.length) return;
   const state = await readState();
@@ -485,5 +481,5 @@ export async function installMergedCollectionSkill(
   const metadata = await readMetadata(name);
   metadata.description = (await readSkill(target)).description;
   metadata.source = source;
-  await saveCollectionMetadata(metadata);
+  await writeMetadata(metadata);
 }

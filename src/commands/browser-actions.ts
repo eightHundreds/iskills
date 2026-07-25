@@ -2,16 +2,6 @@ import { cp, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { BrowserResult } from '../contracts/browser.js';
-import type {
-  BrowserDataSnapshot,
-  DetailViewContext,
-} from '../contracts/browser-app.js';
-import type {
-  BrowserActionHost,
-  DetailEditorContext,
-} from '../contracts/browser-app-actions.js';
-import type { InstallReviewTarget } from '../contracts/install-review.js';
 import {
   AGENTS,
   assertRelativePath,
@@ -26,16 +16,24 @@ import {
   listProjectGroups,
   parseGitSource,
   readMetadata,
+  writeMetadata,
 } from '../domain/core.js';
 import {
   materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
-  saveCollectionMetadata,
 } from '../domain/collection-write.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
-import { InterruptError } from '../contracts/terminal.js';
+import type { InstallReviewTarget } from '../ui/install-review.js';
+import { InterruptError } from '../ui/terminal.js';
+import type {
+  BrowserActionHost,
+  BrowserDataSnapshot,
+  BrowserResult,
+  DetailEditorContext,
+  DetailViewContext,
+} from '../ui/browser/types.js';
 import {
   addSkillsToProject,
   globalSkillGroups,
@@ -226,7 +224,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
   await Promise.all(skills.map(async (skill) => {
     const metadata = await readMetadata(skill.name);
     metadata.tags = [...new Set([...metadata.tags, ...added])];
-    await saveCollectionMetadata(metadata);
+    await writeMetadata(metadata);
   }));
   await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`);
   host.setStatus(`已为 ${skills.length} 个技能添加标签`, true);
@@ -367,7 +365,7 @@ export async function handleDetailAction(
     const note = await host.prompts.editInput('编辑备注（Enter 保存，Esc 取消）', metadata.note);
     if (note === undefined) return;
     metadata.note = note;
-    await saveCollectionMetadata(metadata);
+    await writeMetadata(metadata);
     await commitCollection(`note ${skill.name}`);
     return;
   }
@@ -377,7 +375,7 @@ export async function handleDetailAction(
     const tags = await host.prompts.editTags(existing, metadata.tags, '编辑标签');
     if (tags === undefined) return;
     metadata.tags = tags;
-    await saveCollectionMetadata(metadata);
+    await writeMetadata(metadata);
     await commitCollection(`tag ${skill.name}`);
     return;
   }
@@ -422,7 +420,7 @@ export async function handleDetailAction(
         sourcePath,
         gitContext.source.refType
       );
-      await saveCollectionMetadata(metadata);
+      await writeMetadata(metadata);
       await commitCollection(`source ${skill.name}`);
     } finally {
       await rm(gitContext.temporary, { recursive: true, force: true });

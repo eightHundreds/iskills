@@ -17,7 +17,6 @@ import {
   isExactSymlink,
   isGitSource,
   listCollection,
-  matches,
   metadataPath,
   moveDirectory,
   pathPresent,
@@ -26,12 +25,13 @@ import {
   sameGitIdentity,
   sanitizeTerminal,
   validateSkillTree,
+  writeMetadata,
 } from '../domain/core.js';
 import {
   registerCollectionLinks,
   replaceCollectionSkill,
-  saveCollectionMetadata,
 } from '../domain/collection-write.js';
+import { matchesSkill } from '../domain/skill-query.js';
 import { cloneGitSource } from '../domain/git.js';
 import type {
   CollectedSkill,
@@ -156,7 +156,7 @@ async function importLocalSkill(
     throw error;
   }
 
-  await saveCollectionMetadata({
+  await writeMetadata({
     name: skill.name,
     description: skill.description,
     tags,
@@ -209,7 +209,7 @@ async function importRemoteSkill(
   }
   await ensureCollection();
   await cp(skill.path, target, { recursive: true, errorOnExist: true });
-  await saveCollectionMetadata(metadata);
+  await writeMetadata(metadata);
   return true;
 }
 
@@ -554,7 +554,7 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
   const query = await (await prompts()).input('搜索收藏夹：');
   if (query === undefined) return [];
   return (await prompts()).chooseMany(
-    skills.filter((skill) => matches(skill, query)),
+    skills.filter((skill) => matchesSkill(skill, query)),
     '选择技能：'
   );
 }

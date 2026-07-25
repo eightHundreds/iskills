@@ -4,12 +4,11 @@ import {
   commandImport,
   commandInit,
   commandSearch,
-  interactiveList,
   printHelp,
 } from './commands/index.js';
 import { commitCollection, ensureCollection, readState } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
-import { InterruptError } from './contracts/terminal.js';
+import { InterruptError } from './ui/terminal.js';
 
 const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }
@@ -42,7 +41,8 @@ async function run(argv: string[]): Promise<void> {
   if (pending.length) console.error(`警告：存在 ${pending.length} 个待处理冲突。`);
 
   if (!command) {
-    return interactiveList('', 'collection');
+    const { runBrowserApp } = await import('./ui/browser/index.js');
+    return runBrowserApp('', 'collection');
   }
   if (command === 'add') return commandAdd(rest);
   if (command === 'import') return commandImport(rest);
@@ -62,8 +62,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     }
     throw error;
   } finally {
-    // Lazy: avoid static import of prompts (Ink) on every CLI entry; only load to tear down.
-    const { closePrompts } = await import('./ui/prompts.js');
-    closePrompts();
+    // Lazy: avoid static import of Ink UI on every CLI entry; only load to tear down.
+    const { closeInk } = await import('./ui/run.js');
+    closeInk();
   }
 }

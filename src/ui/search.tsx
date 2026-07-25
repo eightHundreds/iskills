@@ -1,8 +1,8 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useEffect, useRef, useState } from 'react';
-import type { RemoteSkillSearch, SearchViewInput } from '../contracts/search.js';
+import type { RemoteSkillSearch, SearchViewInput } from './search-types.js';
 import type { RemoteSkill } from '../domain/types.js';
-import { InkSession } from './session.js';
+import { runScreen } from './run.js';
 import { TextInput, termcnColors } from './components/termcn.js';
 
 function formatInstalls(count: number): string {
@@ -143,10 +143,9 @@ function SearchSkills({
 }
 
 export function searchRemoteSkill(
-  input: SearchViewInput,
-  session: InkSession
+  input: SearchViewInput
 ): Promise<RemoteSkill | undefined> {
-  return session.show<RemoteSkill | undefined>(undefined, (finish) => (
+  return runScreen<RemoteSkill | undefined>(undefined, (finish) => (
     <SearchSkills
       {...input}
       finish={finish}

@@ -30,7 +30,6 @@ import type {
   SkillMetadata,
   SkillSource,
 } from './types.js';
-import { matchesSkill } from './skill-query.js';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
@@ -536,6 +535,3 @@ export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function matches(skill: Skill, query: string): boolean {
-  return matchesSkill(skill, query);
-}
