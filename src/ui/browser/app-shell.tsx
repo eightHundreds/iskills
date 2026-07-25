@@ -1,6 +1,6 @@
 import { Box, useApp, useInput } from 'ink';
 import { useEffect, useState, type ReactNode } from 'react';
-import { InterruptError } from '../contracts/terminal.js';
+import { InterruptError } from '../../contracts/terminal.js';
 
 /**
  * Ink 全屏应用的根壳层：统一全局按键与首帧可见性。

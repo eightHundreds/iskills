@@ -1,4 +1,4 @@
-import type { BrowserFocus, BrowserTab } from '../contracts/browser.js';
+import type { BrowserFocus, BrowserTab } from '../../contracts/browser.js';
 
 /**
  * Pure focus-ladder helpers for the skill browser.

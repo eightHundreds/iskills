@@ -9,4 +9,4 @@ export {
   type BrowserNavigationState,
 } from './browser-app-store.js';
 
-export type { BrowserFocus, BrowserState, BrowserTab } from '../contracts/browser.js';
+export type { BrowserFocus, BrowserState, BrowserTab } from '../../contracts/browser.js';

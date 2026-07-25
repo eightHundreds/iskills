@@ -7,9 +7,9 @@ import type {
   BrowserTab,
   BrowserViewInput,
   SkillGroup,
-} from '../contracts/browser.js';
-import { matchesSkill } from '../domain/skill-query.js';
-import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../domain/types.js';
+} from '../../contracts/browser.js';
+import { matchesSkill } from '../../domain/skill-query.js';
+import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import {
   browserNavigationAtom,
   browserSelectionAtom,
@@ -30,7 +30,7 @@ import {
   nextAgent,
   nextMainTab,
 } from './browser-intent.js';
-import { skillFieldLabels } from './skill-labels.js';
+import { skillFieldLabels } from '../skill-labels.js';
 import {
   Modal,
   Select,
@@ -38,8 +38,8 @@ import {
   TextInput,
   termcnColors,
   type ModalBackgroundLine,
-} from './components/termcn.js';
-import { padColumns, sliceColumns, textWidth, wrapColumns } from './components/terminal-layout.js';
+} from '../components/termcn.js';
+import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
 
 export type {
   BrowserFocus,
@@ -50,7 +50,7 @@ export type {
   BrowserUpdateChecker,
   BrowserViewInput,
   SkillGroup,
-} from '../contracts/browser.js';
+} from '../../contracts/browser.js';
 
 export {
   browserFrameDimensions,

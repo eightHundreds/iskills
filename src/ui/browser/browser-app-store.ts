@@ -1,5 +1,5 @@
 import { atom, createStore, type PrimitiveAtom } from 'jotai';
-import type { BrowserState, BrowserTab } from '../contracts/browser.js';
+import type { BrowserState, BrowserTab } from '../../contracts/browser.js';
 import type {
   BrowserAppPhase,
   BrowserDataSnapshot,
@@ -8,7 +8,7 @@ import type {
   DetailViewContext,
   InAppPromptRequest,
   WorkingProgressSnapshot,
-} from '../contracts/browser-app.js';
+} from '../../contracts/browser-app.js';
 
 /** Navigation without multi-select — selection is a separate atom. */
 export type BrowserNavigationState = Omit<BrowserState, 'selected'>;

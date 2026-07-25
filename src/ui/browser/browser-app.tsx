@@ -1,17 +1,17 @@
 import { render, Text, useApp, type Instance } from 'ink';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { BrowserResult, BrowserViewInput } from '../contracts/browser.js';
-import type { BrowserAppLifecycle, BrowserConfirmRequest, DetailViewContext } from '../contracts/browser-app.js';
-import type { BrowserActionHost, DetailEditorContext } from '../contracts/browser-app-actions.js';
+import type { BrowserResult, BrowserViewInput } from '../../contracts/browser.js';
+import type { BrowserAppLifecycle, BrowserConfirmRequest, DetailViewContext } from '../../contracts/browser-app.js';
+import type { BrowserActionHost, DetailEditorContext } from '../../contracts/browser-app-actions.js';
 import {
   handleBrowserResult,
   handleDetailAction,
   loadBrowserData,
   loadDetailContext,
-} from '../commands/browser-actions.js';
-import { checkGitSkillUpdates } from '../domain/git.js';
-import { InterruptError } from '../contracts/terminal.js';
+} from '../../commands/browser-actions.js';
+import { checkGitSkillUpdates } from '../../domain/git.js';
+import { InterruptError } from '../../contracts/terminal.js';
 import { AppShell } from './app-shell.js';
 import {
   activeAbortAtom,
@@ -239,7 +239,7 @@ const LEAVE_ALTERNATE_SCREEN = '\u001B[?1049l';
 
 export async function runBrowserApp(
   initialQuery = '',
-  initialTab: import('../contracts/browser.js').BrowserTab = 'project',
+  initialTab: import('../../contracts/browser.js').BrowserTab = 'project',
   store?: BrowserAppStore
 ): Promise<void> {
   const { createBrowserAppStore } = await import('./browser-app-store.js');
