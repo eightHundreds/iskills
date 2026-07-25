@@ -2,8 +2,6 @@ import { Box, render, useApp, useInput, type Instance } from 'ink';
 import { useEffect, useState, type ReactNode } from 'react';
 import { InterruptError } from '../contracts/terminal.js';
 
-export { InterruptError } from '../contracts/terminal.js';
-
 function CancelBoundary({
   cancel,
   interrupt,

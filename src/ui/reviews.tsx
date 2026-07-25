@@ -93,10 +93,6 @@ export interface ImportReviewResult {
   tags: string[];
 }
 
-export type {
-  InstallReviewResult,
-  InstallReviewTarget,
-} from '../contracts/install-review.js';
 import type {
   InstallReviewResult,
   InstallReviewTarget,

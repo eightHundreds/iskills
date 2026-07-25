@@ -41,23 +41,13 @@ import {
 } from '../components/termcn.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
 
-export type {
-  BrowserFocus,
-  BrowserResult,
-  BrowserState,
-  BrowserTab,
-  BrowserUpdateCheck,
-  BrowserUpdateChecker,
-  BrowserViewInput,
-  SkillGroup,
-} from '../../contracts/browser.js';
-
 export {
   browserFrameDimensions,
   detailFrameDimensions,
   masterDetailLayout,
   type BrowserFrameDimensions,
 } from './browser-layout.js';
+
 interface BrowserConfirmation {
   title: string;
   message: string;

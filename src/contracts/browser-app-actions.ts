@@ -35,10 +35,3 @@ export interface DetailEditorContext {
   skill: import('../domain/types.js').Skill;
   metadata: import('../domain/types.js').SkillMetadata;
 }
-
-export type {
-  BrowserConfirmRequest,
-  BrowserDataSnapshot,
-  BrowserNavigationSnapshot,
-} from './browser-app.js';
-export type { InstallReviewResult, InstallReviewTarget } from './install-review.js';

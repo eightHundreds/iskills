@@ -3,15 +3,15 @@ import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BrowserResult } from '../contracts/browser.js';
-import type { BrowserAppLifecycle, DetailViewContext } from '../contracts/browser-app.js';
+import type {
+  BrowserDataSnapshot,
+  DetailViewContext,
+} from '../contracts/browser-app.js';
 import type {
   BrowserActionHost,
-  BrowserConfirmRequest,
-  BrowserDataSnapshot,
-  BrowserPromptBridge,
   DetailEditorContext,
-  InstallReviewTarget,
 } from '../contracts/browser-app-actions.js';
+import type { InstallReviewTarget } from '../contracts/install-review.js';
 import {
   AGENTS,
   assertRelativePath,
@@ -41,8 +41,6 @@ import {
   globalSkillGroups,
   importSkillsToCollection,
 } from './library.js';
-
-export type { BrowserActionHost, BrowserPromptBridge } from '../contracts/browser-app-actions.js';
 
 async function bindMetadataSource(
   skillName: string,

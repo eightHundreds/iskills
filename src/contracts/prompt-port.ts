@@ -33,6 +33,3 @@ export interface PromptPort {
     title: string
   ) => Promise<Skill[] | undefined>;
 }
-
-/** Browser-actions host prompt surface is a subset of PromptPort. */
-export type { PromptPort as BrowserPromptPort };
