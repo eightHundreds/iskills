@@ -13,7 +13,7 @@ import {
 } from '../../commands/browser-actions.js';
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../terminal.js';
-import { AppShell, useAppShellLayer } from '../app-shell.js';
+import { AppShell, useLayer, useModal } from '../app-shell.js';
 import { Select, TagEditor, TextInput } from '../components/termcn.js';
 import { InstallReview } from '../reviews.js';
 import type { InstallReviewResult, InstallReviewTarget } from '../install-review.js';
@@ -25,7 +25,6 @@ import {
 } from '../run.js';
 import {
   activeAbortAtom,
-  browserConfirmAtom,
   browserDataAtom,
   browserNavigationAtom,
   browserPhaseAtom,
@@ -69,14 +68,6 @@ export {
   type BrowserAppStore,
 } from './store.js';
 
-interface BrowserConfirmation {
-  title: string;
-  message: string;
-  details?: string[];
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
 function DetailScreen({
   onBack,
   onAction,
@@ -106,17 +97,11 @@ function DetailScreen({
   );
 }
 
-/** Open termcn/review UI on AppShell layer (must run under AppShell). */
+/** Open termcn/review UI via AppShell layer (full-page replace). */
 function useBrowserPromptActions(): BrowserPromptBridge {
-  const layer = useAppShellLayer();
+  const layer = useLayer();
   const present = <T,>(node: (finish: (value: T) => void) => ReactNode): Promise<T> =>
-    new Promise((resolve) => {
-      const finish = (value: T): void => {
-        layer.close();
-        resolve(value);
-      };
-      layer.open(node(finish));
-    });
+    layer.open({ content: node });
 
   return {
     editInput: (label, initialValue) =>
@@ -169,7 +154,8 @@ function useBrowserPromptActions(): BrowserPromptBridge {
 }
 
 /**
- * Phase shell: detail / browse. In-app prompts use {@link useAppShellLayer}.
+ * Phase shell: detail / browse.
+ * Full-screen prompts use {@link useLayer}; overlays use {@link useModal}.
  */
 export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
@@ -188,17 +174,17 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   );
 }
 
-/** Must render under AppShell so prompt hooks can open the shell layer. */
+/** Must render under AppShell so layer/modal hooks can open host slots. */
 function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): ReactNode {
   const { exit } = useApp();
   const store = useStore() as BrowserAppStore;
+  const modal = useModal();
   const [data, setData] = useAtom(browserDataAtom);
   const [status] = useAtom(browserStatusAtom);
   const [phase, setPhase] = useAtom(browserPhaseAtom);
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const confirmState = useAtomValue(browserConfirmAtom);
   const promptActions = useBrowserPromptActions();
 
   const reloadData = useCallback(async () => {
@@ -214,27 +200,13 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
 
   const requestConfirm = useCallback(
     (request: BrowserConfirmRequest) =>
-      new Promise<boolean>((resolve) => {
-        store.set(browserConfirmAtom, {
-          ...request,
-          resolve: (ok) => {
-            store.set(browserConfirmAtom, null);
-            resolve(ok);
-          },
-        });
+      modal.confirm({
+        title: request.title,
+        message: request.message,
+        ...(request.details ? { details: request.details } : {}),
       }),
-    [store]
+    [modal]
   );
-
-  const confirmation: BrowserConfirmation | undefined = confirmState
-    ? {
-        title: confirmState.title,
-        message: confirmState.message,
-        ...(confirmState.details ? { details: confirmState.details } : {}),
-        onConfirm: () => confirmState.resolve(true),
-        onCancel: () => confirmState.resolve(false),
-      }
-    : undefined;
 
   const actionHost = useMemo((): BrowserActionHost => ({
     lifecycle,
@@ -322,7 +294,6 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   return (
     <Browser
       {...viewInput}
-      confirmation={confirmation}
       finish={(result) => {
         void dispatchResult(result).catch((error) => {
           if (error instanceof InterruptError) exit(error);

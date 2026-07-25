@@ -85,18 +85,32 @@ export function Modal({
   const modalWidth = textWidth(lines[0] ?? '');
   const modalLeft = Math.max(0, Math.floor((viewportWidth - modalWidth) / 2));
 
+  // Every row is painted to full viewport width so Ink's differential
+  // redraw cannot leave previous-frame glyphs (list rows, footer) showing
+  // through empty modal margins.
   return (
     <>
       {Array.from({ length: compositeHeight }, (_, index) => {
         const background = backgroundLines[index];
         const modalIndex = index - modalTop;
         const line = lines[modalIndex];
-        if (line === undefined) {
-          return background?.content ?? <Text key={`modal-empty:${index}`}> </Text>;
-        }
         const base = background?.text ?? '';
+        if (line === undefined) {
+          if (background?.content && textWidth(base) >= viewportWidth) {
+            return background.content;
+          }
+          return (
+            <Text key={`modal-empty:${index}`} wrap="truncate-end">
+              {padColumns(base, viewportWidth)}
+            </Text>
+          );
+        }
+        const rightWidth = Math.max(0, viewportWidth - modalLeft - modalWidth);
         const prefix = padColumns(sliceColumns(base, 0, modalLeft), modalLeft);
-        const suffix = sliceColumns(base, modalLeft + modalWidth, viewportWidth);
+        const suffix = padColumns(
+          sliceColumns(base, modalLeft + modalWidth, viewportWidth),
+          rightWidth
+        );
         return (
           <Text key={`modal:${index}`} wrap="truncate-end">
             {prefix}

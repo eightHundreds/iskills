@@ -1,6 +1,7 @@
 import { Box, Text, useInput, useStdout } from 'ink';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
+import { useShellBusy } from '../app-shell.js';
 import { termcnColors } from '../components/termcn.js';
 import { detailContentLines } from './format.js';
 import { detailFrameDimensions } from './layout.js';
@@ -36,27 +37,31 @@ export function Detail({
   const maxOffset = Math.max(0, lines.length - viewportHeight);
   const offset = Math.min(detailOffset, maxOffset);
   const visibleLines = lines.slice(offset, offset + viewportHeight);
-  useInput((input, key) => {
-    if (key.upArrow && maxOffset) {
-      setDetailOffset((current) => Math.max(0, current - 1));
-      return;
-    }
-    if (key.downArrow && maxOffset) {
-      setDetailOffset((current) => Math.min(maxOffset, current + 1));
-      return;
-    }
-    if (
-      key.escape ||
-      key.leftArrow ||
-      input === 'b' ||
-      input === 'q'
-    ) {
-      return finish('back');
-    }
-    if (collection && input === 'n') return finish('note');
-    if (collection && input === 't') return finish('tags');
-    if (collection && input === 's') return finish('source');
-  });
+  const shellBusy = useShellBusy();
+  useInput(
+    (input, key) => {
+      if (key.upArrow && maxOffset) {
+        setDetailOffset((current) => Math.max(0, current - 1));
+        return;
+      }
+      if (key.downArrow && maxOffset) {
+        setDetailOffset((current) => Math.min(maxOffset, current + 1));
+        return;
+      }
+      if (
+        key.escape ||
+        key.leftArrow ||
+        input === 'b' ||
+        input === 'q'
+      ) {
+        return finish('back');
+      }
+      if (collection && input === 'n') return finish('note');
+      if (collection && input === 't') return finish('tags');
+      if (collection && input === 's') return finish('source');
+    },
+    { isActive: !shellBusy }
+  );
   return (
     <Box flexDirection="column">
       <Text color={termcnColors.primary} bold>‹ {skill.name}</Text>

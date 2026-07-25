@@ -47,22 +47,38 @@ import {
   type SkillRow,
   visibleAgentGroups,
 } from './format.js';
+import { useModal, useShellBusy } from '../app-shell.js';
+import { FramedPanel } from '../components/framed-panel.js';
 import {
-  Modal,
   Select,
   Tabs,
   TextInput,
   termcnColors,
-  type ModalBackgroundLine,
 } from '../components/termcn.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
 
-interface BrowserConfirmation {
-  title: string;
-  message: string;
-  details?: string[];
+/** Framed more-actions panel for absolute modal overlay (list shows through). */
+function MoreActionsPanel({
+  scope,
+  onConfirm,
+  onCancel,
+}: {
+  scope: string;
   onConfirm: () => void;
   onCancel: () => void;
+}): ReactNode {
+  return (
+    <FramedPanel
+      title=" 更多操作 "
+      content={[...moreActionModalContent(scope), 'Enter 执行 · Esc 返回']}
+      width={64}
+      muteLastContent
+      onEscape={onCancel}
+      onKey={(input, key) => {
+        if (key.return || input.includes('\r') || input.includes('\n')) onConfirm();
+      }}
+    />
+  );
 }
 
 const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -102,14 +118,6 @@ function masterDetailBlankRow(
   );
 }
 
-interface BrowserModal {
-  title: string;
-  content: string[];
-  width: number;
-  onEscape: () => void;
-  muteLastContent?: boolean;
-}
-
 function SkillPane({
   rows,
   cursor,
@@ -124,7 +132,6 @@ function SkillPane({
   showGroup = false,
   updates = new Set<string>(),
   updatingSkillName,
-  modal,
   viewportHeight,
 }: {
   rows: SkillRow[];
@@ -140,7 +147,6 @@ function SkillPane({
   showGroup?: boolean;
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
-  modal?: BrowserModal | undefined;
   viewportHeight?: number | undefined;
 }) {
   const { stdout } = useStdout();
@@ -152,28 +158,6 @@ function SkillPane({
   const visible = rows.slice(offset, offset + height);
   const paneWidth = columnWidth ?? Math.max(20, (stdout.columns ?? 80) - 4);
   const summaryWidth = Math.max(8, paneWidth - 4);
-  const rowText = (row: SkillRow, index: number): string => {
-    if (row.type === 'group') {
-      const groupSkills = row.skills;
-      const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
-      const marker =
-        count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
-      return `${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`;
-    }
-    const skill = row.skill;
-    const summary = compact || layout === 'master'
-      ? ''
-      : listSkillSummary(skill, preferNote, summaryWidth);
-    const selectionMarker = selected.has(skill.path) ? '●' : '○';
-    const name = showReferences && skill.isReference
-      ? `引用 · ${skill.name}`
-      : showSource && !skill.fromCollection
-        ? `本地 · ${skill.name}`
-        : skill.name;
-    const group = showGroup && row.group ? `${row.group} / ` : '';
-    const update = updatingSkillName === skill.name ? ' 更新中' : updates.has(skill.name) ? ' ↑' : '';
-    return `  ${isActive && index === active ? '›' : ' '} ${selectionMarker} ${group}${name}${update}${summary ? ` — ${summary}` : ''}`;
-  };
   const renderRow = (row: SkillRow, index: number) => {
     if (row.type === 'group') {
       const groupSkills = row.skills;
@@ -233,25 +217,9 @@ function SkillPane({
       </Text>
     );
   };
-  const backgroundLines: ModalBackgroundLine[] = visible.map((row, visibleIndex) => {
-    const index = offset + visibleIndex;
-    return { text: rowText(row, index), content: renderRow(row, index) };
-  });
   return (
     <Box flexDirection="column" minHeight={3}>
-      {modal ? (
-        <Modal
-          open
-          title={modal.title}
-          content={modal.content}
-          width={modal.width}
-          viewportWidth={paneWidth}
-          viewportHeight={height}
-          backgroundLines={backgroundLines}
-          onEscape={modal.onEscape}
-          {...(modal.muteLastContent ? { muteLastContent: true } : {})}
-        />
-      ) : rows.length ? (
+      {rows.length ? (
         visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
         <Text color={termcnColors.muted}>没有匹配的技能</Text>
@@ -407,13 +375,13 @@ function MasterDetailBody({
 }
 
 interface BrowserProps extends BrowserViewInput {
-  confirmation?: BrowserConfirmation | undefined;
   finish: (result: BrowserResult) => void;
 }
 
 /**
  * Browser list view. Navigation/selection live in the parent Jotai Provider
  * (BrowserApp store). Does not create a nested store.
+ * Overlays (? / more-actions) go through {@link useModal}.
  */
 export function Browser({
   projectGroups,
@@ -426,9 +394,10 @@ export function Browser({
   updatingSkillName,
   updatingProgress,
   workingAction = '更新',
-  confirmation,
   finish,
 }: BrowserProps) {
+  const modal = useModal();
+  const shellBusy = useShellBusy();
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
   const navigationRef = useRef(navigation);
@@ -502,12 +471,6 @@ export function Browser({
   };
   const [searching, setSearching] = useState(false);
   const [choosingGroup, setChoosingGroup] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const [removeConfirmation, setRemoveConfirmation] = useState<{
-    scope: 'collection' | 'location';
-    skills: Skill[];
-  } | undefined>();
   const [queryBeforeSearch, setQueryBeforeSearch] = useState(query);
   const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
   const [updateCheck, setUpdateCheck] = useState<{
@@ -534,22 +497,13 @@ export function Browser({
   const selectedGlobalLocal = globalGroups.flatMap((group) =>
     group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
   );
-  const global = globalGroups.flatMap((group) => group.skills);
-  const groupRows = useMemo(
-    () => groupedRows(
-      tab === 'project' ? project : tab === 'global' ? global : collection,
-      ''
-    ),
-    [collection, global, project, tab]
-  );
-  const groups = groupRows.filter(
-    (row): row is Extract<SkillRow, { type: 'group' }> => row.type === 'group'
-  );
   const { stdout } = useStdout();
   const useBrowseHome =
     masterDetailLayout(stdout.columns, stdout.rows) &&
     !query.trim();
   const useMasterDetail = useBrowseHome;
+  // Scope for list + tag sidebar + g-jump: current agent (or full collection),
+  // never the whole project/global flat list.
   const tabSkills =
     tab === 'collection'
       ? collection
@@ -558,6 +512,13 @@ export function Browser({
         : tab === 'global'
           ? globalGroup?.skills ?? []
           : [];
+  const groupRows = useMemo(
+    () => groupedRows(tabSkills, ''),
+    [tabSkills]
+  );
+  const groups = groupRows.filter(
+    (row): row is Extract<SkillRow, { type: 'group' }> => row.type === 'group'
+  );
   const tagOptions = useMemo(
     () => tagFilterOptions(tabSkills, groups),
     [groups, tabSkills]
@@ -600,6 +561,8 @@ export function Browser({
   useEffect(() => {
     if (previousAgent.current !== agent) {
       setCursor(0);
+      setTagFilter(TAG_FILTER_ALL);
+      setTagCursor(0);
       previousAgent.current = agent;
     }
   }, [agent]);
@@ -624,49 +587,6 @@ export function Browser({
     };
   }, [checkUpdates, collection, tab]);
 
-  const openDetail = (skill: Skill, collection: boolean) =>
-    finish({
-      type: 'open',
-      skill,
-      collection,
-      frameHeight: frame.frameHeight,
-      frameWidth: frame.frameWidth,
-    });
-  const localConfirmation: BrowserConfirmation | undefined = removeConfirmation
-    ? removeConfirmation.scope === 'collection'
-      ? {
-          title: '删除收藏',
-          message: removeConfirmation.skills.length === 1
-            ? `从收藏夹移除 ${removeConfirmation.skills[0]?.name ?? ''} 吗？`
-            : `从收藏夹移除 ${removeConfirmation.skills.length} 个技能吗？`,
-          details: removeConfirmation.skills.length > 1
-            ? [`技能：${removeConfirmation.skills.map((skill) => skill.name).join(', ')}`]
-            : [],
-          onConfirm: () => {
-            const skills = removeConfirmation.skills as CollectedSkill[];
-            setRemoveConfirmation(undefined);
-            finish({ type: 'removeCollection', skills });
-          },
-          onCancel: () => setRemoveConfirmation(undefined),
-        }
-      : {
-          title: '删除技能',
-          message: removeConfirmation.skills.length === 1
-            ? `删除 ${removeConfirmation.skills[0]?.name ?? ''} 的当前位置吗？`
-            : `删除所选 ${removeConfirmation.skills.length} 个技能位置吗？`,
-          details: [
-            '将永久删除以下位置；收藏夹内容（如有）保留。',
-            ...removeConfirmation.skills.map((skill) => skill.path),
-          ],
-          onConfirm: () => {
-            const skills = removeConfirmation.skills;
-            setRemoveConfirmation(undefined);
-            finish({ type: 'removeLocations', skills });
-          },
-          onCancel: () => setRemoveConfirmation(undefined),
-        }
-    : undefined;
-  const activeConfirmation = confirmation ?? localConfirmation;
   const frame = browserFrameDimensions({
     rows: stdout.rows,
     columns: stdout.columns,
@@ -676,6 +596,14 @@ export function Browser({
     hasProjectAgents: visibleProjectGroups.length > 0,
     hasGlobalAgents: visibleGlobalGroups.length > 0,
   });
+  const openDetail = (skill: Skill, collection: boolean) =>
+    finish({
+      type: 'open',
+      skill,
+      collection,
+      frameHeight: frame.frameHeight,
+      frameWidth: frame.frameWidth,
+    });
   const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
   const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
   const masterDetailInnerWidth = Math.max(40, frame.frameWidth - 2);
@@ -705,56 +633,6 @@ export function Browser({
       : '';
   const peekSkill =
     focus === 'list' && currentRow?.type === 'skill' ? currentRow.skill : undefined;
-  const modal: BrowserModal | undefined = activeConfirmation
-    ? {
-        title: ` ${activeConfirmation.title} `,
-        content: [
-          activeConfirmation.message,
-          ...(activeConfirmation.details?.length ? activeConfirmation.details : []),
-          '(y/N)',
-        ],
-        width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
-        onEscape: activeConfirmation.onCancel,
-        muteLastContent: true,
-      }
-    : showActions
-      ? {
-          title: ' 更多操作 ',
-          content: moreActionModalContent(
-            selectedProject.length
-              ? `已选择 ${actionSkills.length} 个技能`
-              : `技能：${actionSkills[0]?.name ?? ''}`
-          ),
-          width: Math.min(64, Math.max(36, (stdout.columns ?? 80) - 6)),
-          onEscape: () => setShowActions(false),
-        }
-      : showShortcuts
-        ? {
-            title: ' 完整快捷键 ',
-            content: shortcutModalContent(),
-            width: Math.min(76, Math.max(36, (stdout.columns ?? 80) - 6)),
-            onEscape: () => setShowShortcuts(false),
-          }
-        : undefined;
-  useInput(
-    (input, key) => {
-      const choice = input.trim().toLowerCase();
-      if (choice === 'y') return activeConfirmation?.onConfirm();
-      if (choice === 'n' || key.return) {
-        return activeConfirmation?.onCancel();
-      }
-    },
-    { isActive: Boolean(activeConfirmation) }
-  );
-  useInput(
-    (input, key) => {
-      if (key.return || input.includes('\r') || input.includes('\n')) {
-        setShowActions(false);
-        return finish({ type: 'materialize', skills: actionSkills });
-      }
-    },
-    { isActive: showActions && !activeConfirmation }
-  );
   useEffect(() => {
     if (focus === 'tags' && !useMasterDetail) setFocus('list');
   }, [focus, useMasterDetail, setFocus]);
@@ -763,7 +641,14 @@ export function Browser({
       const live = navigationRef.current;
       const liveFocus = live?.focus ?? 'tabs';
       const liveTab = live?.tab ?? 'project';
-      if (input === '?') return setShowShortcuts(true);
+      if (input === '?') {
+        void modal.info({
+          title: ' 完整快捷键 ',
+          content: shortcutModalContent(),
+          width: 76,
+        });
+        return;
+      }
       if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
         setQueryBeforeSearch(query);
@@ -878,7 +763,26 @@ export function Browser({
       }
       if ((navigationRef.current?.focus ?? focus) !== 'list') return;
       const row = listRows[cursorRef.current];
-      if (input === 'm' && canOpenActions) return setShowActions(true);
+      if (input === 'm' && canOpenActions) {
+        const skills = actionSkills;
+        const scope = selectedProject.length
+          ? `已选择 ${skills.length} 个技能`
+          : `技能：${skills[0]?.name ?? ''}`;
+        void modal
+          .open<boolean>({
+            content: (close) => (
+              <MoreActionsPanel
+                scope={scope}
+                onConfirm={() => close(true)}
+                onCancel={() => close(false)}
+              />
+            ),
+          })
+          .then((confirmed) => {
+            if (confirmed) finish({ type: 'materialize', skills });
+          });
+        return;
+      }
       if (input === 'u' && (navigationRef.current?.tab ?? tab) === 'collection') {
         const updateable = selectedCollection.length
           ? selectedUpdates
@@ -913,12 +817,41 @@ export function Browser({
               : []
           : [];
       if ((input === 'd' || key.delete) && removableCollection.length) {
-        setShowShortcuts(false);
-        return setRemoveConfirmation({ scope: 'collection', skills: removableCollection });
+        const skills = removableCollection as CollectedSkill[];
+        void modal
+          .confirm({
+            title: '删除收藏',
+            message:
+              skills.length === 1
+                ? `从收藏夹移除 ${skills[0]?.name ?? ''} 吗？`
+                : `从收藏夹移除 ${skills.length} 个技能吗？`,
+            ...(skills.length > 1
+              ? { details: [`技能：${skills.map((skill) => skill.name).join(', ')}`] }
+              : {}),
+          })
+          .then((ok) => {
+            if (ok) finish({ type: 'removeCollection', skills });
+          });
+        return;
       }
       if ((input === 'd' || key.delete) && removableLocations.length) {
-        setShowShortcuts(false);
-        return setRemoveConfirmation({ scope: 'location', skills: removableLocations });
+        const skills = removableLocations;
+        void modal
+          .confirm({
+            title: '删除技能',
+            message:
+              skills.length === 1
+                ? `删除 ${skills[0]?.name ?? ''} 的当前位置吗？`
+                : `删除所选 ${skills.length} 个技能位置吗？`,
+            details: [
+              '将永久删除以下位置；收藏夹内容（如有）保留。',
+              ...skills.map((skill) => skill.path),
+            ],
+          })
+          .then((ok) => {
+            if (ok) finish({ type: 'removeLocations', skills });
+          });
+        return;
       }
       const selectedLocal = tab === 'project' ? selectedProjectLocal : selectedGlobalLocal;
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
@@ -961,12 +894,7 @@ export function Browser({
       }
     },
     {
-      isActive:
-        !searching &&
-        !choosingGroup &&
-        !modal &&
-        !updatingSkillName &&
-        !activeConfirmation,
+      isActive: !shellBusy && !searching && !choosingGroup && !updatingSkillName,
     }
   );
   useInput(
@@ -975,7 +903,7 @@ export function Browser({
         setChoosingGroup(false);
       }
     },
-    { isActive: choosingGroup }
+    { isActive: !shellBusy && choosingGroup }
   );
 
   const renderBrowsePane = (
@@ -993,26 +921,7 @@ export function Browser({
   ): ReactNode => {
     if (useBrowseHome) {
       const { tagWidth, listWidth, peekWidth } = masterDetailColumns;
-      const chromeHeight = viewportHeight + 3;
       const selectedPaths = selected;
-      if (modal) {
-        return (
-          <Modal
-            open
-            title={modal.title}
-            content={modal.content}
-            width={modal.width}
-            viewportWidth={masterDetailInnerWidth}
-            viewportHeight={chromeHeight}
-            backgroundLines={Array.from({ length: chromeHeight }, (_, index) => ({
-              text: '',
-              content: <Text key={`master-detail-modal-bg:${index}`}> </Text>,
-            }))}
-            onEscape={modal.onEscape}
-            {...(modal.muteLastContent ? { muteLastContent: true } : {})}
-          />
-        );
-      }
       const tagLines = collectionCategoryLines(
         tagOptions,
         tagCursor,
@@ -1097,7 +1006,6 @@ export function Browser({
         cursor={cursor}
         isActive={focus === 'list'}
         viewportHeight={viewportHeight}
-        modal={modal}
         {...options}
       />
     );
@@ -1112,7 +1020,7 @@ export function Browser({
           <AgentTabs
             groups={visibleProjectGroups}
             agent={activeProjectAgent}
-            focused={!searching && !modal && focus === 'agents'}
+            focused={!shellBusy && !searching && focus === 'agents'}
           />
           {renderBrowsePane(listRows, browseViewportHeight(true), {
             showSource: true,
@@ -1130,7 +1038,7 @@ export function Browser({
           <AgentTabs
             groups={visibleGlobalGroups}
             agent={activeGlobalAgent}
-            focused={!searching && !modal && focus === 'agents'}
+            focused={!shellBusy && !searching && focus === 'agents'}
           />
           {renderBrowsePane(listRows, browseViewportHeight(true), {
             showSource: true,
@@ -1218,41 +1126,35 @@ export function Browser({
   ].filter(Boolean);
   const navigationHint = updatingSkillName
     ? `正在${workingAction} · 请稍候`
-    : activeConfirmation
-      ? '等待确认'
-      : showActions
-        ? 'Enter 执行 · Esc 返回'
-        : showShortcuts
-          ? 'Esc 关闭'
-          : focus === 'tabs'
-            ? `←/→ 切换 Tab · ↓ 进入 · / 筛选 · ?`
-            : focus === 'agents'
-              ? `←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 筛选 · ?`
-              : focus === 'tags'
-                ? useBrowseHome
-                  ? `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 搜索 · ?`
-                  : `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 筛选 · ?`
-                : useBrowseHome && focus === 'list'
-                  ? tab === 'collection' && selectedCollection.length
-                    ? `↑↓ 移动 · Enter 添加 · Space 选中 · d 删除 · / 搜索 · ?`
-                    : `↑↓ 移动 · Enter 详情 · Space 选中 · d 删除 · / 搜索 · ?`
-                  : useMasterDetail && canViewWithRightArrow
-                  ? `← 标签 · Space 选中 · → 全屏详情 · d 删除 · / 筛选 · ?`
-                  : useMasterDetail && canViewWithEnter
-                    ? `← 标签 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
-                    : useMasterDetail
-                      ? `← 标签 · Space 选中 · d 删除 · / 筛选 · ?`
-                      : currentRow?.type === 'group'
-                        ? `↑/↓ 移动 · Space 选中组 · / 筛选 · ?`
-                        : canViewWithRightArrow
-                          ? `↑/↓ 移动 · Space 选中 · → 查看 · d 删除 · / 筛选 · ?`
-                          : canViewWithEnter
-                            ? `↑/↓ 移动 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
-                            : canDelete
-                              ? `↑/↓ 移动 · Space 选中 · d 删除 · / 筛选 · ?`
-                              : focus === 'list'
-                                ? `↑/↓ 移动 · Space 选中 · / 筛选 · ?`
-                                : `/ 筛选 · ?`;
+    : focus === 'tabs'
+      ? `←/→ 切换 Tab · ↓ 进入 · / 筛选 · ?`
+      : focus === 'agents'
+        ? `←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 筛选 · ?`
+        : focus === 'tags'
+          ? useBrowseHome
+            ? `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 搜索 · ?`
+            : `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 筛选 · ?`
+          : useBrowseHome && focus === 'list'
+            ? tab === 'collection' && selectedCollection.length
+              ? `↑↓ 移动 · Enter 添加 · Space 选中 · d 删除 · / 搜索 · ?`
+              : `↑↓ 移动 · Enter 详情 · Space 选中 · d 删除 · / 搜索 · ?`
+            : useMasterDetail && canViewWithRightArrow
+              ? `← 标签 · Space 选中 · → 全屏详情 · d 删除 · / 筛选 · ?`
+              : useMasterDetail && canViewWithEnter
+                ? `← 标签 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
+                : useMasterDetail
+                  ? `← 标签 · Space 选中 · d 删除 · / 筛选 · ?`
+                  : currentRow?.type === 'group'
+                    ? `↑/↓ 移动 · Space 选中组 · / 筛选 · ?`
+                    : canViewWithRightArrow
+                      ? `↑/↓ 移动 · Space 选中 · → 查看 · d 删除 · / 筛选 · ?`
+                      : canViewWithEnter
+                        ? `↑/↓ 移动 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
+                        : canDelete
+                          ? `↑/↓ 移动 · Space 选中 · d 删除 · / 筛选 · ?`
+                          : focus === 'list'
+                            ? `↑/↓ 移动 · Space 选中 · / 筛选 · ?`
+                            : `/ 筛选 · ?`;
   const footerBody = [
     listScrollHint,
     navigationHint,
@@ -1268,14 +1170,14 @@ export function Browser({
         tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => setTab(key as BrowserTab)}
-        isActive={!searching && !modal && focus === 'tabs'}
+        isActive={!shellBusy && !searching && focus === 'tabs'}
         enableArrowNav={false}
-        focused={!searching && !modal && focus === 'tabs'}
+        focused={!shellBusy && !searching && focus === 'tabs'}
         width={frame.frameWidth}
         bordered={false}
         chip={useBrowseHome}
         trailing={
-          useMasterDetail && !searching && !modal ? (
+          useMasterDetail && !searching ? (
             <Text color={termcnColors.muted}>/ 搜索技能…</Text>
           ) : undefined
         }
