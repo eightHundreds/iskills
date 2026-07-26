@@ -498,6 +498,8 @@ export function Browser({
   );
   const [tagFilter, setTagFilter] = useState(TAG_FILTER_ALL);
   const [tagCursor, setTagCursor] = useState(0);
+  const tagCursorRef = useRef(tagCursor);
+  tagCursorRef.current = tagCursor;
   const masterDetailSkills = useMemo(
     () => skillsForTagFilter(tabSkills, tagFilter),
     [tabSkills, tagFilter]
@@ -707,25 +709,27 @@ export function Browser({
           const option = tagOptions[index];
           if (!option) return;
           setTagFilter(option.key);
+          tagCursorRef.current = index;
           setTagCursor(index);
           setCursor(0);
         };
+        const liveTagCursor = tagCursorRef.current;
         if (key.upArrow) {
-          if (tagCursor === 0) return setFocus(focusAfterUpFromTags(hasAgentTabs));
-          selectTag(tagCursor - 1);
+          if (liveTagCursor === 0) return setFocus(focusAfterUpFromTags(hasAgentTabs));
+          selectTag(liveTagCursor - 1);
           return;
         }
         if (key.downArrow) {
-          if (tagCursor >= tagOptions.length - 1) return setFocus('list');
-          selectTag(tagCursor + 1);
+          if (liveTagCursor >= tagOptions.length - 1) return setFocus('list');
+          selectTag(liveTagCursor + 1);
           return;
         }
         if (key.leftArrow) return setFocus(focusAfterUpFromTags(hasAgentTabs));
         if (key.rightArrow) {
-          selectTag(tagCursor);
+          selectTag(liveTagCursor);
           return setFocus('list');
         }
-        const tagOption = tagOptions[tagCursor];
+        const tagOption = tagOptions[liveTagCursor];
         if (input === ' ' && tagOption) {
           const paths = tagOption.skills.map((skill) => skill.path);
           return setSelected((previous) => {
@@ -736,7 +740,7 @@ export function Browser({
           });
         }
         if (key.return || input.includes('\r') || input.includes('\n')) {
-          selectTag(tagCursor);
+          selectTag(liveTagCursor);
           return setFocus('list');
         }
         return;
