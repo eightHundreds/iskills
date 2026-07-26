@@ -4,10 +4,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { FooterItem } from '../footer/types.js';
 import type { ModalDismissKeys } from './types.js';
 
 export interface SlotPendingMeta {
   dismissKeys?: ModalDismissKeys;
+  footerItems?: FooterItem[];
 }
 
 interface PendingSlot {

@@ -75,6 +75,8 @@ export interface BrowserDataSnapshot {
 }
 
 export interface BrowserStatusSnapshot {
+  /** Presentation kind for footer right status (not a domain event). */
+  kind: 'normal' | 'error';
   text: string;
   transient: boolean;
 }
@@ -121,7 +123,7 @@ export interface BrowserActionHost {
       workingAction: '更新' | '转换';
     } | null
   ) => void;
-  setStatus: (text: string, transient: boolean) => void;
+  setStatus: (text: string, transient: boolean, kind?: 'normal' | 'error') => void;
   reloadData: () => Promise<BrowserDataSnapshot>;
   getNavigation: () => BrowserNavigationSnapshot;
   setNavigation: (navigation: BrowserNavigationSnapshot) => void;

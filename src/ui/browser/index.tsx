@@ -19,6 +19,7 @@ import {
   leaveAlternateScreen,
   startApp,
 } from '../shell/run.js';
+import { BrowserShellFooter } from './footer.js';
 import {
   activeAbortAtom,
   browserDataAtom,
@@ -27,6 +28,7 @@ import {
   browserStatusAtom,
   clearTransientStatus,
   detailContextAtom,
+  invalidateUpdateCheck,
   readNavigation,
   setBrowserStatus,
   writeNavigation,
@@ -105,7 +107,7 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   }, [exit, store]);
 
   return (
-    <AppShell onCtrlC={handleCtrlC}>
+    <AppShell onCtrlC={handleCtrlC} bottomChrome={<BrowserShellFooter />}>
       <BrowserAppScreens lifecycle={lifecycle} />
     </AppShell>
   );
@@ -136,8 +138,12 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const actionHost = useMemo((): BrowserActionHost => ({
     lifecycle,
     setWorkingProgress: setWorking,
-    setStatus: (text, transient) => setBrowserStatus(store, text, transient),
-    reloadData,
+    setStatus: (text, transient, kind) => setBrowserStatus(store, text, transient, kind),
+    reloadData: async () => {
+      const snapshot = await reloadData();
+      invalidateUpdateCheck(store);
+      return snapshot;
+    },
     getNavigation: () => readNavigation(store),
     setNavigation: (value) => writeNavigation(store, value),
     setAbortController: (controller) => store.set(activeAbortAtom, controller),

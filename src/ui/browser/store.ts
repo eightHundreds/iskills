@@ -26,8 +26,25 @@ export function initialNavigation(
   };
 }
 
+export interface BrowserFilterState {
+  open: boolean;
+  draft: string;
+  queryBefore: string;
+  cursorBefore: number;
+}
+
+export interface BrowserUpdateCheckState {
+  checking: boolean;
+  updates: Set<string>;
+  failed: number;
+}
+
 export const browserDataAtom = atom<BrowserDataSnapshot | null>(null);
-export const browserStatusAtom = atom<BrowserStatusSnapshot>({ text: '', transient: false });
+export const browserStatusAtom = atom<BrowserStatusSnapshot>({
+  kind: 'normal',
+  text: '',
+  transient: false,
+});
 export const browserPhaseAtom = atom<BrowserAppPhase>('browse');
 /** Single owner for tab/query/cursor/agent/focus across the browser app tree. */
 export const browserNavigationAtom = atom<BrowserNavigationState | null>(null);
@@ -35,6 +52,18 @@ export const browserSelectionAtom = atom<Set<string>>(new Set<string>());
 export const detailContextAtom = atom<DetailViewContext | null>(null);
 export const workingProgressAtom = atom<WorkingProgressSnapshot | null>(null);
 export const activeAbortAtom = atom<AbortController | null>(null);
+export const browserFilterAtom = atom<BrowserFilterState>({
+  open: false,
+  draft: '',
+  queryBefore: '',
+  cursorBefore: 0,
+});
+export const browserGroupJumpAtom = atom(false);
+export const browserUpdateCheckAtom = atom<BrowserUpdateCheckState>({
+  checking: false,
+  updates: new Set<string>(),
+  failed: 0,
+});
 
 export type BrowserAppStore = ReturnType<typeof createBrowserAppStore>;
 
@@ -60,14 +89,27 @@ export function createBrowserStore(state: BrowserState): ReturnType<typeof creat
 export function setBrowserStatus(
   store: BrowserAppStore,
   text: string,
-  transient: boolean
+  transient: boolean,
+  kind?: 'normal' | 'error'
 ): void {
-  store.set(browserStatusAtom, { text, transient });
+  const resolvedKind =
+    kind ?? (text && !transient ? 'error' : 'normal');
+  store.set(browserStatusAtom, { text, transient, kind: resolvedKind });
 }
 
 export function clearTransientStatus(store: BrowserAppStore): void {
   const status = store.get(browserStatusAtom);
-  if (status.transient) store.set(browserStatusAtom, { text: '', transient: false });
+  if (status.transient) {
+    store.set(browserStatusAtom, { kind: 'normal', text: '', transient: false });
+  }
+}
+
+export function invalidateUpdateCheck(store: BrowserAppStore): void {
+  store.set(browserUpdateCheckAtom, {
+    checking: false,
+    updates: new Set<string>(),
+    failed: 0,
+  });
 }
 
 export function readNavigation(store: BrowserAppStore): BrowserNavigationSnapshot {

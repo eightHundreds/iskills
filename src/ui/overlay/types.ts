@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { FooterItem } from '../footer/types.js';
 
 /** Full-page replace slot options. */
 export interface LayerOpenOptions<T> {
@@ -8,6 +9,8 @@ export interface LayerOpenOptions<T> {
    * Defaults to `undefined as T` — pass `[]` for multi-select cancel semantics.
    */
   destroyValue?: T;
+  /** Left footer items while this layer is top-most (no modal). */
+  footerItems?: FooterItem[];
 }
 
 export interface LayerApi {
@@ -22,6 +25,8 @@ export interface ModalConfirmOptions {
   details?: string[];
   /** Default choice when user presses Enter. Default false → y/N. */
   defaultValue?: boolean;
+  /** Override default footer items for this confirm. */
+  footerItems?: FooterItem[];
 }
 
 export interface ModalInfoOptions {
@@ -29,12 +34,14 @@ export interface ModalInfoOptions {
   content: string[];
   width?: number;
   muteLastContent?: boolean;
+  footerItems?: FooterItem[];
 }
 
 export interface ModalOpenOptions<T> {
   content: (close: (value: T) => void) => ReactNode;
   /** Settled when the slot is destroyed without `close`. Default: `undefined as T`. */
   destroyValue?: T;
+  footerItems?: FooterItem[];
 }
 
 export interface ModalApi {

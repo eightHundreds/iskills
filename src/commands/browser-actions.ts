@@ -179,7 +179,7 @@ async function handleSync(host: BrowserActionHost): Promise<void> {
   await host.lifecycle.suspendForSubprocess(async () => {
     await syncCollection(false);
   });
-  host.setStatus('Git 同步完成', true);
+  host.setStatus('同步完成', true, 'normal');
 }
 
 async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
@@ -214,7 +214,14 @@ async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): 
     }
   }
   host.setWorkingProgress(null);
-  host.setStatus(outcomes.join(' · '), failed === 0);
+  const updated = skills.length - failed;
+  host.setStatus(
+    failed === 0
+      ? `已更新 ${updated}`
+      : `已更新 ${updated}，失败 ${failed}`,
+    failed === 0,
+    failed === 0 ? 'normal' : 'error'
+  );
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }
 
@@ -234,7 +241,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
     await writeMetadata(metadata);
   }));
   await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`);
-  host.setStatus(`已为 ${skills.length} 个技能添加标签`, true);
+  host.setStatus('已加标签', true, 'normal');
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
@@ -257,13 +264,10 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
       }),
       ...(install.destination === 'global' ? { global: true } : {}),
     });
-    host.setStatus(
-      `已通过${install.copy ? '复制' : '软链'}添加 ${count} 个技能到 ${targetCount} 个目录`,
-      true
-    );
+    host.setStatus(`已添加 ${count}`, true, 'normal');
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
-    host.setStatus(errorMessage(error), false);
+    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
   }
 }
 
@@ -275,10 +279,9 @@ async function handleRemoveCollection(
   try {
     for (const skill of skills) await removeFromCollection(skill.name, true, true);
     host.setStatus(
-      names.length === 1
-        ? `已从收藏夹移除 ${names[0]}`
-        : `已从收藏夹移除 ${names.length} 个技能`,
-      true
+      names.length === 1 ? `已移除 ${names[0]}` : `已移除 ${names.length}`,
+      true,
+      'normal'
     );
     const removed = new Set(skills.map((skill) => skill.path));
     host.setNavigation({
@@ -286,7 +289,7 @@ async function handleRemoveCollection(
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(`移除失败 — ${errorMessage(error)}`, false);
+    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
   }
 }
 
@@ -294,10 +297,9 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
   try {
     const count = await removeSkillLocations(skills);
     host.setStatus(
-      count === 1
-        ? `已删除 ${skills[0]?.name ?? ''} 的当前位置，收藏夹内容保留`
-        : `已删除 ${count} 个技能位置，收藏夹内容保留`,
-      true
+      count === 1 ? `已删除 ${skills[0]?.name ?? ''}` : `已删除 ${count} 处`,
+      true,
+      'normal'
     );
     const removed = new Set(skills.map((skill) => skill.path));
     host.setNavigation({
@@ -305,7 +307,7 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(`删除失败 — ${errorMessage(error)}`, false);
+    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
   }
 }
 
@@ -330,17 +332,16 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
     });
     host.setWorkingProgress(null);
     host.setStatus(
-      skills.length === 1
-        ? `已将 ${skills[0]?.name ?? ''} 转为副本`
-        : `已将 ${skills.length} 个引用转为副本`,
-      true
+      skills.length === 1 ? '已转副本' : `已转副本 ${skills.length}`,
+      true,
+      'normal'
     );
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
     host.setWorkingProgress(null);
     if (error instanceof InterruptError) throw error;
     if (error instanceof Error && error.name === 'AbortError') throw new InterruptError();
-    host.setStatus(`转换失败 — ${errorMessage(error)}`, false);
+    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
   } finally {
     host.setAbortController(null);
   }
@@ -355,9 +356,9 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
         message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
       }),
     });
-    host.setStatus(`已导入 ${count} 个技能到收藏夹`, true);
+    host.setStatus(`已导入 ${count}`, true, 'normal');
   } catch (error) {
-    host.setStatus(errorMessage(error), false);
+    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
   }
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }

@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useAtom, useAtomValue } from 'jotai';
+import { useAtom, useAtomValue, useStore } from 'jotai';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import type {
   BrowserFocus,
@@ -10,8 +10,11 @@ import type {
 } from './types.js';
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import {
+  browserFilterAtom,
+  browserGroupJumpAtom,
   browserNavigationAtom,
   browserSelectionAtom,
+  browserUpdateCheckAtom,
 } from './store.js';
 import {
   browserFrameDimensions,
@@ -52,7 +55,6 @@ import { FramedPanel } from '../components/framed-panel.js';
 import {
   Select,
   Tabs,
-  TextInput,
   termcnColors,
 } from '../components/termcn.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
@@ -79,20 +81,6 @@ function MoreActionsPanel({
       }}
     />
   );
-}
-
-const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-function useSpinner(active: boolean): string {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(() => {
-      setIndex((value) => (value + 1) % spinnerFrames.length);
-    }, 80);
-    return () => clearInterval(timer);
-  }, [active]);
-  return spinnerFrames[index] ?? '⠋';
 }
 
 function masterDetailBlankRow(
@@ -388,16 +376,13 @@ export function Browser({
   collection,
   globalGroups,
   canSync,
-  status,
-  transientStatus,
   checkUpdates,
   updatingSkillName,
-  updatingProgress,
-  workingAction = '更新',
   finish,
 }: BrowserProps) {
   const modal = useModal();
   const shellBusy = useOverlayBusy();
+  const store = useStore();
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
   const navigationRef = useRef(navigation);
@@ -417,7 +402,6 @@ export function Browser({
   const cursor = navigation?.cursor ?? 0;
   const agent = navigation?.agent ?? '';
   const focus = navigation?.focus ?? 'tabs';
-  const [visibleStatus, setVisibleStatus] = useState(status);
   const visibleProjectGroups = useMemo(() => visibleAgentGroups(projectGroups), [projectGroups]);
   const visibleGlobalGroups = useMemo(() => visibleAgentGroups(globalGroups), [globalGroups]);
   const activeProjectAgent = visibleProjectGroups.some((group) => group.agent === agent)
@@ -469,22 +453,10 @@ export function Browser({
       return { ...current, cursor: nextCursor };
     });
   };
-  const [searching, setSearching] = useState(false);
-  const [choosingGroup, setChoosingGroup] = useState(false);
-  const [queryBeforeSearch, setQueryBeforeSearch] = useState(query);
-  const [cursorBeforeSearch, setCursorBeforeSearch] = useState(0);
-  const [updateCheck, setUpdateCheck] = useState<{
-    checking: boolean;
-    updates: Set<string>;
-    failed: number;
-  }>({ checking: false, updates: new Set(), failed: 0 });
-  const updateSpinner = useSpinner(Boolean(updatingSkillName));
-  useEffect(() => {
-    setVisibleStatus(status);
-    if (!status || !transientStatus) return undefined;
-    const timer = setTimeout(() => setVisibleStatus(''), 3500);
-    return () => clearTimeout(timer);
-  }, [status, transientStatus]);
+  const [filter, setFilter] = useAtom(browserFilterAtom);
+  const [choosingGroup, setChoosingGroup] = useAtom(browserGroupJumpAtom);
+  const [updateCheck, setUpdateCheck] = useAtom(browserUpdateCheckAtom);
+  const searching = filter.open;
   const selectedCollection = collection.filter((skill) => selected.has(skill.path));
   const selectedUpdates = selectedCollection.filter((skill) => updateCheck.updates.has(skill.name));
   const selectedProject = project.filter((skill) => selected.has(skill.path));
@@ -569,23 +541,30 @@ export function Browser({
   useEffect(() => {
     if (focus === 'agents' && !hasAgentTabs) setFocus(useMasterDetail ? 'tags' : 'list');
   }, [focus, hasAgentTabs, useMasterDetail]);
-  const checkedUpdates = useRef(false);
   useEffect(() => {
-    if (tab !== 'collection' || checkedUpdates.current) return;
-    checkedUpdates.current = true;
+    if (tab !== 'collection') return;
     let active = true;
-    setUpdateCheck((current) => ({ ...current, checking: true }));
+    setUpdateCheck((current: { checking: boolean; updates: Set<string>; failed: number }) => ({
+      ...current,
+      checking: true,
+    }));
     void checkUpdates(collection)
       .then(({ updates, failed }) => {
         if (active) setUpdateCheck({ checking: false, updates, failed });
       })
       .catch(() => {
-        if (active) setUpdateCheck({ checking: false, updates: new Set(), failed: collection.length });
+        if (active) {
+          setUpdateCheck({
+            checking: false,
+            updates: new Set(),
+            failed: collection.length,
+          });
+        }
       });
     return () => {
       active = false;
     };
-  }, [checkUpdates, collection, tab]);
+  }, [checkUpdates, collection, tab, setUpdateCheck]);
 
   const frame = browserFrameDimensions({
     rows: stdout.rows,
@@ -626,11 +605,6 @@ export function Browser({
         )
       )
     : 0;
-  const listScrollHint = useBrowseHome && listRows.length
-    ? `${cursor + 1}/${listRows.length}`
-    : useMasterDetail && listRows.length > masterListVisibleHeight
-      ? `${masterListOffset + 1}–${Math.min(masterListOffset + masterListVisibleHeight, listRows.length)} / ${listRows.length}`
-      : '';
   const peekSkill =
     focus === 'list' && currentRow?.type === 'skill' ? currentRow.skill : undefined;
   useEffect(() => {
@@ -651,9 +625,13 @@ export function Browser({
       }
       if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
-        setQueryBeforeSearch(query);
-        setCursorBeforeSearch(cursorRef.current);
-        return setSearching(true);
+        setFilter({
+          open: true,
+          draft: query,
+          queryBefore: query,
+          cursorBefore: cursorRef.current,
+        });
+        return;
       }
       if (input === 'g' && groups.length) {
         return setChoosingGroup(true);
@@ -766,6 +744,10 @@ export function Browser({
           : `技能：${skills[0]?.name ?? ''}`;
         void modal
           .open<boolean>({
+            footerItems: [
+              { key: 'Enter', label: '确认' },
+              { key: 'Esc', label: '取消' },
+            ],
             content: (close) => (
               <MoreActionsPanel
                 scope={scope}
@@ -900,6 +882,29 @@ export function Browser({
       }
     },
     { isActive: !shellBusy && choosingGroup }
+  );
+  // Backup filter cancel: TextInput also handles Esc; this covers focus edge cases.
+  useInput(
+    (_input, key) => {
+      if (!key.escape) return;
+      const prior = store.get(browserFilterAtom);
+      setFilter({
+        open: false,
+        draft: '',
+        queryBefore: '',
+        cursorBefore: 0,
+      });
+      setNavigation((current) =>
+        current
+          ? {
+              ...current,
+              query: prior.queryBefore,
+              cursor: prior.cursorBefore,
+            }
+          : current
+      );
+    },
+    { isActive: !shellBusy && searching }
   );
 
   const renderBrowsePane = (
@@ -1087,79 +1092,6 @@ export function Browser({
     );
   }
 
-  const canViewWithRightArrow =
-    currentRow?.type === 'skill' && (tab === 'collection' || currentRow.skill.fromCollection);
-  const canViewWithEnter =
-    currentRow?.type === 'skill' && tab !== 'collection' && !canViewWithRightArrow;
-  const canDelete =
-    (tab === 'collection' && selectedCollection.length > 0) ||
-    (tab === 'project' && selectedProject.length > 0) ||
-    (tab === 'global' && selectedGlobal.length > 0) ||
-    currentRow?.type === 'skill';
-  const actions = updatingSkillName ? [] : [
-    canOpenActions ? 'm 更多操作' : '',
-    tab === 'project' && selectedProjectLocal.length ? 'i 加入收藏夹' : '',
-    tab === 'global' && selectedGlobalLocal.length ? 'i 加入收藏夹' : '',
-    tab === 'collection' && selectedCollection.length ? 'Enter 添加 · t 批量加标签' : '',
-    tab === 'collection' && !updatingSkillName && selectedCollection.length && selectedUpdates.length
-      ? `u 更新可更新的已选技能 (${selectedUpdates.length})`
-      : tab === 'collection' && !updatingSkillName && !selectedCollection.length
-        && currentRow?.type === 'skill' && updateCheck.updates.has(currentRow.skill.name)
-      ? 'u 更新当前技能'
-      : '',
-  ].filter(Boolean);
-  const activity = [
-    updatingSkillName
-      ? `${updateSpinner} 正在${workingAction}${updatingProgress &&
-        (workingAction === '转换' || updatingProgress.total > 1)
-        ? ` ${updatingProgress.current}/${updatingProgress.total}`
-        : ''}：${updatingSkillName}`
-      : '',
-    updateCheck.checking ? '正在检查更新…' : '',
-    !updateCheck.checking && updateCheck.failed ? `${updateCheck.failed} 个技能检查失败` : '',
-    visibleStatus,
-    query ? `搜索：${query}` : '',
-  ].filter(Boolean);
-  const navigationHint = updatingSkillName
-    ? `正在${workingAction} · 请稍候`
-    : focus === 'tabs'
-      ? `←/→ 切换 Tab · ↓ 进入 · / 筛选 · ?`
-      : focus === 'agents'
-        ? `←/→ 切换 Agent · ↑ 返回 · ↓ 进入 · / 筛选 · ?`
-        : focus === 'tags'
-          ? useBrowseHome
-            ? `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 搜索 · ?`
-            : `↑/↓ 标签 · Space 选中此标签 · → 列表 · / 筛选 · ?`
-          : useBrowseHome && focus === 'list'
-            ? tab === 'collection' && selectedCollection.length
-              ? `↑↓ 移动 · Enter 添加 · Space 选中 · d 删除 · / 搜索 · ?`
-              : `↑↓ 移动 · Enter 详情 · Space 选中 · d 删除 · / 搜索 · ?`
-            : useMasterDetail && canViewWithRightArrow
-              ? `← 标签 · Space 选中 · → 全屏详情 · d 删除 · / 筛选 · ?`
-              : useMasterDetail && canViewWithEnter
-                ? `← 标签 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
-                : useMasterDetail
-                  ? `← 标签 · Space 选中 · d 删除 · / 筛选 · ?`
-                  : currentRow?.type === 'group'
-                    ? `↑/↓ 移动 · Space 选中组 · / 筛选 · ?`
-                    : canViewWithRightArrow
-                      ? `↑/↓ 移动 · Space 选中 · → 查看 · d 删除 · / 筛选 · ?`
-                      : canViewWithEnter
-                        ? `↑/↓ 移动 · Space 选中 · Enter 查看 · d 删除 · / 筛选 · ?`
-                        : canDelete
-                          ? `↑/↓ 移动 · Space 选中 · d 删除 · / 筛选 · ?`
-                          : focus === 'list'
-                            ? `↑/↓ 移动 · Space 选中 · / 筛选 · ?`
-                            : `/ 筛选 · ?`;
-  const footerBody = [
-    listScrollHint,
-    navigationHint,
-    selected.size ? `已选 ${selected.size}` : '',
-    ...actions,
-  ].filter(Boolean).join(' · ');
-  const footerHint = footerBody ? `${footerBody} · q 退出` : 'q 退出';
-  const statusHint = activity.filter(Boolean).join(' · ');
-
   return (
     <Box flexDirection="column">
       <Tabs
@@ -1178,40 +1110,6 @@ export function Browser({
           ) : undefined
         }
       />
-      {searching ? (
-        <TextInput
-          label="搜索技能（Enter 确认，Esc 取消）"
-          initialValue={query}
-          onChange={(value) => {
-            setQuery(value);
-            setCursor(0);
-          }}
-          onCancel={() => {
-            setQuery(queryBeforeSearch);
-            setCursor(cursorBeforeSearch);
-            setSearching(false);
-          }}
-          onSubmit={(value) => {
-            setQuery(value);
-            setSearching(false);
-          }}
-        />
-      ) : (
-        <Box flexDirection="column">
-          <Text color={termcnColors.muted} wrap="truncate-end">
-            {footerHint}
-          </Text>
-          {statusHint ? (
-            <Text
-              color={updateCheck.failed ? termcnColors.error : termcnColors.muted}
-              wrap="truncate-end"
-            >
-              {statusHint}
-            </Text>
-          ) : null}
-        </Box>
-      )}
     </Box>
   );
 }
-

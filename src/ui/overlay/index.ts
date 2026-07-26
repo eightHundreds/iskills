@@ -5,7 +5,13 @@
  * Imperative entry (antd-style): {@link Modal} / {@link Layer} static APIs.
  * In-tree hooks: {@link useModal} / {@link useLayer}.
  */
-export { OverlayHost, useLayer, useModal, useOverlayBusy } from './host.js';
+export {
+  OverlayHost,
+  useLayer,
+  useModal,
+  useOverlayBusy,
+  useOverlayFooterItems,
+} from './host.js';
 export { Layer, Modal } from './static.js';
 export {
   getActiveOverlayHost,

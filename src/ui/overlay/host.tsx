@@ -5,8 +5,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from 'react';
+import {
+  confirmFooterItems,
+  infoFooterItems,
+} from '../footer/resolve-footer.js';
+import type { FooterItem } from '../footer/types.js';
 import { registerOverlayHost } from './bridge.js';
 import { renderConfirmPanel, renderInfoPanel } from './dialogs.js';
 import { usePromiseSlot } from './slot.js';
@@ -22,9 +28,11 @@ import type {
 const LayerContext = createContext<LayerApi | null>(null);
 const ModalContext = createContext<ModalApi | null>(null);
 const BusyContext = createContext(false);
+/** modal > layer footer items; null when no overlay. */
+const OverlayFooterContext = createContext<FooterItem[] | null>(null);
 
 /**
- * Full-page host slot. Replaces OverlayHost children until closed.
+ * Full-page host slot. Replaces OverlayHost main region until closed.
  */
 export function useLayer(): LayerApi {
   const api = useContext(LayerContext);
@@ -50,16 +58,35 @@ export function useOverlayBusy(): boolean {
 }
 
 /**
+ * Footer items for the top overlay (modal > layer), or null when none.
+ */
+export function useOverlayFooterItems(): FooterItem[] | null {
+  return useContext(OverlayFooterContext);
+}
+
+/**
  * Independent overlay root: Layer + Modal promise slots.
  * Does not own process lifecycle, Ctrl+C, or first-frame gating — compose under AppShell (or any host).
+ *
+ * @param bottomChrome — rendered below the Layer replace region (always visible).
  */
-export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
+export function OverlayHost({
+  children,
+  bottomChrome,
+}: {
+  children: ReactNode;
+  bottomChrome?: ReactNode;
+}): ReactNode {
   const { stdout } = useStdout();
   const cols = stdout.columns ?? 80;
   const rows = stdout.rows ?? 24;
 
   const layerSlot = usePromiseSlot();
   const modalSlot = usePromiseSlot();
+
+  // Bump when slots open/close so footer items re-read meta.
+  const [footerEpoch, setFooterEpoch] = useState(0);
+  const bumpFooter = useCallback(() => setFooterEpoch((n) => n + 1), []);
 
   const layerOpen = layerSlot.isOpen;
   const modalOpen = modalSlot.isOpen;
@@ -72,29 +99,49 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
 
   const openLayer = useCallback(
     <T,>(options: LayerOpenOptions<T>): Promise<T> => {
-      // Layer replaces the tree — drop any overlay first.
       destroyModal();
+      bumpFooter();
       const destroyValue = ('destroyValue' in options
         ? options.destroyValue
         : undefined) as T;
-      return openLayerSlot(options.content, destroyValue);
+      const resolvedMeta = {
+        footerItems:
+          options.footerItems !== undefined
+            ? options.footerItems
+            : infoFooterItems(),
+      };
+      return openLayerSlot(options.content, destroyValue, resolvedMeta).finally(bumpFooter);
     },
-    [destroyModal, openLayerSlot]
+    [bumpFooter, destroyModal, openLayerSlot]
   );
 
   const openModal = useCallback(
     <T,>(
       destroyValue: T,
       render: (close: (value: T) => void) => ReactNode,
-      dismissKeys: 'escape' | 'escape-or-soft' = 'escape'
-    ): Promise<T> =>
-      openModalSlot(render, destroyValue, { dismissKeys }),
-    [openModalSlot]
+      dismissKeys: 'escape' | 'escape-or-soft' = 'escape',
+      footerItems?: FooterItem[]
+    ): Promise<T> => {
+      bumpFooter();
+      return openModalSlot(render, destroyValue, {
+        dismissKeys,
+        footerItems: footerItems ?? infoFooterItems(),
+      }).finally(bumpFooter);
+    },
+    [bumpFooter, openModalSlot]
   );
 
   const confirm = useCallback(
-    (options: ModalConfirmOptions): Promise<boolean> =>
-      openModal(false, (close) => renderConfirmPanel(options, close)),
+    (options: ModalConfirmOptions): Promise<boolean> => {
+      const defaultValue = options.defaultValue ?? false;
+      const footerItems = options.footerItems ?? confirmFooterItems(defaultValue);
+      return openModal(
+        false,
+        (close) => renderConfirmPanel(options, close),
+        'escape',
+        footerItems
+      );
+    },
     [openModal]
   );
 
@@ -103,7 +150,8 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
       openModal(
         undefined,
         (close) => renderInfoPanel(options, () => close(undefined)),
-        'escape-or-soft'
+        'escape-or-soft',
+        options.footerItems ?? infoFooterItems()
       ),
     [openModal]
   );
@@ -113,7 +161,12 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
       const destroyValue = ('destroyValue' in options
         ? options.destroyValue
         : undefined) as T;
-      return openModal(destroyValue, options.content);
+      return openModal(
+        destroyValue,
+        options.content,
+        'escape',
+        options.footerItems ?? infoFooterItems()
+      );
     },
     [openModal]
   );
@@ -121,10 +174,13 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
   const layerApi = useMemo(
     (): LayerApi => ({
       open: openLayer,
-      destroyAll: destroyLayer,
+      destroyAll: () => {
+        destroyLayer();
+        bumpFooter();
+      },
       isOpen: layerOpen,
     }),
-    [openLayer, destroyLayer, layerOpen]
+    [openLayer, destroyLayer, layerOpen, bumpFooter]
   );
 
   const modalApi = useMemo(
@@ -132,10 +188,13 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
       confirm,
       info,
       open: openModalContent,
-      destroyAll: destroyModal,
+      destroyAll: () => {
+        destroyModal();
+        bumpFooter();
+      },
       isOpen: modalOpen,
     }),
-    [confirm, info, openModalContent, destroyModal, modalOpen]
+    [confirm, info, openModalContent, destroyModal, modalOpen, bumpFooter]
   );
 
   useEffect(() => {
@@ -152,6 +211,7 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
     const meta = modalSlot.peekMeta();
     if (key.escape) {
       modalSlot.destroy();
+      bumpFooter();
       return;
     }
     if (
@@ -159,46 +219,65 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
       (key.return || input === ' ' || input === 'q')
     ) {
       modalSlot.destroy();
+      bumpFooter();
     }
   });
 
+  // modal > layer; recompute when epoch/open flags change.
+  const overlayFooterItems = useMemo((): FooterItem[] | null => {
+    void footerEpoch;
+    if (modalOpen) {
+      return modalSlot.peekMeta()?.footerItems ?? infoFooterItems();
+    }
+    if (layerOpen) {
+      return layerSlot.peekMeta()?.footerItems ?? infoFooterItems();
+    }
+    return null;
+  }, [footerEpoch, modalOpen, layerOpen, modalSlot, layerSlot]);
+
   // Keep `children` mounted while a layer is open so AppShell (Ctrl+C,
-  // first-frame gate) and long-lived trees (Browser) stay alive. Layer content
-  // is a full-page visual replace only.
+  // first-frame gating) and long-lived trees (Browser) stay alive. Layer content
+  // is a full-page visual replace of the *main* region only — bottomChrome stays.
   return (
     <LayerContext.Provider value={layerApi}>
       <ModalContext.Provider value={modalApi}>
         <BusyContext.Provider value={busy}>
-          <Box
-            flexDirection="column"
-            {...(modalOpen || layerOpen
-              ? {
-                  position: 'relative' as const,
-                  width: cols,
-                  height: rows,
-                  overflow: 'hidden' as const,
-                }
-              : {})}
-          >
+          <OverlayFooterContext.Provider value={overlayFooterItems}>
             <Box
               flexDirection="column"
-              display={layerOpen ? 'none' : 'flex'}
+              {...(modalOpen || layerOpen
+                ? {
+                    position: 'relative' as const,
+                    width: cols,
+                    height: rows,
+                    overflow: 'hidden' as const,
+                  }
+                : {})}
             >
-              {children}
-            </Box>
-            {layerOpen ? layerSlot.node : null}
-            {modalOpen ? (
-              <Box
-                position="absolute"
-                width={cols}
-                height={rows}
-                justifyContent="center"
-                alignItems="center"
-              >
-                {modalSlot.node}
+              <Box flexDirection="column" flexGrow={1} minHeight={0}>
+                <Box
+                  flexDirection="column"
+                  display={layerOpen ? 'none' : 'flex'}
+                  flexGrow={1}
+                >
+                  {children}
+                </Box>
+                {layerOpen ? layerSlot.node : null}
               </Box>
-            ) : null}
-          </Box>
+              {bottomChrome}
+              {modalOpen ? (
+                <Box
+                  position="absolute"
+                  width={cols}
+                  height={rows}
+                  justifyContent="center"
+                  alignItems="center"
+                >
+                  {modalSlot.node}
+                </Box>
+              ) : null}
+            </Box>
+          </OverlayFooterContext.Provider>
         </BusyContext.Provider>
       </ModalContext.Provider>
     </LayerContext.Provider>

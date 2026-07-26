@@ -11,6 +11,7 @@ export default defineConfig({
             'test/cli.test.ts',
             'test/library.test.ts',
             'test/ui.test.tsx',
+            'test/footer-resolve.test.ts',
           ],
           maxWorkers: 3,
           sequence: { groupOrder: 0 },
