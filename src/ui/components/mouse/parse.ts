@@ -30,8 +30,11 @@ const LEGACY = /(?:\u001B)?\[M([\s\S]{3})/g;
 
 /** Left-button presses only (hover/move ignored). Coordinates 1-based. */
 export function parseLeftPresses(input: string): ParsedMousePress[] {
+  // Fresh /g regexes per call — avoid lastIndex races under parallel tests.
+  const sgr = new RegExp(SGR.source, 'g');
+  const legacy = new RegExp(LEGACY.source, 'g');
   const out: ParsedMousePress[] = [];
-  for (const match of input.matchAll(SGR)) {
+  for (const match of input.matchAll(sgr)) {
     const code = Number(match[1]);
     const x = Number(match[2]);
     const y = Number(match[3]);
@@ -43,7 +46,7 @@ export function parseLeftPresses(input: string): ParsedMousePress[] {
     if (buttonBits !== 0) continue;
     out.push({ x, y, button: 'left' });
   }
-  for (const match of input.matchAll(LEGACY)) {
+  for (const match of input.matchAll(legacy)) {
     const bytes = match[1];
     if (!bytes || bytes.length < 3) continue;
     const cb = bytes.charCodeAt(0) - 32;
