@@ -187,39 +187,84 @@ export function detailContentLines(
   ];
 }
 
-/** Section rule for shortcut help (scheme C). Width is padded by FramedPanel. */
-function shortcutSection(label: string): string {
-  return `${label} ${'─'.repeat(Math.max(4, 48 - label.length))}`;
+/** One shortcut binding for the interactive help panel. */
+export interface ShortcutHelpItem {
+  label: string;
+  keys: string;
+}
+
+/** Expandable group in the shortcut help tree. */
+export interface ShortcutHelpSection {
+  id: string;
+  title: string;
+  items: ShortcutHelpItem[];
 }
 
 /**
- * Grouped shortcut help body for `?` modal (docs/cli-tui global footer era).
- * Panel height is capped by FramedPanel; overflow scrolls with ↑/↓.
+ * Shortcut help catalog (description left / keys right in the panel).
+ * Style: ◆/› groups with expand-collapse, like common TUI shortcut browsers.
  */
-export function shortcutModalContent(): string[] {
+export function shortcutHelpSections(): ShortcutHelpSection[] {
   return [
-    shortcutSection('导航'),
-    ' ↑/↓    移动焦点或列表项',
-    ' ←/→    切换当前层级 Tab',
-    ' →      打开全屏详情（收藏夹 / 引用；三栏下右侧已是预览）',
-    ' /      筛选技能',
-    ' g      跳转分组（有分组时）',
-    shortcutSection('选择'),
-    ' Space  切换选中（标签列：该标签下全部）',
-    ' Enter  添加已选 · 或打开全屏详情（视布局）',
-    shortcutSection('收藏与安装'),
-    ' i      加入收藏夹（项目 / 全局已选本地技能）',
-    shortcutSection('维护'),
-    ' t      批量加标签（收藏夹已选）',
-    ' u      更新：已选中可更新者，否则更新当前项',
-    ' m      更多操作 · 引用转副本（仅当前项目软链）',
-    ' s      同步收藏夹 Git（可同步时）',
-    ' d      删除已选；无已选则删除当前项',
-    shortcutSection('全局'),
-    ' ?      本帮助',
-    ' q      退出浏览器',
-    ' Esc    取消最内层上下文；本面板内关闭帮助',
+    {
+      id: 'nav',
+      title: '导航',
+      items: [
+        { label: '移动焦点或列表项', keys: '↑/↓' },
+        { label: '切换当前层级 Tab', keys: '←/→' },
+        { label: '打开全屏详情（三栏下右侧已是预览）', keys: '→' },
+        { label: '筛选技能', keys: '/' },
+        { label: '跳转分组（有分组时）', keys: 'g' },
+      ],
+    },
+    {
+      id: 'select',
+      title: '选择',
+      items: [
+        { label: '切换选中（标签列：该标签下全部）', keys: 'Space' },
+        { label: '添加已选 · 或打开全屏详情', keys: 'Enter' },
+      ],
+    },
+    {
+      id: 'collect',
+      title: '收藏与安装',
+      items: [
+        { label: '加入收藏夹（项目 / 全局已选本地技能）', keys: 'i' },
+      ],
+    },
+    {
+      id: 'maintain',
+      title: '维护',
+      items: [
+        { label: '批量加标签（收藏夹已选）', keys: 't' },
+        { label: '更新：已选可更新者，否则当前项', keys: 'u' },
+        { label: '更多操作 · 引用转副本（项目软链）', keys: 'm' },
+        { label: '同步收藏夹 Git（可同步时）', keys: 's' },
+        { label: '删除已选；无已选则删除当前项', keys: 'd' },
+      ],
+    },
+    {
+      id: 'global',
+      title: '全局',
+      items: [
+        { label: '打开本帮助', keys: '?' },
+        { label: '退出浏览器', keys: 'q' },
+        { label: '取消最内层上下文', keys: 'Esc' },
+      ],
+    },
   ];
+}
+
+/** Flat lines for simple info panels / tests (expanded, no tree chrome). */
+export function shortcutModalContent(): string[] {
+  const lines: string[] = [];
+  for (const section of shortcutHelpSections()) {
+    lines.push(`${section.title} ${'─'.repeat(Math.max(4, 40 - section.title.length))}`);
+    for (const item of section.items) {
+      lines.push(` ${item.keys.padEnd(8)} ${item.label}`);
+    }
+  }
+  return lines;
 }
 
 export function moreActionModalContent(scope: string): string[] {

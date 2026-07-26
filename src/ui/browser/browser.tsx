@@ -42,7 +42,6 @@ import {
   nextAgent,
   nextMainTab,
   selectableSkills,
-  shortcutModalContent,
   skillGroups,
   skillsForTagFilter,
   tagFilterOptions,
@@ -58,6 +57,7 @@ import {
   termcnColors,
 } from '../components/termcn.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
+import { ShortcutHelpPanel } from './shortcut-help.js';
 
 /** Framed more-actions panel for absolute modal overlay (list shows through). */
 function MoreActionsPanel({
@@ -616,12 +616,15 @@ export function Browser({
       const liveFocus = live?.focus ?? 'tabs';
       const liveTab = live?.tab ?? 'project';
       if (input === '?') {
-        void modal.info({
-          title: ' 完整快捷键 ',
-          content: shortcutModalContent(),
-          width: 76,
-          // Keep help within viewport; FramedPanel scrolls the rest with ↑/↓.
-          maxHeight: 18,
+        void modal.open({
+          footerItems: [
+            { key: '↑↓', label: '移动' },
+            { key: 'e', label: '展开' },
+            { key: 'Esc', label: '关闭' },
+          ],
+          content: (close) => (
+            <ShortcutHelpPanel onClose={() => close(undefined)} maxBodyRows={14} />
+          ),
         });
         return;
       }
