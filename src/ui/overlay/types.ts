@@ -33,6 +33,8 @@ export interface ModalInfoOptions {
   title: string;
   content: string[];
   width?: number;
+  /** Total framed rows including borders; FramedPanel defaults from terminal height. */
+  maxHeight?: number;
   muteLastContent?: boolean;
   footerItems?: FooterItem[];
 }

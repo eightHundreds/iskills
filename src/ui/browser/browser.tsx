@@ -620,6 +620,8 @@ export function Browser({
           title: ' 完整快捷键 ',
           content: shortcutModalContent(),
           width: 76,
+          // Keep help within viewport; FramedPanel scrolls the rest with ↑/↓.
+          maxHeight: 18,
         });
         return;
       }

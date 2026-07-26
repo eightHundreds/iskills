@@ -43,8 +43,11 @@ export function renderInfoPanel(
       content={options.content}
       width={options.width ?? 76}
       muteLastContent={options.muteLastContent ?? false}
+      // Cap height so long help (grouped shortcuts) scrolls instead of overflowing.
+      {...(options.maxHeight !== undefined ? { maxHeight: options.maxHeight } : {})}
       onEscape={() => close()}
       onKey={(input, key) => {
+        // ↑/↓ reserved for FramedPanel scroll when content overflows.
         if (key.return || input === 'q' || input === ' ') close();
       }}
     />

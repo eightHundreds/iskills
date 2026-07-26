@@ -187,23 +187,38 @@ export function detailContentLines(
   ];
 }
 
+/** Section rule for shortcut help (scheme C). Width is padded by FramedPanel. */
+function shortcutSection(label: string): string {
+  return `${label} ${'─'.repeat(Math.max(4, 48 - label.length))}`;
+}
+
+/**
+ * Grouped shortcut help body for `?` modal (docs/cli-tui global footer era).
+ * Panel height is capped by FramedPanel; overflow scrolls with ↑/↓.
+ */
 export function shortcutModalContent(): string[] {
   return [
-    '↑/↓ 移动焦点或列表项',
-    '←/→ 切换当前层级 Tab；收藏夹内 → 查看详情',
-    'Space 选择当前技能或当前标签下全部技能',
-    'Enter 查看、添加或提交当前选择',
-    '/ 搜索技能',
-    'g 跳转到分组（有分组时）',
-    'i 加入收藏夹（当前项目/全局已选择本地技能时）',
-    't 批量加标签（收藏夹已选择技能时）',
-    's 同步 Git（收藏夹可同步时）',
-    'u 更新可更新的已选技能；无选择时更新当前技能',
-    'd/Delete 删除已选技能；无选择时删除当前技能',
-    'm 更多操作（当前项目引用可转换时）',
-    'q 退出 · Esc 取消当前上下文',
-    '',
-    'Esc 关闭',
+    shortcutSection('导航'),
+    ' ↑/↓    移动焦点或列表项',
+    ' ←/→    切换当前层级 Tab',
+    ' →      打开全屏详情（收藏夹 / 引用；三栏下右侧已是预览）',
+    ' /      筛选技能',
+    ' g      跳转分组（有分组时）',
+    shortcutSection('选择'),
+    ' Space  切换选中（标签列：该标签下全部）',
+    ' Enter  添加已选 · 或打开全屏详情（视布局）',
+    shortcutSection('收藏与安装'),
+    ' i      加入收藏夹（项目 / 全局已选本地技能）',
+    shortcutSection('维护'),
+    ' t      批量加标签（收藏夹已选）',
+    ' u      更新：已选中可更新者，否则更新当前项',
+    ' m      更多操作 · 引用转副本（仅当前项目软链）',
+    ' s      同步收藏夹 Git（可同步时）',
+    ' d      删除已选；无已选则删除当前项',
+    shortcutSection('全局'),
+    ' ?      本帮助',
+    ' q      退出浏览器',
+    ' Esc    取消最内层上下文；本面板内关闭帮助',
   ];
 }
 
