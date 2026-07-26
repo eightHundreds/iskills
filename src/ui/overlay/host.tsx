@@ -1,4 +1,5 @@
-import { Box, useInput, useStdout } from 'ink';
+import { Box, useStdout } from 'ink';
+import { useInput } from '../components/use-input.js';
 import {
   createContext,
   useCallback,
@@ -8,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { PointerSurface } from '../components/mouse/index.js';
 import {
   confirmFooterItems,
   infoFooterItems,
@@ -262,19 +264,23 @@ export function OverlayHost({
                 >
                   {children}
                 </Box>
-                {layerOpen ? layerSlot.node : null}
+                {layerOpen ? (
+                  <PointerSurface id="layer">{layerSlot.node}</PointerSurface>
+                ) : null}
               </Box>
               {bottomChrome}
               {modalOpen ? (
-                <Box
-                  position="absolute"
-                  width={cols}
-                  height={rows}
-                  justifyContent="center"
-                  alignItems="center"
-                >
-                  {modalSlot.node}
-                </Box>
+                <PointerSurface id="modal">
+                  <Box
+                    position="absolute"
+                    width={cols}
+                    height={rows}
+                    justifyContent="center"
+                    alignItems="center"
+                  >
+                    {modalSlot.node}
+                  </Box>
+                </PointerSurface>
               ) : null}
             </Box>
           </OverlayFooterContext.Provider>

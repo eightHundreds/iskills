@@ -1,5 +1,7 @@
-import { Box, useInput } from 'ink';
+import { Box } from 'ink';
+import { useInput } from '../components/use-input.js';
 import { useEffect, useState, type ReactNode } from 'react';
+import { MouseProvider } from '../components/mouse/index.js';
 import {
   OverlayHost,
   useOverlayBusy,
@@ -61,20 +63,22 @@ export function AppShell({
   }, []);
 
   return (
-    <OverlayHost
-      bottomChrome={
-        ready ? (bottomChrome ?? <OverlayOnlyFooter />) : null
-      }
-    >
-      <AppShellBody
-        ready={ready}
-        cancelOnEscape={cancelOnEscape}
-        {...(onCancel ? { onCancel } : {})}
-        {...(onCtrlC ? { onCtrlC } : {})}
+    <MouseProvider>
+      <OverlayHost
+        bottomChrome={
+          ready ? (bottomChrome ?? <OverlayOnlyFooter />) : null
+        }
       >
-        {children}
-      </AppShellBody>
-    </OverlayHost>
+        <AppShellBody
+          ready={ready}
+          cancelOnEscape={cancelOnEscape}
+          {...(onCancel ? { onCancel } : {})}
+          {...(onCtrlC ? { onCtrlC } : {})}
+        >
+          {children}
+        </AppShellBody>
+      </OverlayHost>
+    </MouseProvider>
   );
 }
 

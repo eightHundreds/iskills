@@ -1,7 +1,8 @@
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { useRef, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import { graphemes } from './text.js';
+import { useInput } from './use-input.js';
 
 export function TextInput({
   label,

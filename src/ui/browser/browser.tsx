@@ -1,4 +1,5 @@
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useStdout } from 'ink';
+import { useInput } from '../components/use-input.js';
 import { useAtom, useAtomValue, useStore } from 'jotai';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import type {

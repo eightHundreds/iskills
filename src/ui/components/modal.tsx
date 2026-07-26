@@ -1,4 +1,5 @@
-import { Text, useInput } from 'ink';
+import { Text } from 'ink';
+import { useInput } from './use-input.js';
 import type { ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from './terminal-layout.js';

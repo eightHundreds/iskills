@@ -8,8 +8,10 @@ export default defineConfig({
           name: 'parallel',
           include: [
             'test/browser.test.ts',
+            'test/browser-ui.test.tsx',
             'test/cli.test.ts',
             'test/library.test.ts',
+            'test/mouse.test.ts',
             'test/ui.test.tsx',
             'test/footer-resolve.test.ts',
           ],

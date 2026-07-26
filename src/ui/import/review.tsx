@@ -1,4 +1,5 @@
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useStdout } from 'ink';
+import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { TextInput, termcnColors } from '../components/termcn.js';

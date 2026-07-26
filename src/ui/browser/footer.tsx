@@ -2,6 +2,7 @@ import { useStdout } from 'ink';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import type { CollectedSkill, Skill } from '../../domain/types.js';
+import { PointerSurface } from '../components/mouse/index.js';
 import { TextInput } from '../components/text-input.js';
 import { resolveFooter } from '../footer/resolve-footer.js';
 import type {
@@ -136,46 +137,49 @@ export function BrowserShellFooter(): ReactNode {
   const view = resolveFooter(input);
 
   if (view.mode === 'input') {
+    // Exclusive pointer surface: mute base chrome (tabs) while filter owns input.
     return (
-      <TextInput
-        label={view.label}
-        initialValue={view.value}
-        onChange={(draft) => {
-          setFilter((current) => ({ ...current, open: true, draft }));
-          setNavigation((current) =>
-            current ? { ...current, query: draft, cursor: 0 } : current
-          );
-        }}
-        onCancel={() => {
-          const prior = store.get(browserFilterAtom);
-          setFilter({
-            open: false,
-            draft: '',
-            queryBefore: '',
-            cursorBefore: 0,
-          });
-          setNavigation((current) =>
-            current
-              ? {
-                  ...current,
-                  query: prior.queryBefore,
-                  cursor: prior.cursorBefore,
-                }
-              : current
-          );
-        }}
-        onSubmit={(value) => {
-          setFilter({
-            open: false,
-            draft: value,
-            queryBefore: '',
-            cursorBefore: 0,
-          });
-          setNavigation((current) =>
-            current ? { ...current, query: value } : current
-          );
-        }}
-      />
+      <PointerSurface id="filter">
+        <TextInput
+          label={view.label}
+          initialValue={view.value}
+          onChange={(draft) => {
+            setFilter((current) => ({ ...current, open: true, draft }));
+            setNavigation((current) =>
+              current ? { ...current, query: draft, cursor: 0 } : current
+            );
+          }}
+          onCancel={() => {
+            const prior = store.get(browserFilterAtom);
+            setFilter({
+              open: false,
+              draft: '',
+              queryBefore: '',
+              cursorBefore: 0,
+            });
+            setNavigation((current) =>
+              current
+                ? {
+                    ...current,
+                    query: prior.queryBefore,
+                    cursor: prior.cursorBefore,
+                  }
+                : current
+            );
+          }}
+          onSubmit={(value) => {
+            setFilter({
+              open: false,
+              draft: value,
+              queryBefore: '',
+              cursorBefore: 0,
+            });
+            setNavigation((current) =>
+              current ? { ...current, query: value } : current
+            );
+          }}
+        />
+      </PointerSurface>
     );
   }
 
