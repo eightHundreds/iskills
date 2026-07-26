@@ -6,7 +6,7 @@ import {
 } from '../overlay/host.js';
 
 /**
- * Pure Ink interactive chrome: first-frame visibility + global key callbacks.
+ * Pure Ink interactive shell: first-frame visibility + global key callbacks.
  * Composes {@link OverlayHost} for Layer / Modal slots — does not own overlay logic.
  *
  * Does **not** call `exit` or throw InterruptError.
@@ -21,7 +21,8 @@ export {
   useLayer,
   useModal,
   useOverlayBusy,
-} from '../overlay/host.js';export type {
+} from '../overlay/host.js';
+export type {
   AppModalConfirmOptions,
   AppModalInfoOptions,
   AppModalOpenOptions,
@@ -33,7 +34,8 @@ export {
   ModalOpenOptions,
 } from '../overlay/types.js';
 
-function AppShellChrome({
+/** First-frame gate + global Esc/Ctrl+C; must sit under {@link OverlayHost}. */
+function AppShellBody({
   cancelOnEscape = false,
   onCancel,
   onCtrlC,
@@ -85,13 +87,13 @@ export function AppShell({
 }): ReactNode {
   return (
     <OverlayHost>
-      <AppShellChrome
+      <AppShellBody
         cancelOnEscape={cancelOnEscape}
         {...(onCancel ? { onCancel } : {})}
         {...(onCtrlC ? { onCtrlC } : {})}
       >
         {children}
-      </AppShellChrome>
+      </AppShellBody>
     </OverlayHost>
   );
 }

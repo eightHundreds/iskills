@@ -33,9 +33,9 @@ export function masterDetailWidths(
 
 export function masterDetailViewportHeight(
   rows: number | undefined,
-  chromeRows: number
+  reservedRows: number
 ): number {
-  return Math.max(3, (rows ?? 24) - chromeRows - 1);
+  return Math.max(3, (rows ?? 24) - reservedRows - 1);
 }
 
 export function masterDetailSeparator(

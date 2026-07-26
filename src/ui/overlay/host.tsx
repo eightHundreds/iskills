@@ -162,7 +162,7 @@ export function OverlayHost({ children }: { children: ReactNode }): ReactNode {
     }
   });
 
-  // Keep `children` mounted while a layer is open so AppShell chrome (Ctrl+C,
+  // Keep `children` mounted while a layer is open so AppShell (Ctrl+C,
   // first-frame gate) and long-lived trees (Browser) stay alive. Layer content
   // is a full-page visual replace only.
   return (

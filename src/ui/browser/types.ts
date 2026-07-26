@@ -108,7 +108,7 @@ export interface BrowserAppLaunchOptions {
 export interface BrowserNavigationSnapshot extends BrowserState {}
 
 /**
- * Browser action host: app chrome + data, not interactive UI.
+ * Browser action host: AppShell + data, not interactive UI.
  * Prompts use static {@link import('../overlay/static.js').Modal} / Layer / present helpers.
  */
 export interface BrowserActionHost {

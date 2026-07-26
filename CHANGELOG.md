@@ -38,7 +38,7 @@
 - 以主 TUI 统一浏览、删除、更新和 Git 同步，移除重复的 `list`、`remove`、`update`、`sync` 子命令。
 - 保留独立 `search [关键词]` TUI，移除 `search --json` 与 `search --collect` 自动化入口。
 - UI 按产品能力分包：`browser` / `search` / `import` / `install` / `prompts` / `overlay` / `shell`。
-- 抽出独立 `overlay` 包（Layer / Modal 槽引擎）；`AppShell` 仅作 chrome 组合。
+- 抽出独立 `overlay` 包（Layer / Modal 槽引擎）；`AppShell` 仅作壳层组合。
 - 命令侧 `confirm` 与 Browser 共用 Modal 面板路径。
 - 主浏览器迁 Ink 单树；标签侧栏按当前 Agent 统计与导航。
 
