@@ -16,6 +16,7 @@ import {
   groupedRows,
   visibleAgentGroups,
 } from './format.js';
+import { masterDetailLayout } from './layout.js';
 import {
   browserDataAtom,
   browserFilterAtom,
@@ -35,10 +36,13 @@ function enterActionFor(
   tab: BrowserTab,
   selectionCount: number,
   currentIsSkill: boolean,
-  canViewWithRightArrow: boolean
+  canViewWithRightArrow: boolean,
+  masterDetail: boolean
 ): FooterEnterAction {
   if (tab === 'collection' && selectionCount > 0) return 'add';
   if (!currentIsSkill) return null;
+  // 3-column layout already peeks detail in the right pane — omit Enter 详情/查看.
+  if (masterDetail) return null;
   if (tab === 'collection') return 'detail';
   if (canViewWithRightArrow) return null;
   return 'view';
@@ -94,9 +98,16 @@ export function BrowserShellFooter(): ReactNode {
     return null;
   }
 
+  const masterDetail = masterDetailLayout(stdout.columns, stdout.rows);
   const browse =
     phase === 'browse' && !groupJump && !filter.open && !working
-      ? computeBrowseCapabilities(navigation, selected, data, updateCheck)
+      ? computeBrowseCapabilities(
+          navigation,
+          selected,
+          data,
+          updateCheck,
+          masterDetail
+        )
       : null;
 
   const input: FooterResolveInput = {
@@ -181,7 +192,8 @@ function computeBrowseCapabilities(
   },
   selected: Set<string>,
   data: BrowserDataSnapshot,
-  updateCheck: { checking: boolean; updates: Set<string>; failed: number }
+  updateCheck: { checking: boolean; updates: Set<string>; failed: number },
+  masterDetail: boolean
 ): FooterBrowseCapabilities {
   const tab = navigation.tab;
   const focus = navigation.focus;
@@ -245,7 +257,8 @@ function computeBrowseCapabilities(
           tab,
           tab === 'collection' ? selectedCollection.length : 0,
           Boolean(currentSkill),
-          canViewWithRightArrow
+          canViewWithRightArrow,
+          masterDetail
         )
       : null;
 
