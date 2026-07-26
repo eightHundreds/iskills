@@ -1,4 +1,5 @@
-// Semantic terminal palette. Keep keys/values aligned with DESIGN.md V2/V3.
+// Semantic terminal palette. This module owns the values; docs/cli-tui.md owns
+// the role each token plays.
 export const termcnColors = {
   primary: '#7C3AED',
   foreground: '#FFFFFF',

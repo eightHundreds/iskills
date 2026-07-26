@@ -1,7 +1,18 @@
 import { parseArgs } from 'node:util';
-import { assertSkillName, errorMessage, listCollection, sanitizeTerminal } from '../domain/core.js';
+import {
+  assertSkillName,
+  errorMessage,
+  listCollection,
+  normalizeGitRepositoryIdentity,
+  sanitizeTerminal,
+} from '../domain/core.js';
 import { Modal } from '../ui/overlay/static.js';
-import type { RemoteSkill, SkillMetadata } from '../domain/types.js';
+import type {
+  CollectedSkill,
+  CollectionMatch,
+  RemoteSkill,
+  SkillMetadata,
+} from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search/index.js';
 import { importRemoteSkillToCollection } from './library.js';
 
@@ -13,6 +24,30 @@ function formatIdentity(skill: SkillMetadata): string {
   const base = source.url || source.id || source.type;
   const path = source.path && source.path !== '.' ? `/${source.path}` : '';
   return sanitizeTerminal(`${base.replace(/\/$/, '')}${path}`);
+}
+
+/**
+ * The in-repository source path is only known after cloning, so a matching
+ * repository cannot prove same origin yet; only a different repository is
+ * conclusive before the clone.
+ */
+function collectionMatch(
+  collection: CollectedSkill[],
+  skill: RemoteSkill
+): CollectionMatch | undefined {
+  const collected = collection.find(
+    (item) => item.name.toLowerCase() === skill.name.toLowerCase()
+  );
+  if (!collected) return undefined;
+  const collectedRepository = collected.source.type === 'git' && collected.source.url
+    ? normalizeGitRepositoryIdentity(collected.source.url)
+    : undefined;
+  const incomingRepository = normalizeGitRepositoryIdentity(
+    `https://github.com/${skill.source}`
+  );
+  return collectedRepository && collectedRepository !== incomingRepository
+    ? 'conflicting-source'
+    : 'unverified-source';
 }
 
 function printImportResult(result: Awaited<ReturnType<typeof importRemoteSkillToCollection>>): void {
@@ -77,10 +112,9 @@ export async function commandSearch(argv: string[]): Promise<void> {
     throw new Error('独立搜索 TUI 需要 stdin 和 stdout TTY；当前终端不支持。');
   }
   const collection = await listCollection();
-  const collectedNames = new Set(collection.map((skill) => skill.name.toLowerCase()));
   const selected = await searchRemoteSkill({
     initialQuery: positionals.join(' ').trim(),
-    collectedNames,
+    matchCollection: (skill) => collectionMatch(collection, skill),
     search: searchSkills,
   });
   if (!selected) return;

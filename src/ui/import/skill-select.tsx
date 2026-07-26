@@ -2,6 +2,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
+import { collectionMatchLabels, collectionMatchMarkers } from '../collection-match.js';
 import { termcnColors } from '../components/termcn.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
 
@@ -20,20 +21,6 @@ function skillNameColumnWidth(options: { skill: Skill }[], columns: number): num
   // Account for the framed list, selection marker, status icon column, and gaps.
   const availableNameWidth = Math.max(12, columns - 9 - minimumDescriptionWidth);
   return Math.max(12, Math.min(Math.max(20, longestName), availableNameWidth));
-}
-
-function collectionStatusLabel(status: Skill['collectionStatus']): string {
-  if (status === 'same-source') return '已收藏（同一来源）';
-  if (status === 'same-name') return '同名冲突（来源不同）';
-  return '';
-}
-
-function collectionStatusIcon(
-  status: Skill['collectionStatus']
-): { symbol: '★' | '☆'; color: string } | undefined {
-  if (status === 'same-source') return { symbol: '★', color: colors.muted };
-  if (status === 'same-name') return { symbol: '☆', color: colors.error };
-  return undefined;
 }
 
 interface DetailPreviewLine {
@@ -71,7 +58,7 @@ function detailPreviewLines(
       muted: true,
     })),
   ];
-  const status = collectionStatusLabel(skill.collectionStatus);
+  const status = skill.collectionStatus && collectionMatchLabels[skill.collectionStatus];
   if (status) {
     lines.push({ value: '' }, ...detailFieldLines(skillFieldLabels.collectionStatus, status, width));
   }
@@ -341,7 +328,8 @@ export function SkillMultiSelect<T extends Skill>({
                 const index = offset + visibleIndex;
                 const isSelected = selected.has(option.skill.path);
                 const isCursor = focus === 'list' && index === clampedCursor;
-                const status = collectionStatusIcon(option.skill.collectionStatus);
+                const status = option.skill.collectionStatus &&
+                  collectionMatchMarkers[option.skill.collectionStatus];
                 return (
                   <Box key={option.skill.path} gap={1} width="100%">
                     <Text {...(isCursor ? { color: colors.primary } : {})}>

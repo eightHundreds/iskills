@@ -1,4 +1,4 @@
-import type { RemoteSkill } from '../../domain/types.js';
+import type { CollectionMatch, RemoteSkill } from '../../domain/types.js';
 
 /** Search screen protocol (type-only). */
 
@@ -9,6 +9,7 @@ export type RemoteSkillSearch = (
 
 export interface SearchViewInput {
   initialQuery: string;
-  collectedNames: ReadonlySet<string>;
+  /** Undefined when the collection holds no Skill of that name. */
+  matchCollection: (skill: RemoteSkill) => CollectionMatch | undefined;
   search: RemoteSkillSearch;
 }

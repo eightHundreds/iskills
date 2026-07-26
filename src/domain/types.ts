@@ -19,6 +19,13 @@ export interface GitSource extends SkillSource {
   path: string;
 }
 
+/**
+ * How a candidate Skill relates to a collected Skill of the same name.
+ * `unverified-source` is not a weaker conflict: it means provenance cannot
+ * prove sameness either way, so it must not be presented as a known difference.
+ */
+export type CollectionMatch = 'same-source' | 'conflicting-source' | 'unverified-source';
+
 export interface Skill {
   name: string;
   description: string;
@@ -28,7 +35,7 @@ export interface Skill {
   note?: string;
   source?: SkillSource;
   fromCollection?: boolean;
-  collectionStatus?: 'same-source' | 'same-name';
+  collectionStatus?: CollectionMatch;
 }
 
 export interface RemoteSkill {

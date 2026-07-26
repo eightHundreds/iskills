@@ -8,6 +8,7 @@ import {
   assertRelativePath,
   assertSkillName,
   baselinePath,
+  classifyCollectionMatch,
   collectionPaths,
   commitCollection,
   discoverSkills,
@@ -33,6 +34,7 @@ import {
 } from '../domain/collection-write.js';
 import { matchesSkill } from '../domain/skill-query.js';
 import { cloneGitSource } from '../domain/git.js';
+import { collectionMatchLabels } from '../ui/collection-match.js';
 import type {
   CollectedSkill,
   GitImportContext,
@@ -52,11 +54,9 @@ function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string
     relative(gitContext.repository, skill.path).split(sep).join('/')
   );
   const ref = gitContext.source.ref ? `#${gitContext.source.ref}` : '';
-  const status = skill.collectionStatus === 'same-source'
-    ? ' · 已收藏（同一来源）'
-    : skill.collectionStatus === 'same-name'
-      ? ' · 同名冲突（来源不同）'
-      : '';
+  const status = skill.collectionStatus
+    ? ` · ${collectionMatchLabels[skill.collectionStatus]}`
+    : '';
   return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}${status}`;
 }
 
@@ -89,9 +89,7 @@ function annotateGitCollectionStatus(
     if (!sameName) return skill;
     return {
       ...skill,
-      collectionStatus: sameGitIdentity(sameName, gitSkillMetadata(skill, gitContext))
-        ? 'same-source'
-        : 'same-name',
+      collectionStatus: classifyCollectionMatch(sameName, gitSkillMetadata(skill, gitContext)),
     };
   });
 }

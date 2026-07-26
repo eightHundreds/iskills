@@ -17,10 +17,10 @@ import {
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type {
   AgentConfig,
   CollectedSkill,
+  CollectionMatch,
   CollectionPaths,
   CollectionState,
   LockEntry,
@@ -160,6 +160,18 @@ export function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata)
     normalizeGitRepositoryIdentity(current.source.url) ===
       normalizeGitRepositoryIdentity(incoming.source.url) &&
     (current.source.path || '.') === (incoming.source.path || '.');
+}
+
+export function classifyCollectionMatch(
+  current: SkillMetadata,
+  incoming: SkillMetadata
+): CollectionMatch {
+  if (sameGitIdentity(current, incoming)) return 'same-source';
+  const comparable = current.source.type === 'git' &&
+    incoming.source.type === 'git' &&
+    !!current.source.url &&
+    !!incoming.source.url;
+  return comparable ? 'conflicting-source' : 'unverified-source';
 }
 
 function parseScalar(value: string): string {
@@ -436,14 +448,24 @@ export async function isExactSymlink(path: string, target: string): Promise<bool
   }
 }
 
+/** Detached child: push/pull collection after commit without blocking the CLI. */
 function startBackgroundSync(): void {
   if (process.env.SK_NO_BACKGROUND_SYNC === '1' || process.env.SK_SYNC_CHILD === '1') return;
-  const entry = fileURLToPath(new URL('../background-sync.js', import.meta.url));
-  const child = spawn(process.execPath, [entry], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, SK_SYNC_CHILD: '1' },
-  });
+  // Spawn Node once with domain/git — no dedicated entry wrapper file.
+  const gitHref = new URL('./git.js', import.meta.url).href;
+  const child = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import(${JSON.stringify(gitHref)}).then((m) => m.backgroundCollectionSync())`,
+    ],
+    {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, SK_SYNC_CHILD: '1' },
+    }
+  );
   child.unref();
 }
 

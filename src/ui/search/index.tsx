@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from './types.js';
 import type { RemoteSkill } from '../../domain/types.js';
 import { TextInput, termcnColors } from '../components/termcn.js';
+import { collectionMatchMarkers } from '../collection-match.js';
 import { Layer } from '../overlay/static.js';
 // Ensure CLI bootstrap is registered when search runs without a mounted tree.
 import '../shell/run.js';
@@ -19,12 +20,12 @@ function formatInstalls(count: number): string {
 
 function SearchSkills({
   initialQuery,
-  collectedNames,
+  matchCollection,
   search,
   finish,
 }: {
   initialQuery: string;
-  collectedNames: ReadonlySet<string>;
+  matchCollection: SearchViewInput['matchCollection'];
   search: RemoteSkillSearch;
   finish: (skill: RemoteSkill | undefined) => void;
 }) {
@@ -122,7 +123,8 @@ function SearchSkills({
         ) : (
           visible.map((skill, index) => {
             const active = offset + index === cursor;
-            const collected = collectedNames.has(skill.name.toLowerCase());
+            const match = matchCollection(skill);
+            const marker = match && collectionMatchMarkers[match];
             return (
               <Text
                 key={skill.resultId}
@@ -130,7 +132,7 @@ function SearchSkills({
                 bold={active}
               >
                 {`${active ? '›' : ' '} ${skill.name}`}
-                {collected && <Text color={termcnColors.muted}> ☆</Text>}
+                {marker && <Text color={marker.color}> {marker.symbol}</Text>}
                 {` — ${skill.source} · ${formatInstalls(skill.installs)} installs`}
               </Text>
             );
