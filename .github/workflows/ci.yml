@@ -20,5 +20,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: git config --global init.defaultBranch main
-      - run: env -u CI pnpm test
+      - run: env -u CI ISKILLS_DISABLE_MOUSE=1 pnpm test
       - run: pnpm pack --dry-run

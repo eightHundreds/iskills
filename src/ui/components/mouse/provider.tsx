@@ -86,7 +86,11 @@ export function MouseProvider({
 
   useEffect(() => {
     const tty = Boolean(stdin?.isTTY && stdout?.isTTY);
-    if (autoEnable && tty) {
+    // CI PTY suites and ink-testing-library inject sequences without real mouse;
+    // enabling tracking there can race alternate-screen frames under load.
+    const allowEnable =
+      autoEnable && tty && process.env.ISKILLS_DISABLE_MOUSE !== '1';
+    if (allowEnable) {
       stdout.write(ENABLE);
     }
 
@@ -111,7 +115,7 @@ export function MouseProvider({
     stdin?.on('data', onData);
     return () => {
       stdin?.off('data', onData);
-      if (autoEnable && tty) {
+      if (allowEnable) {
         stdout.write(DISABLE);
       }
     };
