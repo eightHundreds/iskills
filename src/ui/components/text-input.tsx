@@ -12,6 +12,8 @@ export function TextInput({
   onChange,
   onSubmit,
   width = 72,
+  /** box = form field (label above bordered value); inline = single-row label+value (footer filter). */
+  variant = 'box',
 }: {
   label: string;
   initialValue?: string;
@@ -20,6 +22,7 @@ export function TextInput({
   onChange?: (value: string) => void;
   onSubmit: (value: string) => void;
   width?: number;
+  variant?: 'box' | 'inline';
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
   const valueRef = useRef(initialValue);
@@ -89,6 +92,27 @@ export function TextInput({
     }
   }, { isActive });
   const parts = graphemes(value);
+  const valuePaint = isActive ? (
+    <>
+      {parts.slice(0, cursor).join('')}
+      <Text inverse>{parts[cursor] || ' '}</Text>
+      {parts.slice(cursor + 1).join('')}
+    </>
+  ) : (
+    value || ' '
+  );
+
+  if (variant === 'inline') {
+    return (
+      <Box width="100%" flexDirection="row">
+        <Text wrap="truncate-end">
+          <Text bold>{label}</Text>
+          {valuePaint}
+        </Text>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Text bold>{label}</Text>
@@ -98,13 +122,7 @@ export function TextInput({
         paddingX={1}
         width={resolvedWidth}
       >
-        <Text>
-          {isActive ? <>
-            {parts.slice(0, cursor).join('')}
-            <Text inverse>{parts[cursor] || ' '}</Text>
-            {parts.slice(cursor + 1).join('')}
-          </> : value || ' '}
-        </Text>
+        <Text>{valuePaint}</Text>
       </Box>
     </Box>
   );

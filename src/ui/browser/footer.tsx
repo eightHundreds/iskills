@@ -138,9 +138,11 @@ export function BrowserShellFooter(): ReactNode {
 
   if (view.mode === 'input') {
     // Exclusive pointer surface: mute base chrome (tabs) while filter owns input.
+    // Inline single-row field (spec: full footer becomes `筛选: ` + draft).
     return (
       <PointerSurface id="filter">
         <TextInput
+          variant="inline"
           label={view.label}
           initialValue={view.value}
           onChange={(draft) => {
