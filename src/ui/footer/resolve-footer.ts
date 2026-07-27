@@ -47,11 +47,17 @@ function helpQuit(): FooterItem[] {
   ];
 }
 
+/** Browse filter is always available from the browser key handler. */
+function filterHelp(): FooterItem[] {
+  return [{ key: '/', label: '筛选' }];
+}
+
 function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.focus === 'tabs') {
     return [
       { key: '←→', label: '切换' },
       { key: '↓', label: '进入' },
+      ...filterHelp(),
       ...helpQuit(),
     ];
   }
@@ -60,6 +66,7 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
       { key: '←→', label: '切换' },
       { key: '↑', label: '返回' },
       { key: '↓', label: '进入' },
+      ...filterHelp(),
       ...helpQuit(),
     ];
   }
@@ -67,11 +74,14 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
     return [
       { key: '↑↓', label: '移动' },
       { key: '→', label: '列表' },
+      { key: 'Space', label: '选中' },
+      ...filterHelp(),
       ...helpQuit(),
     ];
   }
 
-  const items: FooterItem[] = [];
+  // List: lead with selection so next-step is obvious on first glance.
+  const items: FooterItem[] = [{ key: 'Space', label: '选中' }];
   if (browse.canDelete) items.push({ key: 'd', label: '删除' });
   if (browse.enterAction === 'add') items.push({ key: 'Enter', label: '添加' });
   else if (browse.enterAction === 'detail') items.push({ key: 'Enter', label: '详情' });
@@ -90,7 +100,7 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.selectionCount > 0) {
     items.push({ label: `已选 ${browse.selectionCount}` });
   }
-  items.push(...helpQuit());
+  items.push(...filterHelp(), ...helpQuit());
   return items;
 }
 

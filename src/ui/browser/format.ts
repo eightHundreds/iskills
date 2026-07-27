@@ -212,7 +212,7 @@ export function shortcutHelpSections(): ShortcutHelpSection[] {
       items: [
         { label: '移动焦点或列表项', keys: '↑/↓' },
         { label: '切换当前层级 Tab', keys: '←/→' },
-        { label: '打开全屏详情（三栏下右侧已是预览）', keys: '→' },
+        { label: '窄屏打开详情（三栏右栏即预览，不进全屏）', keys: '→' },
         { label: '筛选技能', keys: '/' },
         { label: '跳转分组（有分组时）', keys: 'g' },
       ],
@@ -222,7 +222,7 @@ export function shortcutHelpSections(): ShortcutHelpSection[] {
       title: '选择',
       items: [
         { label: '切换选中（标签列：该标签下全部）', keys: 'Space' },
-        { label: '添加已选 · 或打开全屏详情', keys: 'Enter' },
+        { label: '添加已选；窄屏打开详情（三栏右栏即预览）', keys: 'Enter' },
       ],
     },
     {
@@ -416,6 +416,18 @@ export function collectionListColumnLines(
   updates: Set<string>,
   updatingSkillName: string | undefined
 ): { lines: string[]; skillOffset: number; activeLineIndexes: Set<number>; selectedLineIndexes: Set<number> } {
+  const activeLineIndexes = new Set<number>();
+  const selectedLineIndexes = new Set<number>();
+  if (rows.length === 0) {
+    const lines = [padColumns('没有匹配的技能', listWidth)];
+    while (lines.length < viewportHeight) lines.push('');
+    return {
+      lines: lines.slice(0, viewportHeight),
+      skillOffset: 0,
+      activeLineIndexes,
+      selectedLineIndexes,
+    };
+  }
   const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const skillOffset = Math.max(
@@ -425,8 +437,6 @@ export function collectionListColumnLines(
   const visible = rows.slice(skillOffset, skillOffset + skillViewport);
   const summaryWidth = Math.max(8, listWidth - 2);
   const lines: string[] = [];
-  const activeLineIndexes = new Set<number>();
-  const selectedLineIndexes = new Set<number>();
   for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
     const row = visible[visibleIndex];
     if (row?.type !== 'skill') continue;
@@ -504,10 +514,33 @@ export function masterListColumnLines(
 }
 
 export interface CollectionDetailRow {
+  /** Value text, or full-line text when `label` is omitted. */
   text: string;
+  /** Optional field label; rendered muted and left-padded to a fixed width. */
+  label?: string;
   bold?: boolean;
+  /** Mute the value (or whole line when no label). Labels are always muted. */
   muted?: boolean;
   primary?: boolean;
+}
+
+export const DETAIL_LABEL_WIDTH = 6;
+
+/** Label + value rows for the master-detail peek column (label column is fixed-width). */
+export function peekFieldRows(
+  label: string,
+  value: string,
+  width: number,
+  maxLines: number,
+  options: { mutedValue?: boolean } = {}
+): CollectionDetailRow[] {
+  const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
+  const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
+  return lines.map((line, index) => ({
+    text: line,
+    label: index === 0 ? label : '',
+    ...(options.mutedValue ? { muted: true } : {}),
+  }));
 }
 
 export function browseDetailRows(
@@ -522,13 +555,7 @@ export function browseDetailRows(
     return [{ text: '选择技能查看', muted: true }];
   }
   const title = skill.isReference ? `引用 · ${skill.name}` : skill.name;
-  const descriptionLines = peekFieldLines(
-    '描述',
-    skill.description || '无描述',
-    width,
-    Math.max(2, Math.floor(viewportHeight * 0.35))
-  ).map((line) => ({ text: line, muted: true } satisfies CollectionDetailRow));
-  const metadataRows: CollectionDetailRow[] = [
+  const rows: CollectionDetailRow[] = [
     {
       text: `${title}${
         updatingSkillName === skill.name
@@ -538,35 +565,35 @@ export function browseDetailRows(
             : ''
       }`,
       bold: true,
-      primary: true,
     },
-    { text: '' },
   ];
   if (collection) {
     const collected = skill as CollectedSkill;
     const version = collectionVersionLabel(collected) ?? '--';
-    metadataRows.push(
-      ...peekFieldLines('来源', collectionSourceLabel(collected), width, 1).map((line) => ({
-        text: line,
-      })),
-      ...peekFieldLines('版本', version, width, 1).map((line) => ({ text: line }))
-    );
     const triggerTags = collected.tags?.length
       ? collected.tags.map((tag) => `[${tag}]`).join(' ')
       : '--';
-    metadataRows.push(
-      { text: '' },
-      ...peekFieldLines('标签', triggerTags, width, 2).map((line) => ({
-        text: line,
-        muted: true,
-      }))
+    const note = collected.note?.trim() || '无';
+    // Compact metadata block: no interstitial blanks so fields share one visual group.
+    rows.push(
+      ...peekFieldRows('来源', collectionSourceLabel(collected), width, 1),
+      ...peekFieldRows('版本', version, width, 1),
+      ...peekFieldRows('标签', triggerTags, width, 2),
+      ...peekFieldRows('备注', note, width, 2)
     );
   } else {
-    metadataRows.push(...peekFieldLines('位置', skill.path, width, 2).map((line) => ({ text: line })));
+    rows.push(...peekFieldRows('位置', skill.path, width, 2));
   }
-  // 描述长度最不稳定，放在固定元数据之后，切换技能时上方字段位置不跳。
+  // One blank before description; description is secondary and length-variable.
   // 不要用空行撑到视口底，否则看起来像「贴底」。
-  return [...metadataRows, { text: '' }, ...descriptionLines].slice(0, viewportHeight);
+  const descriptionBudget = Math.max(2, Math.floor(viewportHeight * 0.35));
+  return [
+    ...rows,
+    { text: '' },
+    ...peekFieldRows('描述', skill.description || '无描述', width, descriptionBudget, {
+      mutedValue: true,
+    }),
+  ].slice(0, viewportHeight);
 }
 
 export function masterPeekColumnLines(
@@ -600,7 +627,7 @@ export function masterPeekColumnLines(
     ] : [
       ...peekFieldLines('位置', skill.path, width, 2),
     ]),
-    collection ? '→ 全屏详情 · Space 选中' : 'Enter 查看 · Space 选中',
+    collection ? 'Space 选中' : 'Enter 查看 · Space 选中',
   ];
   while (fields.length < viewportHeight) fields.push('');
   return fields.slice(0, viewportHeight);

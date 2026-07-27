@@ -29,6 +29,7 @@ import {
   browseDetailRows,
   collectionCategoryLines,
   collectionListColumnLines,
+  DETAIL_LABEL_WIDTH,
   flatRows,
   focusAfterDownFromAgents,
   focusAfterDownFromTabs,
@@ -277,6 +278,41 @@ function masterDetailColumnText(
   );
 }
 
+/** Right-pane detail row: muted labels, normal/muted values, optional bold title. */
+function DetailColumnRow({
+  row,
+  width,
+}: {
+  row: CollectionDetailRow;
+  width: number;
+}): ReactNode {
+  if (row.label !== undefined) {
+    const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
+    return (
+      <Text wrap="truncate-end">
+        <Text color={termcnColors.muted}>{padColumns(row.label, DETAIL_LABEL_WIDTH)}</Text>
+        <Text
+          {...(row.muted ? { color: termcnColors.muted } : {})}
+          {...(row.bold ? { bold: true } : {})}
+          {...(row.primary ? { color: termcnColors.primary } : {})}
+        >
+          {padColumns(sliceColumns(row.text, 0, valueWidth), valueWidth)}
+        </Text>
+      </Text>
+    );
+  }
+  return (
+    <Text
+      wrap="truncate-end"
+      {...(row.primary ? { color: termcnColors.primary } : {})}
+      {...(row.muted ? { color: termcnColors.muted } : {})}
+      {...(row.bold ? { bold: true } : {})}
+    >
+      {padColumns(sliceColumns(row.text, 0, width), width)}
+    </Text>
+  );
+}
+
 function MasterDetailBody({
   tagLines,
   listLines,
@@ -304,7 +340,7 @@ function MasterDetailBody({
   listSelectedLineIndexes?: Set<number>;
   detailRows?: CollectionDetailRow[];
 }): ReactNode {
-  const rows = Math.max(tagLines.length, listLines.length, peekLines.length);
+  const rows = Math.max(tagLines.length, listLines.length, peekLines.length, detailRows?.length ?? 0);
   const divided = collectionHome;
   const divider = divided ? '│' : '';
   const tagColumnWidth = tagWidth + (divider ? 1 : 0);
@@ -339,14 +375,7 @@ function MasterDetailBody({
           </Box>
           <Box width={peekWidth}>
             {detailRows?.[index] ? (
-              <Text
-                wrap="truncate-end"
-                {...(detailRows[index]?.primary ? { color: termcnColors.primary } : {})}
-                {...(detailRows[index]?.muted ? { color: termcnColors.muted } : {})}
-                {...(detailRows[index]?.bold ? { bold: true } : {})}
-              >
-                {padColumns(sliceColumns(detailRows[index]?.text ?? '', 0, peekWidth), peekWidth)}
-              </Text>
+              <DetailColumnRow row={detailRows[index]!} width={peekWidth} />
             ) : (
               <Text
                 wrap="truncate-end"
@@ -471,9 +500,9 @@ export function Browser({
     group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
   );
   const { stdout } = useStdout();
-  const useBrowseHome =
-    masterDetailLayout(stdout.columns, stdout.rows) &&
-    !query.trim();
+  // Wide terminals keep the 3-column master-detail chrome even while filtering;
+  // list rows still apply `query` inside the skill column.
+  const useBrowseHome = masterDetailLayout(stdout.columns, stdout.rows);
   const useMasterDetail = useBrowseHome;
   // Scope for list + tag sidebar + g-jump: current agent (or full collection),
   // never the whole project/global flat list.
@@ -578,14 +607,21 @@ export function Browser({
     hasProjectAgents: visibleProjectGroups.length > 0,
     hasGlobalAgents: visibleGlobalGroups.length > 0,
   });
-  const openDetail = (skill: Skill, collection: boolean) =>
+  const openDetail = (skill: Skill, collection: boolean) => {
+    // Master-detail chrome fills the terminal; browserFrameDimensions still
+    // sizes by list row count and can be only a few lines on a short list.
+    // Full-screen detail must use the terminal viewport, not that stub height.
+    const frameHeight = useBrowseHome
+      ? Math.max(5, (stdout.rows ?? 24) - 4)
+      : frame.frameHeight;
     finish({
       type: 'open',
       skill,
       collection,
-      frameHeight: frame.frameHeight,
+      frameHeight,
       frameWidth: frame.frameWidth,
     });
+  };
   const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
   const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
   const masterDetailInnerWidth = Math.max(40, frame.frameWidth - 2);
@@ -865,6 +901,8 @@ export function Browser({
           return next;
         });
       }
+      // 3-column layout peeks detail in the right pane — neither → nor Enter
+      // open fullscreen there (narrow list keeps → / Enter as before).
       if (key.rightArrow && row?.type === 'skill' && !useBrowseHome) {
         if (tab === 'collection') return openDetail(row.skill, true);
         if (row.skill.fromCollection) return openDetail(row.skill, true);
@@ -873,11 +911,12 @@ export function Browser({
         if (tab === 'collection' && selectedCollection.length) {
           return finish({ type: 'add', skills: selectedCollection });
         }
+        if (useBrowseHome) return;
         if (tab === 'collection' && row?.type === 'skill') {
           return openDetail(row.skill, true);
         }
-        if (tab !== 'collection') {
-          if (row?.type === 'skill') openDetail(row.skill, false);
+        if (tab !== 'collection' && row?.type === 'skill') {
+          return openDetail(row.skill, false);
         }
       }
     },
@@ -1114,11 +1153,6 @@ export function Browser({
         width={frame.frameWidth}
         bordered={false}
         chip={useBrowseHome}
-        trailing={
-          useMasterDetail && !searching ? (
-            <Text color={termcnColors.muted}>/ 搜索技能…</Text>
-          ) : undefined
-        }
       />
     </Box>
   );
