@@ -7,6 +7,10 @@ export async function commandAdd(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandAdd(argv);
 }
 
+export async function commandCreate(argv: string[]): Promise<void> {
+  return (await import('./create.js')).commandCreate(argv);
+}
+
 export async function commandImport(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandImport(argv);
 }
@@ -62,6 +66,14 @@ const COMMAND_HELP: Record<string, string> = {
   -y, --yes          跳过确认
   -h, --help         显示帮助
 `,
+  create: `用法：
+  iskills create [名称]
+
+在收藏夹新建技能，并打开技能目录。
+
+选项：
+  -h, --help         显示帮助
+`,
   import: `用法：
   iskills import [路径或 Git URL] [选项]
 
@@ -101,6 +113,7 @@ export function printHelp(command?: string): void {
 命令：
   search [关键词]    搜索技能并保存到收藏夹
   add [技能...]      从收藏夹添加到当前项目
+  create [名称]      在收藏夹新建技能并打开目录
   import [来源]      导入本地路径或 Git 来源
   init               初始化收藏夹 Git
 

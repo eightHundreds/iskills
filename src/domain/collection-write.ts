@@ -1,4 +1,16 @@
-import { cp, lstat, mkdir, mkdtemp, readdir, readlink, realpath, rename, rm, symlink } from 'node:fs/promises';
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   assertSkillName,
@@ -6,6 +18,7 @@ import {
   collectionPaths,
   commitCollection,
   copyDirectoryContents,
+  ensureCollection,
   errorMessage,
   exists,
   isExactSymlink,
@@ -26,6 +39,51 @@ export interface ReplacementInput {
   staged: string;
   metadata: SkillMetadata;
   local?: { source: string; selectedPath: string; selectedWasSymlink: boolean };
+}
+
+/** Creates a minimal collected Skill born in the collection (not an import). */
+export async function createCollectionSkill(name: string): Promise<string> {
+  const skillName = assertSkillName(name);
+  const paths = await ensureCollection();
+  const target = join(paths.skills, skillName);
+  if (await pathPresent(target)) {
+    throw new Error(`收藏夹已存在同名技能：${skillName}`);
+  }
+  const metadata = metadataPath(skillName);
+  let created = false;
+  try {
+    // Exclusive create: skills/ already exists via ensureCollection; never clobber.
+    try {
+      await mkdir(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(`收藏夹已存在同名技能：${skillName}`);
+      }
+      throw error;
+    }
+    created = true;
+    await writeFile(
+      join(target, 'SKILL.md'),
+      `---\nname: ${skillName}\ndescription: \n---\n\n# ${skillName}\n\n`,
+      'utf8'
+    );
+    await writeMetadata({
+      name: skillName,
+      description: '',
+      tags: [],
+      note: '',
+      source: { type: 'unknown' },
+    });
+  } catch (error) {
+    // Only remove what this call created — never rm on pre-existing EEXIST.
+    if (created) {
+      await rm(target, { recursive: true, force: true }).catch(() => {});
+      await rm(metadata, { force: true }).catch(() => {});
+    }
+    throw error;
+  }
+  await commitCollection(`create ${skillName}`);
+  return target;
 }
 
 // Replaces one collected Skill while keeping its tree, metadata, links and baseline coherent.

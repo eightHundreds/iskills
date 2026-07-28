@@ -64,6 +64,9 @@ iskills import https://github.com/org/skills-repo.git
 iskills import -g
 iskills import -g --agent pi
 
+# Create a new skill in the collection and open its directory
+iskills create my-skill
+
 # Install from your collection into this project (symlink)
 iskills add my-skill
 
@@ -84,6 +87,7 @@ In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) liv
 | --- | --- |
 | `iskills` | Main TUI — project / global / collection browser |
 | `iskills search [query]` | Search TUI against skills.sh; save selections to the collection |
+| `iskills create [name]` | Create a new skill in the collection and open its directory |
 | `iskills import [source]` | Import a local path or Git URL |
 | `iskills add [skill…]` | Install from the collection into a project or global agent dir |
 | `iskills init` | Initialize Git for the collection (optional remote) |

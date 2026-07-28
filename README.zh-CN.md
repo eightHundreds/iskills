@@ -64,6 +64,9 @@ iskills import https://github.com/org/skills-repo.git
 iskills import -g
 iskills import -g --agent pi
 
+# 在收藏夹新建技能并打开目录
+iskills create my-skill
+
 # 从收藏夹安装到当前项目（软链）
 iskills add my-skill
 
@@ -84,6 +87,7 @@ iskills init --remote git@github.com:you/my-skills.git
 | --- | --- |
 | `iskills` | 主 TUI — 当前项目 / 全局 / 收藏夹浏览 |
 | `iskills search [关键词]` | 独立搜索 TUI（skills.sh），选择后写入收藏夹 |
+| `iskills create [名称]` | 在收藏夹新建技能并打开目录 |
 | `iskills import [来源]` | 导入本地路径或 Git URL |
 | `iskills add [技能…]` | 从收藏夹安装到项目或 Agent 全局目录 |
 | `iskills init` | 初始化收藏夹 Git（可选远程） |

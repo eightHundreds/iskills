@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import {
   commandAdd,
+  commandCreate,
   commandImport,
   commandInit,
   commandSearch,
@@ -14,7 +15,7 @@ const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }
 ).version;
 
-const PUBLIC_COMMANDS = new Set(['search', 'add', 'import', 'init']);
+const PUBLIC_COMMANDS = new Set(['search', 'add', 'create', 'import', 'init']);
 
 async function run(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
@@ -45,6 +46,7 @@ async function run(argv: string[]): Promise<void> {
     return runBrowserApp('', 'collection');
   }
   if (command === 'add') return commandAdd(rest);
+  if (command === 'create') return commandCreate(rest);
   if (command === 'import') return commandImport(rest);
   throw new Error(`未知命令：${command}`);
 }
