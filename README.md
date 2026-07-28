@@ -99,7 +99,7 @@ Common flags (see `iskills help <command>` for the full set):
 - **`init`:** `--remote <git-url>`
 - **`search`:** `--replace`
 
-Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `pi`.
+Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `pi`, `zcode`, `trae`, `qoder`, `grok`.
 
 ## Collection layout
 

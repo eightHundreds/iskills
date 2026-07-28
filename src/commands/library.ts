@@ -3,8 +3,10 @@ import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
-  AGENTS,
+  NO_PRESENT_AGENTS_ERROR,
   PROJECT_SKILL_DIRS,
+  agentGlobalPath,
+  agentProjectPath,
   assertRelativePath,
   assertSkillName,
   baselinePath,
@@ -15,9 +17,11 @@ import {
   ensureCollection,
   errorMessage,
   exists,
+  getAgent,
   isExactSymlink,
   isGitSource,
   listCollection,
+  listPresentAgents,
   metadataPath,
   moveDirectory,
   pathPresent,
@@ -309,13 +313,10 @@ export async function globalSkillGroups(names: string[] = []): Promise<
       collectedByPath.set(await realpath(skill.path), skill);
     } catch {}
   }
+  // Empty present → empty groups (browser global tab). import -g checks separately.
   const selected = names.length
-    ? names.map((name) => {
-        const agent = AGENTS[name];
-        if (!agent) throw new Error(`未知 Agent：${name}`);
-        return { name, agent };
-      })
-    : Object.entries(AGENTS).map(([name, agent]) => ({ name, agent }));
+    ? names.map((name) => ({ name, agent: getAgent(name) }))
+    : (await listPresentAgents(home)).map((name) => ({ name, agent: getAgent(name) }));
   const groups: { agent: string; root: string; skills: Skill[] }[] = [];
   for (const { name, agent } of selected) {
     const root = agent.global(home);
@@ -373,6 +374,9 @@ export async function commandImport(argv: string[]): Promise<void> {
         collection
       );
     } else if (values.global) {
+      if (!(values.agent?.length) && !(await listPresentAgents()).length) {
+        throw new Error(NO_PRESENT_AGENTS_ERROR);
+      }
       const groups = await globalSkillGroups(values.agent);
       globalGroups = groups
         .map((group) => ({
@@ -477,34 +481,18 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
     let names = requestedAgents;
     if (!names.length) {
       if (!process.stdin.isTTY) throw new Error('添加到全局目录时请指定 --agent');
+      const presentNames = await listPresentAgents();
+      if (!presentNames.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
       names = await (await present()).promptChoicesMany(
-        Object.keys(AGENTS).map((name) => ({ label: name, value: name })),
+        presentNames.map((name) => ({ label: name, value: name })),
         '选择全局 Agent 目录：'
       );
+      if (!names.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
     }
-    return [
-      ...new Set(
-        names.map((name) => {
-          const agent = AGENTS[name];
-          if (!agent) throw new Error(`未知 Agent：${name}`);
-          return agent.global(homedir());
-        })
-      ),
-    ];
+    return [...new Set(names.map((name) => agentGlobalPath(name)))];
   }
   if (requestedAgents.length) {
-    return [
-      ...new Set(
-        requestedAgents.map((name) => {
-          const agent = AGENTS[name];
-          if (!agent) throw new Error(`未知 Agent：${name}`);
-          if (!agent.project) {
-            throw new Error(`Agent ${name} 只支持全局 Skill 目录，请使用 --global`);
-          }
-          return resolve(agent.project);
-        })
-      ),
-    ];
+    return [...new Set(requestedAgents.map((name) => agentProjectPath(name)))];
   }
 
   const detected: string[] = [];

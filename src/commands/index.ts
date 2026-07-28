@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { agentIds } from '../domain/core.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
@@ -42,8 +43,14 @@ export async function commandInit(argv: string[] = []): Promise<void> {
   }
 }
 
-const COMMAND_HELP: Record<string, string> = {
-  search: `用法：
+function agentHelpNames(): string {
+  return agentIds().join('、');
+}
+
+function commandHelp(): Record<string, string> {
+  const agents = agentHelpNames();
+  return {
+    search: `用法：
   iskills search [关键词]
 
 实时搜索 skills.sh，选择后保存到收藏夹。
@@ -52,13 +59,13 @@ const COMMAND_HELP: Record<string, string> = {
   --replace          替换异源同名收藏
   -h, --help         显示帮助
 `,
-  add: `用法：
+    add: `用法：
   iskills add [技能...] [选项]
 
 从收藏夹添加技能到当前项目或 Agent 全局目录。
 
 选项：
-  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
+  --agent <名称>     限定 Agent，可重复使用（${agents}）
   -g, --global       添加到 Agent 全局 Skill 目录
   --to <目录>        指定目标目录
   --copy             复制而非创建软链
@@ -66,7 +73,7 @@ const COMMAND_HELP: Record<string, string> = {
   -y, --yes          跳过确认
   -h, --help         显示帮助
 `,
-  create: `用法：
+    create: `用法：
   iskills create [名称]
 
 在收藏夹新建技能，并打开技能目录。
@@ -74,20 +81,20 @@ const COMMAND_HELP: Record<string, string> = {
 选项：
   -h, --help         显示帮助
 `,
-  import: `用法：
+    import: `用法：
   iskills import [路径或 Git URL] [选项]
 
 导入本地路径或 Git 来源到收藏夹。
 
 选项：
   -g, --global       扫描 Agent 全局 Skill 目录
-  --agent <名称>     限定 Agent，可重复使用（agents、codex、claude、cursor、opencode、pi）
+  --agent <名称>     限定 Agent，可重复使用（${agents}）
   --all              导入发现的全部技能
   --replace          替换收藏夹中的同名技能
   -y, --yes          跳过确认
   -h, --help         显示帮助
 `,
-  init: `用法：
+    init: `用法：
   iskills init [选项]
 
 初始化收藏夹 Git 仓库并创建首次提交。
@@ -96,10 +103,11 @@ const COMMAND_HELP: Record<string, string> = {
   --remote <Git URL>  配置或更新 origin
   -h, --help         显示帮助
 `,
-};
+  };
+}
 
 export function printHelp(command?: string): void {
-  const help = command ? COMMAND_HELP[command] : undefined;
+  const help = command ? commandHelp()[command] : undefined;
   if (help) {
     console.log(help);
     return;

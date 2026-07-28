@@ -7,6 +7,7 @@ export default defineConfig({
         test: {
           name: 'parallel',
           include: [
+            'test/agents.test.ts',
             'test/browser.test.ts',
             'test/browser-ui.test.tsx',
             'test/cli.test.ts',

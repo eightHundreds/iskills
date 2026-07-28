@@ -1,9 +1,7 @@
 import { cp, rm } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
-  AGENTS,
   assertRelativePath,
   baselinePath,
   collectionPaths,
@@ -11,10 +9,15 @@ import {
   discoverSkills,
   errorMessage,
   exists,
+  getAgent,
   isGitSource,
   listCollection,
+  NO_PRESENT_AGENTS_ERROR,
+  agentInstallTargets,
+  listPresentAgents,
   listProjectGroups,
   parseGitSource,
+  primaryPresentAgent,
   readMetadata,
   writeMetadata,
 } from '../domain/core.js';
@@ -81,36 +84,26 @@ export async function loadBrowserData(): Promise<BrowserDataSnapshot> {
   return { projectGroups, collection, globalGroups, canSync };
 }
 
-const INSTALL_TARGETS: InstallReviewTarget[] = [
-  {
-    value: 'agents',
-    projectLabel: '标准 Agent Skills (.agents/skills)',
-    globalLabel: '标准 Agent Skills (~/.agents/skills)',
-  },
-  {
-    value: 'claude',
-    projectLabel: 'Claude Code (.claude/skills)',
-    globalLabel: 'Claude Code (~/.claude/skills)',
-  },
-  {
-    value: 'pi',
-    globalLabel: 'Pi (~/.pi/agent/skills)',
-  },
-];
-
-async function defaultInstallAgents(): Promise<{
+async function installTargetsAndDefaults(): Promise<{
+  targets: InstallReviewTarget[];
   defaultProjectAgents: string[];
   defaultGlobalAgents: string[];
 }> {
+  const present = await listPresentAgents();
+  if (!present.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
+  const targets = agentInstallTargets(present);
+  // Available: tool root present. Project default: only if this project already has that skills dir
+  // (e.g. ~/.zcode exists → zcode is listed, but not pre-checked until .zcode/skills exists).
   const defaultProjectAgents: string[] = [];
-  const defaultGlobalAgents: string[] = [];
-  for (const option of INSTALL_TARGETS) {
-    const agent = AGENTS[option.value];
-    if (agent?.project && await exists(agent.project)) defaultProjectAgents.push(option.value);
-    const globalPath = agent?.global(homedir());
-    if (globalPath && await exists(globalPath)) defaultGlobalAgents.push(option.value);
+  for (const target of targets) {
+    if (!target.projectLabel) continue;
+    const project = getAgent(target.value).project;
+    if (project && (await exists(resolve(project)))) defaultProjectAgents.push(target.value);
   }
-  return { defaultProjectAgents, defaultGlobalAgents };
+  // Global: single primary default (agents first) to avoid multi-tool blast radius.
+  const primary = primaryPresentAgent(present);
+  const defaultGlobalAgents = primary ? [primary] : [];
+  return { targets, defaultProjectAgents, defaultGlobalAgents };
 }
 
 export async function loadDetailContext(
@@ -245,10 +238,19 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
-  const { defaultProjectAgents, defaultGlobalAgents } = await defaultInstallAgents();
+  let targets: InstallReviewTarget[];
+  let defaultProjectAgents: string[];
+  let defaultGlobalAgents: string[];
+  try {
+    ({ targets, defaultProjectAgents, defaultGlobalAgents } =
+      await installTargetsAndDefaults());
+  } catch (error) {
+    host.setStatus(errorMessage(error), false, 'error');
+    return;
+  }
   const install = await promptInstallReview(
     skills,
-    INSTALL_TARGETS,
+    targets,
     defaultProjectAgents,
     defaultGlobalAgents
   );

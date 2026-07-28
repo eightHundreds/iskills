@@ -96,6 +96,8 @@ export interface CollectionPaths {
 export interface AgentConfig {
   project?: string;
   global: (home: string) => string;
+  /** Explicit tool root for presence; defaults to dirname(global(home)). */
+  root?: (home: string) => string;
 }
 
 export interface LockEntry {

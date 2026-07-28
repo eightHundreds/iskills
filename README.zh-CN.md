@@ -99,7 +99,7 @@ iskills init --remote git@github.com:you/my-skills.git
 - **`init`：** `--remote <git-url>`
 - **`search`：** `--replace`
 
-`--agent` 可选：`agents`、`codex`、`claude`、`cursor`、`opencode`、`pi`。
+`--agent` 可选：`agents`、`codex`、`claude`、`cursor`、`opencode`、`pi`、`zcode`、`trae`、`qoder`、`grok`。
 
 ## 收藏夹布局
 

@@ -33,13 +33,19 @@ import type {
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
-export const PROJECT_SKILL_DIRS = [
-  '.agents/skills',
-  '.claude/skills',
-  '.codex/skills',
-  '.cursor/skills',
-  '.opencode/skills',
-] as const;
+/** Display names for install/review UI; ids remain CLI --agent values. */
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  agents: '标准 Agent Skills',
+  codex: 'Codex',
+  claude: 'Claude Code',
+  cursor: 'Cursor',
+  opencode: 'OpenCode',
+  pi: 'Pi',
+  zcode: 'ZCode',
+  trae: 'TRAE',
+  qoder: 'Qoder',
+  grok: 'Grok Build',
+};
 
 export const AGENTS: Record<string, AgentConfig> = {
   agents: { project: '.agents/skills', global: (home) => join(home, '.agents/skills') },
@@ -50,8 +56,138 @@ export const AGENTS: Record<string, AgentConfig> = {
     project: '.opencode/skills',
     global: (home) => join(home, '.config/opencode/skills'),
   },
-  pi: { global: (home) => join(home, '.pi/agent/skills') },
+  pi: {
+    global: (home) => join(home, '.pi/agent/skills'),
+    root: (home) => join(home, '.pi'),
+  },
+  zcode: { project: '.zcode/skills', global: (home) => join(home, '.zcode/skills') },
+  trae: { project: '.trae/skills', global: (home) => join(home, '.trae/skills') },
+  qoder: { project: '.qoder/skills', global: (home) => join(home, '.qoder/skills') },
+  grok: { project: '.grok/skills', global: (home) => join(home, '.grok/skills') },
 };
+
+/** Native layouts still scanned even when install project path differs (codex/cursor → .agents/skills). */
+const EXTRA_PROJECT_SCAN_DIRS = ['.codex/skills', '.cursor/skills'] as const;
+
+function uniqueProjectSkillDirs(): string[] {
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const agent of Object.values(AGENTS)) {
+    if (!agent.project || seen.has(agent.project)) continue;
+    seen.add(agent.project);
+    dirs.push(agent.project);
+  }
+  for (const directory of EXTRA_PROJECT_SCAN_DIRS) {
+    if (seen.has(directory)) continue;
+    seen.add(directory);
+    dirs.push(directory);
+  }
+  return dirs;
+}
+
+/** Project-relative skill dirs for scan/list; derived from AGENTS (+ legacy native layouts). */
+export const PROJECT_SKILL_DIRS: readonly string[] = uniqueProjectSkillDirs();
+
+/** CLI `--agent` ids in table order (single source for help text). */
+export function agentIds(): string[] {
+  return Object.keys(AGENTS);
+}
+
+/** When no tool root is present and the user did not pass `--agent`. */
+export const NO_PRESENT_AGENTS_ERROR =
+  '未检测到已安装的 Agent 根目录，请使用 --agent 指定';
+
+export function getAgent(name: string): AgentConfig {
+  const agent = AGENTS[name];
+  if (!agent) throw new Error(`未知 Agent：${name}`);
+  return agent;
+}
+
+function agentDisplayName(name: string): string {
+  return AGENT_DISPLAY_NAMES[name] ?? name;
+}
+
+/** Tool root used for “installed on this machine” presence (directory exists). */
+export function agentRoot(config: AgentConfig, home: string): string {
+  return config.root ? config.root(home) : dirname(config.global(home));
+}
+
+export async function isAgentPresent(name: string, home = homedir()): Promise<boolean> {
+  const agent = AGENTS[name];
+  if (!agent) return false;
+  return exists(agentRoot(agent, home));
+}
+
+/** Agents whose tool root exists under home (for interactive lists / default scan scope). */
+export async function listPresentAgents(home = homedir()): Promise<string[]> {
+  const present: string[] = [];
+  for (const name of agentIds()) {
+    if (await isAgentPresent(name, home)) present.push(name);
+  }
+  return present;
+}
+
+export function agentGlobalPath(name: string, home = homedir()): string {
+  return getAgent(name).global(home);
+}
+
+export function agentProjectPath(name: string): string {
+  const agent = getAgent(name);
+  if (!agent.project) {
+    throw new Error(`Agent ${name} 只支持全局 Skill 目录，请使用 --global`);
+  }
+  return resolve(agent.project);
+}
+
+/** Same shape as install UI targets; domain owns the data, UI may `import type`. */
+export interface AgentInstallTarget {
+  value: string;
+  projectLabel?: string;
+  globalLabel?: string;
+}
+
+function tildeHomePath(absolute: string, home: string): string {
+  const prefix = home.endsWith(sep) ? home : `${home}${sep}`;
+  if (absolute === home || absolute === home.replace(/\/$/, '')) return '~';
+  if (absolute.startsWith(prefix)) {
+    return `~/${absolute.slice(prefix.length).split(sep).join('/')}`;
+  }
+  return absolute;
+}
+
+/**
+ * Install-review rows for agent ids (order preserved).
+ * Shared project paths (e.g. agents/codex/cursor → `.agents/skills`) keep one projectLabel
+ * on the first id so the project tab does not list the same destination thrice.
+ * Global rows stay one-per-agent (paths differ).
+ */
+export function agentInstallTargets(
+  names: string[],
+  home = homedir()
+): AgentInstallTarget[] {
+  const seenProject = new Set<string>();
+  return names.map((name) => {
+    const agent = getAgent(name);
+    const label = agentDisplayName(name);
+    const globalPath = tildeHomePath(agent.global(home), home);
+    let projectLabel: string | undefined;
+    if (agent.project && !seenProject.has(agent.project)) {
+      seenProject.add(agent.project);
+      projectLabel = `${label} (${agent.project})`;
+    }
+    return {
+      value: name,
+      ...(projectLabel ? { projectLabel } : {}),
+      globalLabel: `${label} (${globalPath})`,
+    };
+  });
+}
+
+/** Prefer a single primary default among present agents (agents first, else table order). */
+export function primaryPresentAgent(present: string[]): string | undefined {
+  if (present.includes('agents')) return 'agents';
+  return present[0];
+}
 
 export function collectionPaths(): CollectionPaths {
   const root = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'iskills');

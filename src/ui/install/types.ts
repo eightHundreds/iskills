@@ -3,11 +3,10 @@
  * Commands may `import type` without depending on Ink implementations.
  */
 
-export interface InstallReviewTarget {
-  value: string;
-  projectLabel?: string;
-  globalLabel?: string;
-}
+import type { AgentInstallTarget } from '../../domain/core.js';
+
+/** Alias of domain install row so command/UI share one shape. */
+export type InstallReviewTarget = AgentInstallTarget;
 
 export interface InstallReviewResult {
   confirmed: boolean;
