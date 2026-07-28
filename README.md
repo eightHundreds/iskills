@@ -1,48 +1,150 @@
 # iskills
 
-独立的个人 Skill 收藏夹终端应用。TUI 是唯一交互界面形态；保留少量具有独立价值的 CLI。命令名和配置目录名为 `iskills`，支持 macOS、Linux 和 Node.js 24+。
+[![npm](https://img.shields.io/npm/v/iskills)](https://www.npmjs.com/package/iskills)
+[![Node.js](https://img.shields.io/node/v/iskills)](https://www.npmjs.com/package/iskills)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](https://github.com/eightHundreds/iskills)
 
-实现使用严格 TypeScript、Ink 和按 copy-owned 模式引入的 termcn 组件，按收藏操作、浏览交互、存储/发现、Git 生命周期和 CLI 路由拆分；发布包只包含编译后的 `dist/src`。
+[中文](./README.zh-CN.md)
 
-## 本地试用
+**Personal skill collection for AI coding agents** — discover, collect, install, and maintain skills that agents load via `SKILL.md`.
+
+`iskills` is a terminal-first app: a full-screen TUI for day-to-day work, plus a small set of CLI commands for search, import, install, and Git setup. One collection per developer; no cloud account, no team admin surface.
+
+## Why iskills
+
+Agent skills scatter across repos, global dirs, and project folders. `iskills` keeps a **single personal collection** as the source of truth, then installs into the places your agents already look:
+
+| You want to… | How |
+| --- | --- |
+| **Discover** | Live search [skills.sh](https://skills.sh), or scan local / agent global directories |
+| **Collect** | Import paths or Git sources into your collection with metadata, tags, and same-origin checks |
+| **Install** | Link (default) or copy skills into the current project or agent global dirs |
+| **Maintain** | Browse, update, delete, note, tag, and optionally sync the collection with Git — all in the TUI |
+
+Data integrity comes first: writes are transactional where it matters; conflicts never land in skills you are actively using.
+
+## Requirements
+
+- **Node.js** 24+
+- **macOS** or **Linux**
+- A TTY for the interactive UI (`stdin` and `stdout`)
+- **Git** optional — enable only if you want collection versioning / remote sync
+
+> **UI language:** TUI and CLI help are currently Chinese.
+
+## Install
 
 ```bash
-pnpm link
+npm install -g iskills
+# or
+pnpm add -g iskills
+```
+
+Verify:
+
+```bash
+iskills --version
 iskills --help
 ```
 
-默认收藏目录为 `$XDG_CONFIG_HOME/iskills`，未设置时使用 `~/.config/iskills`。收藏目录本身是 Git 仓库时自动提交变更并异步同步；Git 不是必需依赖。
-
-## 命令
+## Quick start
 
 ```bash
-iskills                         # 交互式主界面
-iskills search [关键词]          # 实时搜索 skills.sh，选择后保存到收藏夹
-iskills import [路径或 Git URL]  # 导入到收藏夹，原本地位置保留软链
-iskills import -g               # 扫描常见 Agent 全局目录
-iskills import -g --agent pi    # 扫描 Pi 专属全局目录 ~/.pi/agent/skills
-iskills add <技能>               # 从收藏夹添加到当前项目
-iskills add <技能> -g            # 从收藏夹添加到一个或多个 Agent 全局目录
-iskills add <技能> -g --agent pi # 添加到 Pi 专属全局目录 ~/.pi/agent/skills
-iskills add <技能> --copy        # 复制并脱离收藏夹
-iskills init                     # 初始化收藏夹 Git，并可选配置远程仓库
-iskills init --remote <Git URL>  # 配置或更新 origin
+# Open the main browser (project · global · collection)
+iskills
+
+# Search skills.sh and save into your collection
+iskills search react
+
+# Import a local skill or a Git repository
+iskills import ./my-skill
+iskills import https://github.com/org/skills-repo.git
+
+# Scan agent global skill directories
+iskills import -g
+iskills import -g --agent pi
+
+# Install from your collection into this project (symlink)
+iskills add my-skill
+
+# Install into agent global dirs, or as a detached copy
+iskills add my-skill -g --agent claude
+iskills add my-skill --copy
+
+# Optional: turn the collection into a Git repo (and set origin)
+iskills init
+iskills init --remote git@github.com:you/my-skills.git
 ```
 
-`iskills init` 首次运行时会询问是否配置远程仓库。配置后在主 TUI 的收藏夹 Tab 使用 `s` 同步 Git；浏览、删除、更新、同步、备注和标签维护均在主 TUI 完成。
+In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) lives on the keyboard-driven browser. With a remote configured, press **`s`** on the Collection tab to sync.
 
-冲突不会写入正在使用的 Skill。来源冲突保留在 `.local/conflicts`，由用户使用编辑器和 Git 手动解决；后续启动主 TUI 或运行保留的收藏操作时自动应用已提交的合并结果。
+## Commands
 
-## 开发文档
+| Command | Description |
+| --- | --- |
+| `iskills` | Main TUI — project / global / collection browser |
+| `iskills search [query]` | Search TUI against skills.sh; save selections to the collection |
+| `iskills import [source]` | Import a local path or Git URL |
+| `iskills add [skill…]` | Install from the collection into a project or global agent dir |
+| `iskills init` | Initialize Git for the collection (optional remote) |
 
-- [CLI/TUI 交互规范](docs/cli-tui.md)
-- [领域不变量与数据完整性](docs/domain-invariants.md)
-- [终端 UI 架构 ADR](docs/adr/0001-terminal-ui-runtime.md)
-- [Agent Skills 目录支持调研](docs/agent-skills-support.md)
+Common flags (see `iskills help <command>` for the full set):
 
-## 验证
+- **`import`:** `-g` / `--global`, `--agent <name>`, `--all`, `--replace`, `-y`
+- **`add`:** `-g` / `--global`, `--agent <name>`, `--to <dir>`, `--copy`, `--replace`, `-y`
+- **`init`:** `--remote <git-url>`
+- **`search`:** `--replace`
+
+Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `pi`.
+
+## Collection layout
+
+| Item | Location |
+| --- | --- |
+| Collection root | `$XDG_CONFIG_HOME/iskills`, or `~/.config/iskills` if unset |
+| Git | Optional. When the collection is a Git repo, changes are auto-committed and can sync asynchronously |
+| Source conflicts | `.local/conflicts` under the collection — resolve with an editor + Git |
+
+After you commit a merge resolution, the next main TUI start (or a retained collection command) applies the result. Active in-use skills are never overwritten by conflict material.
+
+## Development
 
 ```bash
+git clone https://github.com/eightHundreds/iskills.git
+cd iskills
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm start -- --help
+pnpm run type-check
 pnpm test
 pnpm pack --dry-run
 ```
+
+Stack: TypeScript (strict), Ink, React. The published package ships compiled `dist/src` only.
+
+### Documentation
+
+| Doc | Topic |
+| --- | --- |
+| [docs/cli-tui.md](docs/cli-tui.md) | User-visible CLI/TUI behavior |
+| [docs/domain-invariants.md](docs/domain-invariants.md) | Collection integrity rules |
+| [CONTEXT.md](CONTEXT.md) | Domain vocabulary |
+| [docs/adr/0001-terminal-ui-runtime.md](docs/adr/0001-terminal-ui-runtime.md) | Terminal UI runtime |
+| [docs/adr/0002-browser-render-mode.md](docs/adr/0002-browser-render-mode.md) | Browser render mode |
+
+Internal product specs and ADRs are written in Chinese where noted above.
+
+## Non-goals
+
+- Skill marketplace, hosting, accounts, or cloud sync as a product
+- Desktop or web GUI
+- CI/CD or headless machine API as the primary interface
+- Multi-user / org permissions
+
+## Contributing
+
+Issues and pull requests are welcome. Please keep changes aligned with the interaction and domain specs under `docs/`, and run `pnpm test` before submitting.
+
+## License
+
+See the repository root for license and third-party notices.

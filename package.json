@@ -1,6 +1,6 @@
 {
   "name": "iskills",
-  "version": "0.2.40",
+  "version": "0.2.41",
   "description": "Personal Skill collection terminal app for AI coding agents",
   "repository": {
     "type": "git",
@@ -21,6 +21,7 @@
     "bin",
     "dist/src",
     "README.md",
+    "README.zh-CN.md",
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
