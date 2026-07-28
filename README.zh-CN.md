@@ -122,16 +122,6 @@ pnpm pack --dry-run
 
 技术栈：严格模式 TypeScript、Ink、React。发布包仅包含编译后的 `dist/src`。
 
-### 文档
-
-| 文档 | 主题 |
-| --- | --- |
-| [docs/cli-tui.md](docs/cli-tui.md) | 用户可观察的 CLI/TUI 行为 |
-| [docs/domain-invariants.md](docs/domain-invariants.md) | 收藏夹数据完整性 |
-| [CONTEXT.md](CONTEXT.md) | 领域词汇 |
-| [docs/adr/0001-terminal-ui-runtime.md](docs/adr/0001-terminal-ui-runtime.md) | 终端 UI 运行时 |
-| [docs/adr/0002-browser-render-mode.md](docs/adr/0002-browser-render-mode.md) | 浏览器渲染模式 |
-
 ## 非目标
 
 - 技能市场、托管、账号体系或云同步产品

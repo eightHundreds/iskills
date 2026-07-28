@@ -122,18 +122,6 @@ pnpm pack --dry-run
 
 Stack: TypeScript (strict), Ink, React. The published package ships compiled `dist/src` only.
 
-### Documentation
-
-| Doc | Topic |
-| --- | --- |
-| [docs/cli-tui.md](docs/cli-tui.md) | User-visible CLI/TUI behavior |
-| [docs/domain-invariants.md](docs/domain-invariants.md) | Collection integrity rules |
-| [CONTEXT.md](CONTEXT.md) | Domain vocabulary |
-| [docs/adr/0001-terminal-ui-runtime.md](docs/adr/0001-terminal-ui-runtime.md) | Terminal UI runtime |
-| [docs/adr/0002-browser-render-mode.md](docs/adr/0002-browser-render-mode.md) | Browser render mode |
-
-Internal product specs and ADRs are written in Chinese where noted above.
-
 ## Non-goals
 
 - Skill marketplace, hosting, accounts, or cloud sync as a product
