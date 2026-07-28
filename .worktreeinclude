@@ -1,0 +1,13 @@
+# Gitignored paths to copy into new worktrees (Claude Code / Herdr / git-worktreeinclude).
+# Syntax matches .gitignore. Only paths that are both listed here and gitignored are copied;
+# tracked files are never duplicated.
+#
+# Do NOT list node_modules/ or dist/ — reinstall and rebuild in each worktree.
+
+# Project-local agent skills (gitignored via .agents/)
+.agents/
+
+# Local env / secrets (if present)
+.env
+.env.local
+.env.*.local
