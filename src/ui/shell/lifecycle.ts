@@ -34,5 +34,3 @@ export function closeTui(): void {
   }
 }
 
-/** @deprecated Prefer closeTui */
-export const closeInk = closeTui;

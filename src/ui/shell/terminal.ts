@@ -1,4 +1,4 @@
-/** Terminal-session error shared by CLI and Ink runners (value module). */
+/** Terminal-session error shared by CLI and TUI runners (value module). */
 
 export class InterruptError extends Error {
   readonly exitCode = 130;

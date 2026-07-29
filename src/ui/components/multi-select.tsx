@@ -1,10 +1,10 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import {
   resolveOptionValues,
-  toInkOptions,
+  toListOptions,
   useScrollWindow,
   visibleOptionCount,
   type InternalOption,
@@ -25,6 +25,7 @@ function OptionMultiSelect({
   onSubmit: (values: string[]) => void;
   onCancel?: () => void;
 }): ReactNode {
+  const chrome = useModalChrome();
   const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
     options.length,
     visibleCount
@@ -51,12 +52,12 @@ function OptionMultiSelect({
   });
   const visible = options.slice(from, from + count);
   return (
-    <Box flexDirection="column">
+    <box flexDirection="column">
       {visible.map((option, index) => {
         const isFocused = from + index === focus;
         const isSelected = selected.has(option.value);
         return (
-          <Box
+          <box flexDirection="row"
             key={option.value}
             gap={1}
             paddingLeft={isFocused ? 0 : 2}
@@ -75,7 +76,7 @@ function OptionMultiSelect({
                   ? termcnColors.selectionFg
                   : isSelected
                     ? termcnColors.primary
-                    : termcnColors.muted
+                    : chrome.muted
               }
               {...(isFocused ? { backgroundColor: termcnColors.selectionBg } : {})}
             >
@@ -90,14 +91,14 @@ function OptionMultiSelect({
                   }
                 : isSelected
                   ? { color: termcnColors.primary, bold: true }
-                  : { bold: isSelected })}
+                  : { color: chrome.body, bold: isSelected })}
             >
               {option.label}
             </Text>
-          </Box>
+          </box>
         );
       })}
-    </Box>
+    </box>
   );
 }
 
@@ -115,21 +116,26 @@ export function MultiSelect<T>({
   onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const inkOptions = useMemo(() => toInkOptions(options), [options]);
+  const chrome = useModalChrome();
+  const listOptions = useMemo(() => toListOptions(options), [options]);
   const defaultValue = options.flatMap((option, index) =>
     defaultValues.includes(option.value) ? [String(index)] : []
   );
   return (
-    <Box flexDirection="column">
-      {label && <Text bold>{label}</Text>}
+    <box flexDirection="column">
+      {label && (
+        <Text bold color={chrome.body}>
+          {label}
+        </Text>
+      )}
       <OptionMultiSelect
         defaultValue={defaultValue}
         visibleCount={visibleOptionCount(stdout.rows ?? 24, label)}
-        options={inkOptions}
+        options={listOptions}
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
         {...(onCancel ? { onCancel } : {})}
       />
-      <Text color={termcnColors.muted}>Space/空格 勾选 · Enter 确认 · Esc 取消</Text>
-    </Box>
+      <Text color={chrome.muted}>Space/空格 勾选 · Enter 确认 · Esc 取消</Text>
+    </box>
   );
 }

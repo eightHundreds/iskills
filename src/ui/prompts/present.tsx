@@ -5,6 +5,7 @@
  * Side-effect: loads shell so CLI bootstrap is registered when no host is mounted.
  */
 import '../shell/run.js';
+import { ModalPanel } from '../components/modal-panel.js';
 import {
   MultiSelect,
   Select,
@@ -18,20 +19,22 @@ import type { InstallReviewResult, InstallReviewTarget } from '../install/types.
 import { Layer, Modal } from '../overlay/static.js';
 import type { Choice, CollectedSkill, Skill } from '../../domain/types.js';
 
-/** Single-line text — absolute modal (antd-style small form). */
+/** Single-line text — absolute modal with theme-aware solid panel. */
 export function promptText(
   label: string,
   initialValue = ''
 ): Promise<string | undefined> {
   return Modal.open<string | undefined>({
     content: (close) => (
-      <TextInput
-        key={label}
-        label={label}
-        initialValue={initialValue}
-        onCancel={() => close(undefined)}
-        onSubmit={(value) => close(value.trim())}
-      />
+      <ModalPanel>
+        <TextInput
+          key={label}
+          label={label}
+          initialValue={initialValue}
+          onCancel={() => close(undefined)}
+          onSubmit={(value) => close(value.trim())}
+        />
+      </ModalPanel>
     ),
   });
 }

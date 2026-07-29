@@ -3,7 +3,7 @@ import type { KeyEvent } from '@opentui/core';
 import { useCallback, useRef } from 'react';
 import { isMouseInput } from './mouse/parse.js';
 
-/** Ink-shaped key flags so existing product handlers stay readable. */
+/** Key flags for product keyboard handlers. */
 export type Key = {
   upArrow: boolean;
   downArrow: boolean;

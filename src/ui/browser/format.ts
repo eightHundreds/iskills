@@ -1,5 +1,5 @@
 /**
- * Pure view formatting + focus ladder (no Ink components).
+ * Pure view formatting + focus ladder (no React TUI components).
  * Column/row strings, filters, modal copy, detail text model.
  */
 import type { BrowserFocus, BrowserTab, SkillGroup } from './types.js';
@@ -340,13 +340,15 @@ export function masterSkillNameLine(
   selected: Set<string>,
   updates: Set<string>,
   updatingSkillName: string | undefined,
-  showGroup: boolean
+  showGroup: boolean,
+  /** Animated spinner glyph when `updatingSkillName` matches (e.g. "⠋"). */
+  updatingFrame = '⠋'
 ): string {
   const skill = row.skill;
   const current = isActive && index === active;
   const selectionMarker = selected.has(skill.path) ? '●' : '○';
   const update = updatingSkillName === skill.name
-    ? ' 更新中'
+    ? ` ${updatingFrame}`
     : updates.has(skill.name)
       ? ' ↑'
       : '';
@@ -392,14 +394,15 @@ export function collectionSkillNameLine(
   selected: Set<string>,
   updates: Set<string>,
   updatingSkillName: string | undefined,
-  listWidth: number
+  listWidth: number,
+  updatingFrame = '⠋'
 ): string {
   const skill = row.skill;
   const current = isActive && index === active;
   const picked = selected.has(skill.path);
   const prefix = collectionSkillPrefix(current, picked);
   const badges = [
-    updatingSkillName === skill.name ? '更新中' : updates.has(skill.name) ? '↑' : '',
+    updatingSkillName === skill.name ? updatingFrame : updates.has(skill.name) ? '↑' : '',
   ].filter(Boolean);
   const badgeText = badges.length ? ` ${badges.join(' ')}` : '';
   return padColumns(`${prefix}${skill.name}${badgeText}`, listWidth);
@@ -414,7 +417,8 @@ export function collectionListColumnLines(
   viewportHeight: number,
   selected: Set<string>,
   updates: Set<string>,
-  updatingSkillName: string | undefined
+  updatingSkillName: string | undefined,
+  updatingFrame = '⠋'
 ): { lines: string[]; skillOffset: number; activeLineIndexes: Set<number>; selectedLineIndexes: Set<number> } {
   const activeLineIndexes = new Set<number>();
   const selectedLineIndexes = new Set<number>();
@@ -450,7 +454,8 @@ export function collectionListColumnLines(
       selected,
       updates,
       updatingSkillName,
-      listWidth
+      listWidth,
+      updatingFrame
     ));
     const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
     const summaryPrefix = ' '.repeat(COLLECTION_SKILL_PREFIX_WIDTH);
@@ -481,7 +486,8 @@ export function masterListColumnLines(
   selected: Set<string>,
   updates: Set<string>,
   updatingSkillName: string | undefined,
-  showGroup: boolean
+  showGroup: boolean,
+  updatingFrame = '⠋'
 ): { lines: string[]; skillOffset: number } {
   const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
@@ -504,7 +510,8 @@ export function masterListColumnLines(
       selected,
       updates,
       updatingSkillName,
-      showGroup
+      showGroup,
+      updatingFrame
     ));
     const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
     lines.push(summary ? `  ${summary}` : '  ');
@@ -549,7 +556,8 @@ export function browseDetailRows(
   viewportHeight: number,
   collection: boolean,
   updates: Set<string>,
-  updatingSkillName: string | undefined
+  updatingSkillName: string | undefined,
+  updatingFrame = '⠋'
 ): CollectionDetailRow[] {
   if (!skill) {
     return [{ text: '选择技能查看', muted: true }];
@@ -559,12 +567,13 @@ export function browseDetailRows(
     {
       text: `${title}${
         updatingSkillName === skill.name
-          ? ' 更新中'
+          ? ` ${updatingFrame}`
           : updates.has(skill.name)
             ? ' ↑'
             : ''
       }`,
       bold: true,
+      ...(updatingSkillName === skill.name ? { primary: true } : {}),
     },
   ];
   if (collection) {

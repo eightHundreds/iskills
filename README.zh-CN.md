@@ -124,7 +124,7 @@ pnpm test
 pnpm pack --dry-run
 ```
 
-技术栈：严格模式 TypeScript、Ink、React。发布包仅包含编译后的 `dist/src`。
+技术栈：严格模式 TypeScript、OpenTUI、React。发布包仅包含编译后的 `dist/src`。
 
 ## 非目标
 

@@ -1,7 +1,16 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import type { MouseEvent } from '@opentui/core';
+import { Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useAtom, useAtomValue, useStore } from 'jotai';
-import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import type {
   BrowserFocus,
   BrowserResult,
@@ -57,7 +66,10 @@ import {
   Select,
   Tabs,
   termcnColors,
+  WorkingSpinner,
+  useSpinnerFrame,
 } from '../components/termcn.js';
+import { Clickable } from '../components/mouse/clickable.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
 import { ShortcutHelpPanel } from './shortcut-help.js';
 
@@ -92,19 +104,19 @@ function masterDetailBlankRow(
 ): ReactNode {
   const divider = '│';
   return (
-    <Box flexDirection="row">
-      <Box width={tagWidth + 1} flexDirection="row">
+    <box flexDirection="row">
+      <box width={tagWidth + 1} flexDirection="row">
         <Text wrap="truncate-end">{padColumns('', tagWidth)}</Text>
         <Text color={termcnColors.border}>{divider}</Text>
-      </Box>
-      <Box width={listWidth + 1} flexDirection="row">
+      </box>
+      <box width={listWidth + 1} flexDirection="row">
         <Text wrap="truncate-end">{padColumns('', listWidth)}</Text>
         <Text color={termcnColors.border}>{divider}</Text>
-      </Box>
-      <Box width={peekWidth}>
+      </box>
+      <box flexDirection="row" width={peekWidth}>
         <Text wrap="truncate-end">{padColumns('', peekWidth)}</Text>
-      </Box>
-    </Box>
+      </box>
+    </box>
   );
 }
 
@@ -123,6 +135,8 @@ function SkillPane({
   updates = new Set<string>(),
   updatingSkillName,
   viewportHeight,
+  onRowClick,
+  onCursorDelta,
 }: {
   rows: SkillRow[];
   cursor: number;
@@ -138,6 +152,10 @@ function SkillPane({
   updates?: Set<string>;
   updatingSkillName?: string | undefined;
   viewportHeight?: number | undefined;
+  /** Click a visible row (absolute index). */
+  onRowClick?: (index: number) => void;
+  /** Mouse wheel: delta rows (negative = up). */
+  onCursorDelta?: (delta: number) => void;
 }) {
   const { stdout } = useStdout();
   const selected = useAtomValue(browserSelectionAtom);
@@ -148,20 +166,36 @@ function SkillPane({
   const visible = rows.slice(offset, offset + height);
   const paneWidth = columnWidth ?? Math.max(20, (stdout.columns ?? 80) - 4);
   const summaryWidth = Math.max(8, paneWidth - 4);
+  const onMouseScroll = useCallback(
+    (event: MouseEvent) => {
+      const info = event.scroll;
+      if (!info || !onCursorDelta) return;
+      const steps = Math.max(1, Math.abs(info.delta) || 1);
+      if (info.direction === 'up') onCursorDelta(-steps);
+      else if (info.direction === 'down') onCursorDelta(steps);
+      event.stopPropagation();
+    },
+    [onCursorDelta]
+  );
   const renderRow = (row: SkillRow, index: number) => {
     if (row.type === 'group') {
       const groupSkills = row.skills;
       const count = groupSkills.filter((skill) => selected.has(skill.path)).length;
       const marker =
         count === 0 ? '○' : count === groupSkills.length && groupSkills.length ? '●' : '◐';
-      return (
+      const body = (
         <Text
-          key={`group:${row.name}:${index}`}
           bold
           {...(isActive && index === active ? { color: termcnColors.primary } : {})}
         >
           {`${isActive && index === active ? '›' : ' '} ${marker} ${row.name} (${row.skills.length})`}
         </Text>
+      );
+      if (!onRowClick) return <box key={`group:${row.name}:${index}`} flexDirection="row">{body}</box>;
+      return (
+        <Clickable key={`group:${row.name}:${index}`} onClick={() => onRowClick(index)}>
+          {body}
+        </Clickable>
       );
     }
     const skill = row.skill;
@@ -188,7 +222,7 @@ function SkillPane({
           <Text bold={current}>{skill.name}</Text>
         )}
         {updatingSkillName === skill.name ? (
-          <Text color={termcnColors.primary}> 更新中</Text>
+          <WorkingSpinner />
         ) : updates.has(skill.name) ? (
           <Text color={termcnColors.primary}> ↑</Text>
         ) : null}
@@ -197,9 +231,8 @@ function SkillPane({
         )}
       </>
     );
-    return (
+    const body = (
       <Text
-        key={`${row.group}:${skill.path}:${index}`}
         wrap="truncate-end"
         // Active: primary. Idle skill name: omit color → terminal default fg.
         {...(current
@@ -213,9 +246,24 @@ function SkillPane({
         {nameLine}
       </Text>
     );
+    if (!onRowClick) {
+      return (
+        <box key={`${row.group}:${skill.path}:${index}`} flexDirection="row">
+          {body}
+        </box>
+      );
+    }
+    return (
+      <Clickable
+        key={`${row.group}:${skill.path}:${index}`}
+        onClick={() => onRowClick(index)}
+      >
+        {body}
+      </Clickable>
+    );
   };
   return (
-    <Box flexDirection="column" minHeight={3}>
+    <box flexDirection="column" minHeight={3} onMouseScroll={onMouseScroll}>
       {rows.length ? (
         visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
@@ -226,7 +274,7 @@ function SkillPane({
           {offset + 1}–{Math.min(offset + height, rows.length)} / {rows.length}
         </Text>
       )}
-    </Box>
+    </box>
   );
 }
 
@@ -234,30 +282,43 @@ function AgentTabs({
   groups,
   agent,
   focused,
+  onSelect,
 }: {
   groups: SkillGroup[];
   agent: string;
   focused: boolean;
+  onSelect: (agent: string) => void;
 }) {
   return (
-    <Box paddingLeft={1} gap={2}>
+    <box flexDirection="row" paddingLeft={1} gap={2}>
       {groups.map((group) => {
         const active = group.agent === agent;
-        // Keyboard focus only: never use foreground/white for "current agent".
-        // Unfocused row stays fully muted so switching main tabs does not look
-        // like the agent row is already selected.
-        const highlighted = focused && active;
+        // Current agent always uses primary (visible after mouse click without
+        // forcing keyboard focus onto the agents row). Keyboard-on-agents adds
+        // selection chrome so the focus ladder is still obvious.
+        const keyboardHere = focused && active;
         return (
-          <Text
-            key={group.agent}
-            color={highlighted ? termcnColors.primary : termcnColors.muted}
-            underline={highlighted}
-          >
-            {`${group.agent} ${group.skills.length}`}
-          </Text>
+          <Clickable key={group.agent} onClick={() => onSelect(group.agent)}>
+            <Text
+              color={
+                keyboardHere
+                  ? termcnColors.selectionFg
+                  : active
+                    ? termcnColors.primary
+                    : termcnColors.muted
+              }
+              {...(keyboardHere
+                ? { backgroundColor: termcnColors.selectionBg, bold: true }
+                : active
+                  ? { bold: true, underline: true }
+                  : {})}
+            >
+              {`${group.agent} ${group.skills.length}`}
+            </Text>
+          </Clickable>
         );
       })}
-    </Box>
+    </box>
   );
 }
 
@@ -348,6 +409,9 @@ function MasterDetailBody({
   listActiveLineIndexes,
   listSelectedLineIndexes,
   detailRows,
+  onTagLineClick,
+  onListLineClick,
+  onListScroll,
 }: {
   tagLines: string[];
   listLines: string[];
@@ -361,59 +425,104 @@ function MasterDetailBody({
   listActiveLineIndexes?: Set<number>;
   listSelectedLineIndexes?: Set<number>;
   detailRows?: CollectionDetailRow[];
+  onTagLineClick?: (visibleIndex: number) => void;
+  onListLineClick?: (visibleIndex: number) => void;
+  onListScroll?: (delta: number) => void;
 }): ReactNode {
   const rows = Math.max(tagLines.length, listLines.length, peekLines.length, detailRows?.length ?? 0);
   const divided = collectionHome;
   const divider = divided ? '│' : '';
   const tagColumnWidth = tagWidth + (divider ? 1 : 0);
   const listColumnWidth = listWidth + (divider ? 1 : 0);
+  // Only the skill column (2nd) owns list wheel scrolling. Detail (3rd) must not
+  // move the list when the pointer is over it — attach scroll handler only there.
+  const onListColumnScroll = useCallback(
+    (event: MouseEvent) => {
+      const info = event.scroll;
+      if (!info || !onListScroll) return;
+      const steps = Math.max(1, Math.abs(info.delta) || 1);
+      if (info.direction === 'up') onListScroll(-steps);
+      else if (info.direction === 'down') onListScroll(steps);
+      event.stopPropagation();
+    },
+    [onListScroll]
+  );
+  const swallowScroll = useCallback((event: MouseEvent) => {
+    // Keep wheel over detail/tag from bubbling to a parent list scroller.
+    if (event.scroll) event.stopPropagation();
+  }, []);
   return (
-    <>
-      {Array.from({ length: rows }, (_, index) => (
-        <Box key={`master-detail-row:${index}`} flexDirection="row">
-          <Box width={tagColumnWidth} flexDirection="row">
-            {masterDetailColumnText(tagLines[index] ?? '', tagWidth, {
-              ...(tagActive && tagLines[index]?.startsWith('›')
-                ? collectionHome
-                  ? { selected: true }
-                  : { color: termcnColors.primary, bold: true }
-                : {}),
-            })}
-            {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
-          </Box>
-          <Box width={listColumnWidth} flexDirection="row">
-            {masterDetailColumnText(listLines[index] ?? '', listWidth, {
-              // Skill name rows: no forced color → terminal default fg (works light/dark).
-              // Description rows (odd index in paired layout): muted gray.
-              // Focus / multi-select: selection tokens or primary — never light-on-light.
-              ...(listActiveLineIndexes?.has(index)
-                ? { selected: true }
-                : listSelectedLineIndexes?.has(index)
-                  ? { color: termcnColors.primary, bold: true }
-                  : listActive && listLines[index]?.startsWith('›')
-                    ? { color: termcnColors.primary, bold: true }
-                    : index % 2 === 1 && listLines[index]?.trim()
-                      ? { muted: true }
-                      : {}),
-            })}
-            {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
-          </Box>
-          <Box width={peekWidth}>
-            {detailRows?.[index] ? (
-              <DetailColumnRow row={detailRows[index]!} width={peekWidth} />
-            ) : (
-              <Text
-                wrap="truncate-end"
-                color={index === 0 && peekLines[index] !== '选择技能查看' ? termcnColors.primary : termcnColors.muted}
-                bold={index === 0 && peekLines[index] !== '选择技能查看'}
-              >
-                {padColumns(sliceColumns(peekLines[index] ?? '', 0, peekWidth), peekWidth)}
-              </Text>
-            )}
-          </Box>
-        </Box>
-      ))}
-    </>
+    <box flexDirection="column">
+      {Array.from({ length: rows }, (_, index) => {
+        const tagCell = masterDetailColumnText(tagLines[index] ?? '', tagWidth, {
+          ...(tagActive && tagLines[index]?.startsWith('›')
+            ? collectionHome
+              ? { selected: true }
+              : { color: termcnColors.primary, bold: true }
+            : {}),
+        });
+        const listCell = masterDetailColumnText(listLines[index] ?? '', listWidth, {
+          ...(listActiveLineIndexes?.has(index)
+            ? { selected: true }
+            : listSelectedLineIndexes?.has(index)
+              ? { color: termcnColors.primary, bold: true }
+              : listActive && listLines[index]?.startsWith('›')
+                ? { color: termcnColors.primary, bold: true }
+                : index % 2 === 1 && listLines[index]?.trim()
+                  ? { muted: true }
+                  : {}),
+        });
+        const tagInteractive =
+          onTagLineClick && (tagLines[index] ?? '').trim().length > 0;
+        const listInteractive =
+          onListLineClick && (listLines[index] ?? '').trim().length > 0;
+        return (
+          <box key={`master-detail-row:${index}`} flexDirection="row">
+            <box
+              width={tagColumnWidth}
+              flexDirection="row"
+              onMouseScroll={swallowScroll}
+            >
+              {tagInteractive ? (
+                <Clickable onClick={() => onTagLineClick(index)}>{tagCell}</Clickable>
+              ) : (
+                tagCell
+              )}
+              {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
+            </box>
+            <box
+              width={listColumnWidth}
+              flexDirection="row"
+              onMouseScroll={onListColumnScroll}
+            >
+              {listInteractive ? (
+                <Clickable onClick={() => onListLineClick(index)}>{listCell}</Clickable>
+              ) : (
+                listCell
+              )}
+              {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
+            </box>
+            <box
+              flexDirection="row"
+              width={peekWidth}
+              onMouseScroll={swallowScroll}
+            >
+              {detailRows?.[index] ? (
+                <DetailColumnRow row={detailRows[index]!} width={peekWidth} />
+              ) : (
+                <Text
+                  wrap="truncate-end"
+                  color={index === 0 && peekLines[index] !== '选择技能查看' ? termcnColors.primary : termcnColors.muted}
+                  bold={index === 0 && peekLines[index] !== '选择技能查看'}
+                >
+                  {padColumns(sliceColumns(peekLines[index] ?? '', 0, peekWidth), peekWidth)}
+                </Text>
+              )}
+            </box>
+          </box>
+        );
+      })}
+    </box>
   );
 }
 
@@ -438,6 +547,8 @@ export function Browser({
   const modal = useModal();
   const shellBusy = useOverlayBusy();
   const store = useStore();
+  // Local braille spinner only while a skill is updating (not a global busy overlay).
+  const updatingFrame = useSpinnerFrame(Boolean(updatingSkillName));
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
   const navigationRef = useRef(navigation);
@@ -997,6 +1108,14 @@ export function Browser({
     if (useBrowseHome) {
       const { tagWidth, listWidth, peekWidth } = masterDetailColumns;
       const selectedPaths = selected;
+      const tagActiveIndex = Math.max(0, Math.min(tagCursor, tagOptions.length - 1));
+      const tagOffset = Math.max(
+        0,
+        Math.min(
+          tagActiveIndex - Math.floor(viewportHeight / 2),
+          Math.max(0, tagOptions.length - viewportHeight)
+        )
+      );
       const tagLines = collectionCategoryLines(
         tagOptions,
         tagCursor,
@@ -1006,6 +1125,7 @@ export function Browser({
       );
       const {
         lines: listLines,
+        skillOffset,
         activeLineIndexes: listActiveLineIndexes,
         selectedLineIndexes: listSelectedLineIndexes,
       } = collectionListColumnLines(
@@ -1017,7 +1137,8 @@ export function Browser({
         viewportHeight,
         selectedPaths,
         options.updates ?? new Set<string>(),
-        options.updatingSkillName
+        options.updatingSkillName,
+        updatingFrame
       );
       const detailRows = browseDetailRows(
         peekSkill,
@@ -1025,31 +1146,32 @@ export function Browser({
         viewportHeight,
         options.collection ?? false,
         options.updates ?? new Set<string>(),
-        options.updatingSkillName
+        options.updatingSkillName,
+        updatingFrame
       );
       const headerLine = (left: string, middle: string, right: string): ReactNode => (
-        <Box flexDirection="row">
-          <Box width={tagWidth + 1} flexDirection="row">
+        <box flexDirection="row">
+          <box width={tagWidth + 1} flexDirection="row">
             <Text bold color={termcnColors.muted} wrap="truncate-end">
               {padColumns(left, tagWidth)}
             </Text>
             <Text color={termcnColors.border}>│</Text>
-          </Box>
-          <Box width={listWidth + 1} flexDirection="row">
+          </box>
+          <box width={listWidth + 1} flexDirection="row">
             <Text bold color={termcnColors.muted} wrap="truncate-end">
               {padColumns(middle, listWidth)}
             </Text>
             <Text color={termcnColors.border}>│</Text>
-          </Box>
-          <Box width={peekWidth}>
+          </box>
+          <box flexDirection="row" width={peekWidth}>
             <Text bold color={termcnColors.muted} wrap="truncate-end">
               {padColumns(right, peekWidth)}
             </Text>
-          </Box>
-        </Box>
+          </box>
+        </box>
       );
       return (
-        <Box flexDirection="column">
+        <box flexDirection="column">
           <Text color={termcnColors.border} wrap="truncate-end">
             {masterDetailSeparator(tagWidth, listWidth, peekWidth, 'top', true)}
           </Text>
@@ -1068,11 +1190,47 @@ export function Browser({
             {...(listActiveLineIndexes ? { listActiveLineIndexes } : {})}
             {...(listSelectedLineIndexes ? { listSelectedLineIndexes } : {})}
             detailRows={detailRows}
+            onTagLineClick={(visibleIndex) => {
+              const absolute = tagOffset + visibleIndex;
+              if (absolute < 0 || absolute >= tagOptions.length) return;
+              const option = tagOptions[absolute];
+              if (!option) return;
+              setTagFilter(option.key);
+              setTagCursor(absolute);
+              setCursor(0);
+              setFocus('tags');
+            }}
+            onListLineClick={(visibleIndex) => {
+              // Paired name/summary lines → skill index.
+              const skillIndex = skillOffset + Math.floor(visibleIndex / 2);
+              if (skillIndex < 0 || skillIndex >= paneRows.length) return;
+              setCursor(skillIndex);
+              setFocus('list');
+              const row = paneRows[skillIndex];
+              if (!row) return;
+              const paths = selectableSkills(row).map((skill) => skill.path);
+              if (!paths.length) return;
+              setSelected((previous) => {
+                const next = new Set(previous);
+                const allSelected = paths.every((path) => previous.has(path));
+                for (const path of paths) {
+                  if (allSelected) next.delete(path);
+                  else next.add(path);
+                }
+                return next;
+              });
+            }}
+            onListScroll={(delta) => {
+              setFocus('list');
+              setCursor((index) =>
+                Math.max(0, Math.min(Math.max(0, paneRows.length - 1), index + delta))
+              );
+            }}
           />
           <Text color={termcnColors.border} wrap="truncate-end">
             {masterDetailSeparator(tagWidth, listWidth, peekWidth, 'bottom', true)}
           </Text>
-        </Box>
+        </box>
       );
     }
     return (
@@ -1081,6 +1239,29 @@ export function Browser({
         cursor={cursor}
         isActive={focus === 'list'}
         viewportHeight={viewportHeight}
+        onRowClick={(index) => {
+          setCursor(index);
+          setFocus('list');
+          const row = paneRows[index];
+          if (!row) return;
+          const paths = selectableSkills(row).map((skill) => skill.path);
+          if (!paths.length) return;
+          setSelected((previous) => {
+            const next = new Set(previous);
+            const allSelected = paths.every((path) => previous.has(path));
+            for (const path of paths) {
+              if (allSelected) next.delete(path);
+              else next.add(path);
+            }
+            return next;
+          });
+        }}
+        onCursorDelta={(delta) => {
+          setFocus('list');
+          setCursor((index) =>
+            Math.max(0, Math.min(Math.max(0, paneRows.length - 1), index + delta))
+          );
+        }}
         {...options}
       />
     );
@@ -1091,42 +1272,50 @@ export function Browser({
       key: 'project',
       label: `当前项目 ${project.length}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
+        <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
             groups={visibleProjectGroups}
             agent={activeProjectAgent}
             focused={!shellBusy && !searching && focus === 'agents'}
+            onSelect={(name) => {
+              setAgent(name);
+              setCursor(0);
+            }}
           />
           {renderBrowsePane(listRows, browseViewportHeight(true), {
             showSource: true,
             showReferences: true,
             showGroup: Boolean(query.trim()),
           })}
-        </Box>
+        </box>
       ),
     },
     {
       key: 'global',
       label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
+        <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
             groups={visibleGlobalGroups}
             agent={activeGlobalAgent}
             focused={!shellBusy && !searching && focus === 'agents'}
+            onSelect={(name) => {
+              setAgent(name);
+              setCursor(0);
+            }}
           />
           {renderBrowsePane(listRows, browseViewportHeight(true), {
             showSource: true,
             showGroup: Boolean(query.trim()),
           })}
-        </Box>
+        </box>
       ),
     },
     {
       key: 'collection',
       label: `收藏夹 ${collection.length}`,
       content: (
-        <Box flexDirection="column" minHeight={frame.frameHeight - 1}>
+        <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           {renderBrowsePane(listRows, browseViewportHeight(false), {
             preferNote: true,
             collection: true,
@@ -1134,7 +1323,7 @@ export function Browser({
             updates: updateCheck.updates,
             updatingSkillName,
           })}
-        </Box>
+        </box>
       ),
     },
   ];
@@ -1167,7 +1356,7 @@ export function Browser({
   }
 
   return (
-    <Box flexDirection="column">
+    <box flexDirection="column">
       <Tabs
         tabs={tabs}
         activeTab={tab}
@@ -1179,6 +1368,6 @@ export function Browser({
         bordered={false}
         chip={useBrowseHome}
       />
-    </Box>
+    </box>
   );
 }

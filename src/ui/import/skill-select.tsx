@@ -1,13 +1,12 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
 import { collectionMatchLabels, collectionMatchMarkers } from '../collection-match.js';
 import { termcnColors } from '../components/termcn.js';
+import { Clickable } from '../components/mouse/clickable.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
-
-const colors = termcnColors;
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
@@ -82,6 +81,14 @@ function SkillDetailPreview<T extends Skill>({
   frameHeight: number;
   frameWidth: number;
 }): ReactNode {
+  const chrome = useModalChrome();
+  const colors = {
+    primary: termcnColors.primary,
+    border: termcnColors.border,
+    muted: chrome.muted,
+    body: chrome.body,
+    surface: chrome.surface,
+  };
   const [detailOffset, setDetailOffset] = useState(0);
   const lines = detailPreviewLines(skill, agent, Math.max(12, frameWidth - 4));
   const viewportHeight = Math.max(1, frameHeight - 2);
@@ -101,24 +108,27 @@ function SkillDetailPreview<T extends Skill>({
 
   return (
     <>
-      <Box
+      <box border
         flexDirection="column"
         width={frameWidth}
         height={frameHeight}
-        borderStyle="round"
+        borderStyle="rounded"
         borderColor={colors.border}
+        backgroundColor={colors.surface}
         paddingX={1}
         overflow="hidden"
       >
         {visible.map((line, index) => (
           <Text
             key={`${offset + index}:${line.label ?? ''}:${line.value}`}
-            {...(line.muted ? { color: colors.muted } : {})}
+            color={line.muted ? colors.muted : colors.body}
+            backgroundColor={colors.surface}
           >
-            {line.label && <Text bold>{line.label}</Text>}{line.value}
+            {line.label && <Text bold color={colors.body} backgroundColor={colors.surface}>{line.label}</Text>}
+            {line.value}
           </Text>
         ))}
-      </Box>
+      </box>
       <Text color={colors.muted}>
         {maxOffset ? `${offset + 1}–${Math.min(offset + viewportHeight, lines.length)} / ${lines.length}` : ' '}
       </Text>
@@ -141,6 +151,14 @@ export function SkillMultiSelect<T extends Skill>({
   onSubmit: (values: T[]) => void;
 }): ReactNode {
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
+  const colors = {
+    primary: termcnColors.primary,
+    border: termcnColors.border,
+    muted: chrome.muted,
+    body: chrome.body,
+    surface: chrome.surface,
+  };
   const agentNames = useMemo(() => groups.map((group) => group.agent), [groups]);
   const [activeAgent, setActiveAgent] = useState(agentNames[0] ?? '');
   const [cursorByAgent, setCursorByAgent] = useState<Record<string, number>>(() => {
@@ -285,26 +303,36 @@ export function SkillMultiSelect<T extends Skill>({
   });
 
   return (
-    <Box flexDirection="column">
-      <Text {...(viewing ? { color: colors.primary } : {})} bold>
+    <box flexDirection="column">
+      <Text
+        color={viewing ? colors.primary : colors.body}
+        bold
+      >
         {viewing ? `‹ ${viewing.name}` : `${label ?? '选择技能'} · 已选 ${selected.size} / 共 ${total}`}
       </Text>
       {!singleAgent && (
-        <Box paddingLeft={1}>
+        <box flexDirection="row" paddingLeft={1}>
           {groups.map((group, index) => (
-            <Box key={group.agent}>
-              <Text
-                color={group.agent === activeAgent ? colors.primary : colors.muted}
-                bold={group.agent === activeAgent}
-                underline={group.agent === activeAgent}
-                inverse={focus === 'tabs' && group.agent === activeAgent}
+            <box flexDirection="row" key={group.agent}>
+              <Clickable
+                onClick={() => {
+                  setActiveAgent(group.agent);
+                  setFocus('list');
+                }}
               >
-                {group.agent} ({group.options.length})
-              </Text>
+                <Text
+                  color={group.agent === activeAgent ? colors.primary : colors.muted}
+                  bold={group.agent === activeAgent}
+                  underline={group.agent === activeAgent}
+                  inverse={focus === 'tabs' && group.agent === activeAgent}
+                >
+                  {group.agent} ({group.options.length})
+                </Text>
+              </Clickable>
               {index < groups.length - 1 && <Text color={colors.border}> │ </Text>}
-            </Box>
+            </box>
           ))}
-        </Box>
+        </box>
       )}
       {viewing ? (
         <SkillDetailPreview
@@ -315,12 +343,13 @@ export function SkillMultiSelect<T extends Skill>({
         />
       ) : (
         <>
-          <Box
+          <box border
             flexDirection="column"
             width={frameWidth}
             height={frameHeight}
-            borderStyle="round"
+            borderStyle="rounded"
             borderColor={colors.border}
+            backgroundColor={colors.surface}
             paddingX={1}
             overflow="hidden"
           >
@@ -332,30 +361,63 @@ export function SkillMultiSelect<T extends Skill>({
                 const status = option.skill.collectionStatus &&
                   collectionMatchMarkers[option.skill.collectionStatus];
                 return (
-                  <Box key={option.skill.path} gap={1} width="100%">
-                    <Text {...(isCursor ? { color: colors.primary } : {})}>
-                      {isSelected ? '●' : '○'}
-                    </Text>
-                    <Box width={1} flexShrink={0}>
-                      {status && <Text color={status.color}>{status.symbol}</Text>}
-                    </Box>
-                    <Box width={nameColumnWidth} flexShrink={0}>
-                      <Text wrap="truncate-end" bold={isCursor}>
-                        {option.skill.name}
+                  <Clickable
+                    key={option.skill.path}
+                    onClick={() => {
+                      setCursor(index);
+                      setFocus('list');
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(option.skill.path)) next.delete(option.skill.path);
+                        else next.add(option.skill.path);
+                        return next;
+                      });
+                    }}
+                  >
+                    <box
+                      flexDirection="row"
+                      gap={1}
+                      width="100%"
+                      backgroundColor={colors.surface}
+                    >
+                      <Text
+                        color={isCursor ? colors.primary : colors.body}
+                        backgroundColor={colors.surface}
+                      >
+                        {isSelected ? '●' : '○'}
                       </Text>
-                    </Box>
-                    <Box flexGrow={1} overflow="hidden">
-                      <Text wrap="truncate-end" color={colors.muted}>
-                        {option.skill.description}
-                      </Text>
-                    </Box>
-                  </Box>
+                      <box flexDirection="row" width={1} flexShrink={0}>
+                        {status && <Text color={status.color}>{status.symbol}</Text>}
+                      </box>
+                      <box flexDirection="row" width={nameColumnWidth} flexShrink={0}>
+                        <Text
+                          wrap="truncate-end"
+                          bold={isCursor}
+                          color={colors.body}
+                          backgroundColor={colors.surface}
+                        >
+                          {option.skill.name}
+                        </Text>
+                      </box>
+                      <box flexDirection="row" flexGrow={1} overflow="hidden">
+                        <Text
+                          wrap="truncate-end"
+                          color={colors.muted}
+                          backgroundColor={colors.surface}
+                        >
+                          {option.skill.description}
+                        </Text>
+                      </box>
+                    </box>
+                  </Clickable>
                 );
               })
             ) : (
-              <Text color={colors.muted}>当前 Agent 没有可导入的技能</Text>
+              <Text color={colors.muted} backgroundColor={colors.surface}>
+                当前 Agent 没有可导入的技能
+              </Text>
             )}
-          </Box>
+          </box>
           <Text color={colors.muted}>
             {options.length > 0
               ? `${offset + 1}–${Math.min(offset + viewportHeight, options.length)} / ${options.length}`
@@ -370,6 +432,6 @@ export function SkillMultiSelect<T extends Skill>({
           </Text>
         </>
       )}
-    </Box>
+    </box>
   );
 }

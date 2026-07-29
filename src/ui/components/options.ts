@@ -22,7 +22,8 @@ export function visibleOptionCount(rows: number, label?: string): number {
   return Math.max(3, rows - (label ? 5 : 4));
 }
 
-export function toInkOptions<T>(options: Option<T>[], numbered = false): InternalOption[] {
+/** Map product options to string-indexed list rows for MultiSelect. */
+export function toListOptions<T>(options: Option<T>[], numbered = false): InternalOption[] {
   return options.map((option, index) => ({
     value: String(index),
     label: `${numbered ? `${index + 1}. ` : ''}${option.label}${option.hint ? ` — ${option.hint}` : ''}`,

@@ -1,4 +1,4 @@
-export { Box, Text, type BoxProps, type TextProps } from './primitives.js';
+export { Text, type TextProps } from './primitives.js';
 export {
   ExitProvider,
   useApp,

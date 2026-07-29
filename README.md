@@ -124,7 +124,7 @@ pnpm test
 pnpm pack --dry-run
 ```
 
-Stack: TypeScript (strict), Ink, React. The published package ships compiled `dist/src` only.
+Stack: TypeScript (strict), OpenTUI, React. The published package ships compiled `dist/src` only.
 
 ## Non-goals
 

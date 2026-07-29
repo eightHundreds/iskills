@@ -3,7 +3,7 @@
  * Prefer native input editing; keep label / variant / Esc cancel for callers.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
 import { useInput } from './use-input.js';
 
@@ -29,6 +29,7 @@ export function TextInput({
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
   const resolvedWidth = Math.min(width, Math.max(20, (stdout.columns ?? 80) - 2));
 
   useEffect(() => {
@@ -59,34 +60,59 @@ export function TextInput({
       }}
       placeholder=""
       cursorColor={termcnColors.primary}
+      textColor={chrome.body}
+      backgroundColor={chrome.surface}
+      focusedBackgroundColor={chrome.surface}
+      focusedTextColor={chrome.body}
       {...(inputWidth !== undefined ? { width: inputWidth } : {})}
     />
   );
 
   if (variant === 'inline') {
     // Explicit width so the native input paints the full value under OpenTUI layout.
+    // Footer filter: keep transparent field bg so shell canvas shows through.
     const inputCols = Math.max(8, (stdout.columns ?? 80) - Math.min(24, label.length * 2));
     return (
-      <Box width="100%" flexDirection="row" height={1}>
-        <Text bold>{label}</Text>
-        {field(inputCols)}
-      </Box>
+      <box width="100%" flexDirection="row" height={1}>
+        <Text bold color={chrome.body}>
+          {label}
+        </Text>
+        <input
+          value={value}
+          focused={isActive}
+          onInput={handleInput}
+          onSubmit={(submitted) => {
+            const text = typeof submitted === 'string' ? submitted : value;
+            onSubmit(text);
+          }}
+          placeholder=""
+          cursorColor={termcnColors.primary}
+          textColor={chrome.body}
+          backgroundColor="transparent"
+          focusedBackgroundColor="transparent"
+          focusedTextColor={chrome.body}
+          width={inputCols}
+        />
+      </box>
     );
   }
 
   return (
-    <Box flexDirection="column">
-      <Text bold>{label}</Text>
-      <Box
-        borderStyle="round"
+    <box flexDirection="column">
+      <Text bold color={chrome.body}>
+        {label}
+      </Text>
+      <box border
+        borderStyle="rounded"
         borderColor={isActive ? termcnColors.primary : termcnColors.border}
+        backgroundColor={chrome.surface}
         paddingX={1}
         width={resolvedWidth}
         height={3}
         flexDirection="column"
       >
         {field(Math.max(4, resolvedWidth - 4))}
-      </Box>
-    </Box>
+      </box>
+    </box>
   );
 }

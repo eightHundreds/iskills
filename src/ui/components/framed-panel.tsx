@@ -1,6 +1,7 @@
-import { Box, Text, useModalChrome, useStdout } from '../tui/index.js';
+import type { MouseEvent } from '@opentui/core';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import { padColumns, textWidth, wrapColumns } from './terminal-layout.js';
 
@@ -24,7 +25,7 @@ function bodyLines(content: string[], inner: number): string[] {
  * Solid panel fill follows terminal light/dark themeMode; does not repaint
  * the whole terminal — only the dialog box.
  *
- * When body content exceeds the height budget, the panel scrolls with ↑/↓.
+ * When body content exceeds the height budget, the panel scrolls with ↑/↓ / wheel.
  */
 export function FramedPanel({
   title,
@@ -63,14 +64,24 @@ export function FramedPanel({
   const visibleBody = allBody.slice(scroll, scroll + maxBody);
   const lastBodyIndex = visibleBody.length - 1;
 
+  const nudgeScroll = useCallback(
+    (delta: number) => {
+      if (maxOffset <= 0) return;
+      setOffset((current) =>
+        Math.max(0, Math.min(maxOffset, current + delta))
+      );
+    },
+    [maxOffset]
+  );
+
   useInput(
     (input, key) => {
       if (key.upArrow && maxOffset > 0) {
-        setOffset((current) => Math.max(0, current - 1));
+        nudgeScroll(-1);
         return;
       }
       if (key.downArrow && maxOffset > 0) {
-        setOffset((current) => Math.min(maxOffset, current + 1));
+        nudgeScroll(1);
         return;
       }
       if (key.escape) {
@@ -82,12 +93,29 @@ export function FramedPanel({
     { isActive: true }
   );
 
+  const onMouseScroll = useCallback(
+    (event: MouseEvent) => {
+      const info = event.scroll;
+      if (!info || maxOffset <= 0) return;
+      const steps = Math.max(1, Math.abs(info.delta) || 1);
+      if (info.direction === 'up') nudgeScroll(-steps);
+      else if (info.direction === 'down') nudgeScroll(steps);
+      event.stopPropagation();
+    },
+    [maxOffset, nudgeScroll]
+  );
+
   const top = framedBorderTop(title, width);
   const bottom = framedBorderBottom(width);
   const panelBg = chrome.surface;
 
   return (
-    <Box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
+    <box
+      flexDirection="column"
+      backgroundColor={panelBg}
+      paddingX={0}
+      onMouseScroll={onMouseScroll}
+    >
       <Text color={termcnColors.primary} backgroundColor={panelBg}>
         {top}
       </Text>
@@ -123,9 +151,9 @@ export function FramedPanel({
       </Text>
       {maxOffset > 0 ? (
         <Text color={chrome.muted} backgroundColor={panelBg}>
-          {`↑/↓ 滚动 ${scroll + 1}–${Math.min(scroll + maxBody, allBody.length)} / ${allBody.length}`}
+          {`↑/↓/滚轮 滚动 ${scroll + 1}–${Math.min(scroll + maxBody, allBody.length)} / ${allBody.length}`}
         </Text>
       ) : null}
-    </Box>
+    </box>
   );
 }

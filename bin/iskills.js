@@ -6,7 +6,7 @@
  * - Bun: full CLI + interactive TUI
  * - Node with node:ffi: full CLI + interactive TUI (when available)
  * - Node without FFI: non-interactive CLI still works; re-exec under Bun when
- *   `bun` is on PATH so interactive browser/search/prompts match prior Ink-on-Node UX
+ *   `bun` is on PATH so interactive browser/search/prompts match interactive TUI UX
  *
  * Set ISKILLS_FORCE_NODE=1 to skip Bun re-exec (tests / debugging).
  */

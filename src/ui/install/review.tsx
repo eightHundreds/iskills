@@ -1,11 +1,9 @@
-import { Box, Text } from '../tui/index.js';
+import { Text, useModalChrome } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { Tabs, termcnColors, type Tab } from '../components/termcn.js';
 import type { InstallReviewResult, InstallReviewTarget } from './types.js';
-
-const colors = termcnColors;
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
@@ -26,6 +24,12 @@ export function InstallReview({
 }): ReactNode {
   type Destination = InstallReviewResult['destination'];
   type TabKey = 'destination' | 'mode' | 'targets' | 'confirm';
+  const chrome = useModalChrome();
+  const colors = {
+    primary: termcnColors.primary,
+    muted: chrome.muted,
+    body: chrome.body,
+  };
   const [activeTab, setActiveTab] = useState<TabKey>('destination');
   const [destination, setDestination] = useState<Destination>('project');
   const [copy, setCopy] = useState(false);
@@ -120,44 +124,52 @@ export function InstallReview({
       key: 'destination',
       label: '安装位置',
       content: (
-        <Box flexDirection="column">
+        <box flexDirection="column">
           {(['project', 'global'] as const).map((option) => {
             const selected = destination === option;
             return (
-              <Text key={option} color={selected ? colors.primary : colors.muted} bold={selected}>
+              <Text
+                key={option}
+                color={selected ? colors.primary : colors.body}
+                bold={selected}
+              >
                 {selected ? '●' : '○'} {option === 'project' ? '当前项目' : '全局'}
               </Text>
             );
           })}
           <Text color={colors.muted}>↑/↓ 选择 · Enter 下一步 · Esc 取消</Text>
-        </Box>
+        </box>
       ),
     },
     {
       key: 'mode',
       label: '添加方式',
       content: (
-        <Box flexDirection="column">
-          <Text color={!copy ? colors.primary : colors.muted} bold={!copy}>
+        <box flexDirection="column">
+          <Text color={!copy ? colors.primary : colors.body} bold={!copy}>
             {copy ? '○' : '●'} 软链（推荐）
           </Text>
-          <Text color={copy ? colors.primary : colors.muted} bold={copy}>
+          <Text color={copy ? colors.primary : colors.body} bold={copy}>
             {copy ? '●' : '○'} 复制
           </Text>
           <Text color={colors.muted}>↑/↓ 选择 · ← 返回 · Enter 下一步 · Esc 取消</Text>
-        </Box>
+        </box>
       ),
     },
     {
       key: 'targets',
       label: '目标目录',
       content: (
-        <Box flexDirection="column">
+        <box flexDirection="column">
           {availableTargets.map((target, index) => {
             const selected = activeAgents.has(target.value);
             const active = index === targetCursor;
             return (
-              <Text key={target.value} {...(active ? { color: colors.primary } : {})} bold={active}>
+              <Text
+                key={target.value}
+                color={active ? colors.primary : colors.body}
+                bold={active}
+              >
                 {active ? '›' : ' '} {selected ? '●' : '○'} {activeTargetLabel(target)}
               </Text>
             );
@@ -165,33 +177,41 @@ export function InstallReview({
           <Text color={colors.muted}>
             ↑/↓ 移动 · Space 选择 · ← 返回 · {activeAgents.size ? 'Enter 下一步' : '至少选择一个目录'} · Esc 取消
           </Text>
-        </Box>
+        </box>
       ),
     },
     {
       key: 'confirm',
       label: '确认',
       content: (
-        <Box flexDirection="column">
-          <Text>技能：{skills.map((skill) => skill.name).join(', ')}</Text>
-          <Text>安装位置：{destination === 'project' ? '当前项目' : '全局'}</Text>
-          <Text>添加方式：{copy ? '复制' : '软链'}</Text>
-          <Text>目标目录：{selectedTargetLabels.join(', ')}</Text>
+        <box flexDirection="column">
+          <Text color={colors.body}>
+            技能：{skills.map((skill) => skill.name).join(', ')}
+          </Text>
+          <Text color={colors.body}>
+            安装位置：{destination === 'project' ? '当前项目' : '全局'}
+          </Text>
+          <Text color={colors.body}>添加方式：{copy ? '复制' : '软链'}</Text>
+          <Text color={colors.body}>
+            目标目录：{selectedTargetLabels.join(', ')}
+          </Text>
           <Text color={colors.muted}>Enter 确认安装 · ← 返回 · n 取消 · Esc 取消</Text>
-        </Box>
+        </box>
       ),
     },
   ];
 
   return (
-    <Box flexDirection="column">
-      <Text bold>安装技能</Text>
+    <box flexDirection="column">
+      <Text bold color={colors.body}>
+        安装技能
+      </Text>
       <Tabs
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={() => undefined}
         isActive={false}
       />
-    </Box>
+    </box>
   );
 }

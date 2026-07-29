@@ -12,7 +12,7 @@ import {
   type TuiDisposer,
 } from './lifecycle.js';
 
-export { closeTui, closeInk } from './lifecycle.js';
+export { closeTui } from './lifecycle.js';
 
 /**
  * OpenTUI UI runtime (shell package): mount registry + session runners + AppShell.
@@ -178,24 +178,17 @@ export async function mountTui(
   return instance;
 }
 
-/** @deprecated Prefer mountTui — kept as alias during migration. */
-export const mountInk = mountTui;
-
 /** Cleanup after exit/unmount; clear active if it matches. */
 export function releaseTui(instance: TuiInstance): void {
   instance.cleanup();
   if (getActiveTui() === instance) setActiveTui(undefined);
 }
 
-export const releaseInk = releaseTui;
-
 /** Unmount + cleanup one instance; clears active if it matches. */
 export function unmountTui(instance: TuiInstance): void {
   instance.unmount();
   releaseTui(instance);
 }
-
-export const unmountInk = unmountTui;
 
 // ─── one-shot screen ────────────────────────────────────────────────────────
 

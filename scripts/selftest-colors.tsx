@@ -10,7 +10,7 @@ import { testRender } from '@opentui/react/test-utils';
 import { RGBA } from '@opentui/core';
 import { act } from 'react';
 import { ExitProvider } from '../src/ui/tui/hooks.js';
-import { Box, Text } from '../src/ui/tui/index.js';
+import { Text } from '../src/ui/tui/index.js';
 import { BrowserHarness, collectedFixture } from '../test/browser-harness.js';
 import { termcnColors } from '../src/ui/components/colors.js';
 
@@ -31,11 +31,11 @@ function rgbaToHex(c: { buffer?: ArrayLike<number>; intent?: string }): string {
 {
   const setup = await testRender(
     <ExitProvider exit={() => undefined}>
-      <Box flexDirection="column">
+      <box flexDirection="column">
         <Text>DEFAULT_ADAPTER_TEXT</Text>
         <text fg={RGBA.defaultForeground()}>EXPLICIT_DEFAULT_FG</text>
         <text>UNSET_NATIVE_TEXT</text>
-      </Box>
+      </box>
     </ExitProvider>,
     { width: 60, height: 6, useMouse: false, exitOnCtrlC: false }
   );

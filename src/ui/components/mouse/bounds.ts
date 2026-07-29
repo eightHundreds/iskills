@@ -19,10 +19,4 @@ export function pointInBounds(
   );
 }
 
-/**
- * Legacy Ink DOMElement bounds helper — OpenTUI uses native mouse targets.
- * Always returns null so old hit-test paths no-op cleanly.
- */
-export function getElementBounds(_element: unknown): ElementBounds | null {
-  return null;
-}
+

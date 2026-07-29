@@ -1,6 +1,6 @@
 /**
  * Import review protocol (type-only).
- * Commands may `import type` without depending on Ink implementations.
+ * Commands may `import type` without loading the TUI implementation.
  */
 import type { Skill } from '../../domain/types.js';
 

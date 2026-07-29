@@ -2,9 +2,9 @@
  * Click / hover target using OpenTUI native mouse handlers.
  * Requires `createCliRenderer({ useMouse: true, enableMouseMovement: true })`.
  */
-import { RGBA } from '@opentui/core';
 import { useState, type ReactNode } from 'react';
-import { Box } from '../../tui/primitives.js';
+
+import { useModalChrome } from '../../tui/hooks.js';
 import {
   useMouseRegistry,
   usePointerSurfaceId,
@@ -19,27 +19,26 @@ export function Clickable({
   onClick: () => void;
   disabled?: boolean;
   children: ReactNode;
-  /** Soft background on mouse over (OpenTUI onMouseOver/Out). */
+  /** Soft solid background on mouse over (theme-aware; no alpha-on-black). */
   hover?: boolean;
 }): ReactNode {
   const surface = usePointerSurfaceId();
   const registry = useMouseRegistry();
+  const chrome = useModalChrome();
   const [hovered, setHovered] = useState(false);
 
   const active = !disabled && (registry?.isTopSurface(surface) ?? true);
   const showHover = hover && active && hovered;
 
   if (disabled) {
-    return <Box>{children}</Box>;
+    return <box flexDirection="row">{children}</box>;
   }
 
-  // Soft primary wash on hover only; leave bg unset so the terminal theme shows through.
-  const hoverBg = showHover
-    ? { backgroundColor: RGBA.fromValues(0.486, 0.227, 0.929, 0.28) }
-    : {};
+  // Solid theme hover — low-alpha purple composites against black clear to #1b0d34.
+  const hoverBg = showHover ? { backgroundColor: chrome.hover } : {};
 
   return (
-    <Box
+    <box flexDirection="row"
       {...hoverBg}
       onMouseOver={() => {
         if (active) setHovered(true);
@@ -51,6 +50,6 @@ export function Clickable({
       }}
     >
       {children}
-    </Box>
+    </box>
   );
 }

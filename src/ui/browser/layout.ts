@@ -1,6 +1,6 @@
 /**
  * Pure layout geometry for the skill browser.
- * No Ink/React — safe to unit-test without a terminal.
+ * No React TUI — safe to unit-test without a terminal.
  */
 
 export function masterDetailLayout(

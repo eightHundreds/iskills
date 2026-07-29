@@ -1,6 +1,6 @@
 /**
  * Install / add destination review protocol (type-only).
- * Commands may `import type` without depending on Ink implementations.
+ * Commands may `import type` without loading the TUI implementation.
  */
 
 import type { AgentInstallTarget } from '../../domain/core.js';

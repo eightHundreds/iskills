@@ -3,11 +3,13 @@
 export { Confirm } from './confirm.js';
 export { Link } from './link.js';
 export { Modal } from './modal.js';
+export { ModalPanel } from './modal-panel.js';
 export { MultiSelect } from './multi-select.js';
 export { Select } from './select.js';
 export { TagEditor } from './tag-editor.js';
 export { Tabs } from './tabs.js';
 export { TextInput } from './text-input.js';
+export { WorkingSpinner, useSpinnerFrame, SPINNER_FRAMES } from './spinner.js';
 export {
   termcnColors,
   modalChrome,

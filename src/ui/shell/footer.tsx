@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import type { ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
 import {
@@ -8,30 +8,28 @@ import {
 import type { FooterItem, FooterView } from '../footer/types.js';
 import { useOverlayFooterItems } from '../overlay/host.js';
 
-function statusColor(kind: 'normal' | 'error' | 'progress' | undefined): string {
-  if (kind === 'error') return termcnColors.error;
-  return termcnColors.muted;
-}
-
 export function FooterPaint({ view }: { view: FooterView }): ReactNode {
+  const chrome = useModalChrome();
   if (view.mode === 'empty') return null;
   if (view.mode === 'input') return null;
   if (view.items.length === 0 && !view.status) return null;
 
   const left = view.items.map(formatFooterItem).join(' · ');
+  const statusFg =
+    view.statusKind === 'error' ? termcnColors.error : chrome.muted;
   return (
-    <Box flexDirection="row" justifyContent="space-between" width="100%">
-      <Box flexGrow={1} flexShrink={1} marginRight={1}>
-        <Text color={termcnColors.muted} wrap="truncate-end">
+    <box flexDirection="row" justifyContent="space-between" width="100%">
+      <box flexDirection="row" flexGrow={1} flexShrink={1} marginRight={1}>
+        <Text color={chrome.muted} wrap="truncate-end">
           {left}
         </Text>
-      </Box>
+      </box>
       {view.status ? (
-        <Text color={statusColor(view.statusKind)} wrap="truncate-end">
+        <Text color={statusFg} wrap="truncate-end">
           {view.status}
         </Text>
       ) : null}
-    </Box>
+    </box>
   );
 }
 

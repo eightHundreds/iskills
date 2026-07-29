@@ -1,6 +1,7 @@
-import { Box, Text, useModalChrome, useStdout } from '../tui/index.js';
+import type { MouseEvent } from '@opentui/core';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
 import { padColumns, textWidth } from '../components/terminal-layout.js';
 import {
@@ -68,7 +69,7 @@ export function ShortcutHelpPanel({
   const chrome = useModalChrome();
   const sections = useMemo(() => shortcutHelpSections(), []);
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(sections.slice(0, 2).map((section) => section.id))
+    () => new Set(sections.map((section) => section.id))
   );
   const [cursor, setCursor] = useState(0);
 
@@ -84,17 +85,26 @@ export function ShortcutHelpPanel({
   );
   const painted = rows.slice(start, start + maxBodyRows);
 
+  const moveCursor = useCallback(
+    (delta: number) => {
+      setCursor((current) =>
+        Math.max(0, Math.min(rows.length - 1, current + delta))
+      );
+    },
+    [rows.length]
+  );
+
   useInput((input, key) => {
     if (key.escape || input === 'q') {
       onClose();
       return;
     }
     if (key.upArrow) {
-      setCursor((current) => Math.max(0, current - 1));
+      moveCursor(-1);
       return;
     }
     if (key.downArrow) {
-      setCursor((current) => Math.min(rows.length - 1, current + 1));
+      moveCursor(1);
       return;
     }
     const row = rows[clampedCursor];
@@ -132,6 +142,18 @@ export function ShortcutHelpPanel({
     }
   });
 
+  const onMouseScroll = useCallback(
+    (event: MouseEvent) => {
+      const info = event.scroll;
+      if (!info) return;
+      const steps = Math.max(1, Math.abs(info.delta) || 1);
+      if (info.direction === 'up') moveCursor(-steps);
+      else if (info.direction === 'down') moveCursor(steps);
+      event.stopPropagation();
+    },
+    [moveCursor]
+  );
+
   const title = ' 完整快捷键 ';
   const titleWidth = textWidth(title);
   const top = `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`;
@@ -141,7 +163,12 @@ export function ShortcutHelpPanel({
 
   // Manual ╭│╰ frame only — do not also set borderStyle (double border).
   return (
-    <Box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
+    <box
+      flexDirection="column"
+      backgroundColor={panelBg}
+      paddingX={0}
+      onMouseScroll={onMouseScroll}
+    >
       <Text color={termcnColors.primary} backgroundColor={panelBg} bold>
         {top}
       </Text>
@@ -156,7 +183,7 @@ export function ShortcutHelpPanel({
             inner
           );
           return (
-            <Box
+            <box
               key={`s:${row.section.id}:${absolute}`}
               flexDirection="row"
               backgroundColor={panelBg}
@@ -185,12 +212,12 @@ export function ShortcutHelpPanel({
                 {' '}
                 │
               </Text>
-            </Box>
+            </box>
           );
         }
         const line = formatItemLine(row.label, row.keys, inner);
         return (
-          <Box
+          <box
             key={`i:${row.sectionId}:${row.keys}:${absolute}`}
             flexDirection="row"
             backgroundColor={panelBg}
@@ -210,7 +237,7 @@ export function ShortcutHelpPanel({
               {' '}
               │
             </Text>
-          </Box>
+          </box>
         );
       })}
       <Text color={termcnColors.primary} backgroundColor={panelBg}>
@@ -218,9 +245,9 @@ export function ShortcutHelpPanel({
       </Text>
       <Text color={chrome.muted} backgroundColor={panelBg}>
         {maxOffset > 0
-          ? `↑/↓ 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭  ${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}`
-          : '↑/↓ 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭'}
+          ? `↑/↓/滚轮 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭  ${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}`
+          : '↑/↓/滚轮 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭'}
       </Text>
-    </Box>
+    </box>
   );
 }

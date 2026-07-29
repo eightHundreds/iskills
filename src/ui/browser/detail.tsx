@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
@@ -64,11 +64,11 @@ export function Detail({
     { isActive: !shellBusy }
   );
   return (
-    <Box flexDirection="column">
+    <box flexDirection="column">
       <Text color={termcnColors.primary} bold>‹ {skill.name}</Text>
-      <Box
+      <box border
         flexDirection="column"
-        borderStyle="round"
+        borderStyle="rounded"
         borderColor={termcnColors.border}
         paddingX={1}
         height={detailFrame.height}
@@ -83,10 +83,10 @@ export function Detail({
             {line.label && <Text bold>{line.label}</Text>}{line.value}
           </Text>
         ))}
-      </Box>
+      </box>
       <Text color={termcnColors.muted}>
         {`${maxOffset ? '↑/↓ 滚动 · ' : ''}${collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}`}
       </Text>
-    </Box>
+    </box>
   );
 }

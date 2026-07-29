@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -19,6 +19,7 @@ export function TagEditor({
   onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialValues));
   const [focus, setFocus] = useState<'list' | 'input'>(tags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
@@ -56,33 +57,50 @@ export function TagEditor({
   });
 
   return (
-    <Box flexDirection="column">
-      <Text bold>{title} · 已选 {selected.size}</Text>
-      <Text bold>已有标签</Text>
-      <Box
+    <box flexDirection="column">
+      <Text bold color={chrome.body}>
+        {title} · 已选 {selected.size}
+      </Text>
+      <Text bold color={chrome.body}>
+        已有标签
+      </Text>
+      <box border
         flexDirection="column"
-        borderStyle="round"
+        borderStyle="rounded"
         borderColor={termcnColors.border}
+        backgroundColor={chrome.surface}
         paddingX={1}
       >
         {visible.length ? visible.map((tag, index) => {
           const active = offset + index === cursor;
           return (
-            <Text key={tag} {...(active && focus === 'list' ? { color: termcnColors.primary } : {})}>
+            <Text
+              key={tag}
+              color={
+                active && focus === 'list'
+                  ? termcnColors.primary
+                  : chrome.body
+              }
+              backgroundColor={chrome.surface}
+            >
               {`${active ? '›' : ' '} ${selected.has(tag) ? '●' : '○'} ${tag}`}
             </Text>
           );
-        }) : <Text color={termcnColors.muted}>暂无已有标签</Text>}
-      </Box>
+        }) : (
+          <Text color={chrome.muted} backgroundColor={chrome.surface}>
+            暂无已有标签
+          </Text>
+        )}
+      </box>
       <TextInput
         label="新增标签（逗号分隔）"
         isActive={focus === 'input'}
         onSubmit={save}
         {...(onCancel ? { onCancel } : {})}
       />
-      <Text color={termcnColors.muted}>
+      <Text color={chrome.muted}>
         ↑/↓ 移动 · Space 选择 · Tab 切换区域 · Enter 保存 · Esc 取消
       </Text>
-    </Box>
+    </box>
   );
 }

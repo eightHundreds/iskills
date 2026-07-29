@@ -1,5 +1,5 @@
 /**
- * Session hooks that product UI used to take from Ink (useApp / useStdout / useStdin).
+ * Session hooks: useApp / useStdout / useStdin for product UI.
  */
 import {
   createContext,
@@ -36,7 +36,7 @@ export function ExitProvider({
   return <ExitContext.Provider value={exit}>{children}</ExitContext.Provider>;
 }
 
-/** Ink-compatible: `{ exit }` to tear down the active OpenTUI session. */
+/** Session: `{ exit }` to tear down the active OpenTUI session. */
 export function useApp(): { exit: AppExit } {
   const exit = useContext(ExitContext);
   if (!exit) {

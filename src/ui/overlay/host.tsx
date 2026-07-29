@@ -1,4 +1,4 @@
-import { Box, useStdout } from '../tui/index.js';
+import { useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import {
   createContext,
@@ -245,7 +245,7 @@ export function OverlayHost({
       <ModalContext.Provider value={modalApi}>
         <BusyContext.Provider value={busy}>
           <OverlayFooterContext.Provider value={overlayFooterItems}>
-            <Box
+            <box
               flexDirection="column"
               width="100%"
               height="100%"
@@ -258,18 +258,18 @@ export function OverlayHost({
                   }
                 : {})}
             >
-              <Box flexDirection="column" flexGrow={1} minHeight={0}>
-                <Box
+              <box flexDirection="column" flexGrow={1} minHeight={0}>
+                <box
                   flexDirection="column"
-                  display={layerOpen ? 'none' : 'flex'}
+                  visible={!layerOpen}
                   flexGrow={1}
                 >
                   {children}
-                </Box>
+                </box>
                 {layerOpen ? (
                   <PointerSurface id="layer">{layerSlot.node}</PointerSurface>
                 ) : null}
-              </Box>
+              </box>
               {bottomChrome}
               {modalOpen ? (
                 <PointerSurface id="modal">
@@ -277,7 +277,7 @@ export function OverlayHost({
                     Transparent full-screen host (no scrim wash). Dialogs paint
                     their own theme-aware solid panel via useModalChrome().
                   */}
-                  <Box
+                  <box
                     position="absolute"
                     width={cols}
                     height={rows}
@@ -287,10 +287,10 @@ export function OverlayHost({
                     zIndex={100}
                   >
                     {modalSlot.node}
-                  </Box>
+                  </box>
                 </PointerSurface>
               ) : null}
-            </Box>
+            </box>
           </OverlayFooterContext.Provider>
         </BusyContext.Provider>
       </ModalContext.Provider>

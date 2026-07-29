@@ -86,7 +86,7 @@ export function Modal({
   const modalWidth = textWidth(lines[0] ?? '');
   const modalLeft = Math.max(0, Math.floor((viewportWidth - modalWidth) / 2));
 
-  // Every row is painted to full viewport width so Ink's differential
+  // Every row is painted to full viewport width so differential
   // redraw cannot leave previous-frame glyphs (list rows, footer) showing
   // through empty modal margins.
   return (

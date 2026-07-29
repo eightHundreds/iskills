@@ -1,11 +1,11 @@
 /**
  * Terminal mouse report parsing (SGR + legacy).
- * Architecture inspired by @ink-tools/ink-mouse / xterm-mouse; copy-owned.
+ * Mouse SGR parse; copy-owned.
  */
 
 /** True when stdin chunk is (or contains) a mouse report — do not treat as key text. */
 export function isMouseInput(input: string): boolean {
-  // Ink useInput strips leading ESC; raw stdin keeps it.
+  // Some consumers strip leading ESC; raw stdin keeps it.
   return (
     /(?:\u001B)?\[<\d+;\d+;\d+[Mm]/.test(input) ||
     /(?:\u001B)?\[M[\s\S]/.test(input) ||
@@ -23,7 +23,7 @@ export type ParsedMousePress = {
 /**
  * SGR: CSI < button ; col ; row M/m
  * Legacy: CSI M Cg Cx Cy (coords = byte - 32)
- * Ink may strip the leading ESC before handlers see the chunk.
+ * Leading ESC may be stripped before handlers see the chunk.
  */
 const SGR = /(?:\u001B)?\[<(\d+);(\d+);(\d+)([Mm])/g;
 const LEGACY = /(?:\u001B)?\[M([\s\S]{3})/g;

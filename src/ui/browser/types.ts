@@ -1,6 +1,6 @@
 /**
  * Browser TUI protocol types (type-only leaf).
- * Commands may `import type` from here without depending on Ink implementations.
+ * Commands may `import type` from here without loading the TUI implementation.
  */
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 

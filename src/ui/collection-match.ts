@@ -1,6 +1,6 @@
 import type { CollectionMatch } from '../domain/types.js';
 // Imports the palette directly rather than the termcn barrel so the command
-// layer can reuse these labels without loading Ink.
+// layer can reuse these labels without loading the TUI.
 import { termcnColors } from './components/colors.js';
 
 export const collectionMatchLabels: Record<CollectionMatch, string> = {

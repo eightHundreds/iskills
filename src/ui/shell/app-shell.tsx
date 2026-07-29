@@ -1,4 +1,4 @@
-import { Box } from '../tui/primitives.js';
+
 import { useInput } from '../components/use-input.js';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MouseProvider } from '../components/mouse/index.js';
@@ -108,13 +108,13 @@ function AppShellBody({
   });
 
   return (
-    <Box
-      display={ready ? 'flex' : 'none'}
+    <box
+      visible={ready}
       flexDirection="column"
       width="100%"
       height="100%"
     >
       {children}
-    </Box>
+    </box>
   );
 }

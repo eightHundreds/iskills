@@ -2,7 +2,7 @@
  * Remote search package entry: one-shot search screen via static Layer.
  * Protocol types live in `types.ts`.
  */
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from './types.js';
@@ -96,8 +96,9 @@ function SearchSkills({
     if (selected) finish(selected);
   };
 
+  const chrome = useModalChrome();
   return (
-    <Box flexDirection="column">
+    <box flexDirection="column">
       <TextInput
         label="搜索技能"
         initialValue={initialQuery}
@@ -112,15 +113,15 @@ function SearchSkills({
         onCancel={() => finish(undefined)}
         onSubmit={select}
       />
-      <Box flexDirection="column" marginTop={1}>
+      <box flexDirection="column" marginTop={1}>
         {query.trim().length < 2 ? (
-          <Text color={termcnColors.muted}>输入至少 2 个字符开始搜索</Text>
+          <Text color={chrome.muted}>输入至少 2 个字符开始搜索</Text>
         ) : error ? (
           <Text color={termcnColors.error}>{error}</Text>
         ) : !results.length && loading ? (
-          <Text color={termcnColors.muted}>正在搜索…</Text>
+          <Text color={chrome.muted}>正在搜索…</Text>
         ) : !results.length ? (
-          <Text color={termcnColors.muted}>没有找到技能</Text>
+          <Text color={chrome.muted}>没有找到技能</Text>
         ) : (
           visible.map((skill, index) => {
             const active = offset + index === cursor;
@@ -129,7 +130,7 @@ function SearchSkills({
             return (
               <Text
                 key={skill.resultId}
-                {...(active ? { color: termcnColors.primary } : {})}
+                color={active ? termcnColors.primary : chrome.body}
                 bold={active}
               >
                 {`${active ? '›' : ' '} ${skill.name}`}
@@ -139,15 +140,15 @@ function SearchSkills({
             );
           })
         )}
-      </Box>
-      <Text color={termcnColors.muted}>
+      </box>
+      <Text color={chrome.muted}>
         {error
           ? 'Enter 重试 · Esc 取消'
           : loading || !results.length
             ? 'Esc 取消'
             : '↑/↓ 选择 · Enter 收藏 · Esc 取消'}
       </Text>
-    </Box>
+    </box>
   );
 }
 

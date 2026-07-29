@@ -3,7 +3,7 @@
  * Esc cancel + optional 1–9 shortcuts stay product-side.
  */
 import { useMemo, type ReactNode } from 'react';
-import { Box, Text, useStdout } from '../tui/index.js';
+import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
 import {
   resolveOptionValue,
@@ -26,6 +26,7 @@ export function Select<T>({
   numbered?: boolean;
 }): ReactNode {
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
   const rows = stdout.rows ?? 24;
   const visible = visibleOptionCount(rows, label);
   const height = Math.max(3, Math.min(visible, Math.max(1, options.length)));
@@ -53,9 +54,13 @@ export function Select<T>({
   });
 
   return (
-    <Box flexDirection="column">
-      {label ? <Text bold>{label}</Text> : null}
-      <Box height={height} flexDirection="column" width="100%">
+    <box flexDirection="column">
+      {label ? (
+        <Text bold color={chrome.body}>
+          {label}
+        </Text>
+      ) : null}
+      <box height={height} flexDirection="column" width="100%">
         <select
           focused
           options={selectOptions}
@@ -64,12 +69,10 @@ export function Select<T>({
           showSelectionIndicator
           selectedTextColor={termcnColors.selectionFg}
           selectedBackgroundColor={termcnColors.selectionBg}
-          // Avoid OpenTUI select default (often near-white text on dark chip) looking
-          // wrong next to a light terminal; use brand selection for focus only and
-          // mid-gray for idle rows so both light/dark canvases stay readable.
-          textColor={termcnColors.muted}
-          focusedTextColor={termcnColors.muted}
-          descriptionColor={termcnColors.muted}
+          // Theme-aware idle text (not forced white / fixed mid-gray only).
+          textColor={chrome.body}
+          focusedTextColor={chrome.body}
+          descriptionColor={chrome.muted}
           selectedDescriptionColor={termcnColors.selectionFg}
           backgroundColor="transparent"
           focusedBackgroundColor="transparent"
@@ -81,11 +84,11 @@ export function Select<T>({
             if (resolved !== undefined) onSubmit(resolved);
           }}
         />
-      </Box>
-      <Text color={termcnColors.muted}>
+      </box>
+      <Text color={chrome.muted}>
         {numbered ? `1–${Math.min(options.length, 9)} 快选 · ` : ''}
         ↑/↓ 选择 · Enter 确认 · Esc 取消
       </Text>
-    </Box>
+    </box>
   );
 }
