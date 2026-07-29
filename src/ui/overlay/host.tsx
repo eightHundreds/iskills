@@ -1,4 +1,4 @@
-import { Box, useStdout } from 'ink';
+import { Box, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import {
   createContext,
@@ -247,6 +247,8 @@ export function OverlayHost({
           <OverlayFooterContext.Provider value={overlayFooterItems}>
             <Box
               flexDirection="column"
+              width="100%"
+              height="100%"
               {...(modalOpen || layerOpen
                 ? {
                     position: 'relative' as const,
@@ -271,12 +273,18 @@ export function OverlayHost({
               {bottomChrome}
               {modalOpen ? (
                 <PointerSurface id="modal">
+                  {/*
+                    Transparent full-screen host (no scrim wash). Dialogs paint
+                    their own theme-aware solid panel via useModalChrome().
+                  */}
                   <Box
                     position="absolute"
                     width={cols}
                     height={rows}
+                    flexDirection="column"
                     justifyContent="center"
                     alignItems="center"
+                    zIndex={100}
                   >
                     {modalSlot.node}
                   </Box>

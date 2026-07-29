@@ -1,7 +1,14 @@
 import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
+
+const opentuiRegister = fileURLToPath(
+  new URL('./bin/opentui-register.mjs', import.meta.url)
+);
 
 export default defineConfig({
   test: {
+    pool: 'forks',
+    execArgv: [`--import=${opentuiRegister}`],
     projects: [
       {
         test: {
@@ -16,6 +23,8 @@ export default defineConfig({
             'test/mouse.test.ts',
             'test/ui.test.tsx',
             'test/footer-resolve.test.ts',
+            'test/opentui-runtime.test.ts',
+            'test/bin-runtime.test.ts',
           ],
           maxWorkers: 3,
           sequence: { groupOrder: 0 },

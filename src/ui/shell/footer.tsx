@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useStdout } from '../tui/index.js';
 import type { ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
 import {

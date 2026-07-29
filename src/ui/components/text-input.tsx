@@ -1,7 +1,10 @@
-import { Box, Text, useStdout } from 'ink';
-import { useRef, useState, type ReactNode } from 'react';
+/**
+ * Product TextInput — thin product API over OpenTUI `<input>`.
+ * Prefer native input editing; keep label / variant / Esc cancel for callers.
+ */
+import { useEffect, useState, type ReactNode } from 'react';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
-import { graphemes } from './text.js';
 import { useInput } from './use-input.js';
 
 export function TextInput({
@@ -25,90 +28,48 @@ export function TextInput({
   variant?: 'box' | 'inline';
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
-  const valueRef = useRef(initialValue);
-  const [cursor, setCursor] = useState(graphemes(initialValue).length);
-  const cursorRef = useRef(graphemes(initialValue).length);
   const { stdout } = useStdout();
   const resolvedWidth = Math.min(width, Math.max(20, (stdout.columns ?? 80) - 2));
-  const update = (next: string): void => {
-    valueRef.current = next;
+
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
+  // Esc is product-level cancel; OpenTUI input does not own it.
+  useInput(
+    (_input, key) => {
+      if (key.escape) onCancel?.();
+    },
+    { isActive }
+  );
+
+  const handleInput = (next: string): void => {
     setValue(next);
     onChange?.(next);
   };
-  const insert = (input: string): string => {
-    const next = graphemes(valueRef.current);
-    const inserted = graphemes(input);
-    next.splice(cursorRef.current, 0, ...inserted);
-    cursorRef.current += inserted.length;
-    setCursor(cursorRef.current);
-    const nextValue = next.join('');
-    update(nextValue);
-    return nextValue;
-  };
-  useInput((input, key) => {
-    const newline = input.search(/[\r\n]/);
-    if (key.return || newline >= 0) {
-      const typed = newline >= 0 ? input.slice(0, newline) : input;
-      return onSubmit(typed && !key.ctrl && !key.meta ? insert(typed) : valueRef.current);
-    }
-    if (key.escape) return onCancel?.();
-    if (key.leftArrow) {
-      cursorRef.current = Math.max(0, cursorRef.current - 1);
-      return setCursor(cursorRef.current);
-    }
-    if (key.rightArrow) {
-      cursorRef.current = Math.min(graphemes(valueRef.current).length, cursorRef.current + 1);
-      return setCursor(cursorRef.current);
-    }
-    if (key.home) {
-      cursorRef.current = 0;
-      return setCursor(0);
-    }
-    if (key.end) {
-      cursorRef.current = graphemes(valueRef.current).length;
-      return setCursor(cursorRef.current);
-    }
-    // Ink 6 reports the usual terminal Backspace (DEL) as Delete too.
-    if (key.backspace || key.delete) {
-      if (!cursorRef.current) return;
-      const next = graphemes(valueRef.current);
-      next.splice(cursorRef.current - 1, 1);
-      cursorRef.current--;
-      setCursor(cursorRef.current);
-      return update(next.join(''));
-    }
-    if (
-      input &&
-      input !== '\r' &&
-      input !== '\n' &&
-      !key.ctrl &&
-      !key.meta &&
-      !key.escape &&
-      !key.tab &&
-      !key.upArrow &&
-      !key.downArrow
-    ) {
-      insert(input);
-    }
-  }, { isActive });
-  const parts = graphemes(value);
-  const valuePaint = isActive ? (
-    <>
-      {parts.slice(0, cursor).join('')}
-      <Text inverse>{parts[cursor] || ' '}</Text>
-      {parts.slice(cursor + 1).join('')}
-    </>
-  ) : (
-    value || ' '
+
+  const field = (inputWidth: number | `${number}%` | undefined) => (
+    <input
+      value={value}
+      focused={isActive}
+      onInput={handleInput}
+      onSubmit={(submitted) => {
+        const text = typeof submitted === 'string' ? submitted : value;
+        onSubmit(text);
+      }}
+      placeholder=""
+      cursorColor={termcnColors.primary}
+      {...(inputWidth !== undefined ? { width: inputWidth } : {})}
+    />
   );
 
   if (variant === 'inline') {
+    // Explicit width so the native input paints the full value under OpenTUI layout.
+    const inputCols = Math.max(8, (stdout.columns ?? 80) - Math.min(24, label.length * 2));
     return (
-      <Box width="100%" flexDirection="row">
-        <Text wrap="truncate-end">
-          <Text bold>{label}</Text>
-          {valuePaint}
-        </Text>
+      <Box width="100%" flexDirection="row" height={1}>
+        <Text bold>{label}</Text>
+        {field(inputCols)}
       </Box>
     );
   }
@@ -121,8 +82,10 @@ export function TextInput({
         borderColor={isActive ? termcnColors.primary : termcnColors.border}
         paddingX={1}
         width={resolvedWidth}
+        height={3}
+        flexDirection="column"
       >
-        <Text>{valuePaint}</Text>
+        {field(Math.max(4, resolvedWidth - 4))}
       </Box>
     </Box>
   );

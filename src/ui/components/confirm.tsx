@@ -1,4 +1,4 @@
-import { Text } from 'ink';
+import { Text } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import type { ReactNode } from 'react';
 import { termcnColors } from './colors.js';

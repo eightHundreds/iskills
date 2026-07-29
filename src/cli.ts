@@ -64,8 +64,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     }
     throw error;
   } finally {
-    // Lazy: avoid static import of Ink UI on every CLI entry; only load to tear down.
-    const { closeInk } = await import('./ui/shell/run.js');
-    closeInk();
+    // Lazy: tear down without loading OpenTUI when no UI was mounted.
+    const { closeTui } = await import('./ui/shell/lifecycle.js');
+    closeTui();
   }
 }

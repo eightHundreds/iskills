@@ -1,4 +1,4 @@
-import { Box } from 'ink';
+import { Box } from '../tui/primitives.js';
 import { useInput } from '../components/use-input.js';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MouseProvider } from '../components/mouse/index.js';
@@ -9,7 +9,7 @@ import {
 import { OverlayOnlyFooter } from './footer.js';
 
 /**
- * Pure Ink interactive shell: first-frame visibility + global key callbacks.
+ * Pure interactive shell: first-frame visibility + global key callbacks.
  * Composes {@link OverlayHost} for Layer / Modal slots — does not own overlay logic.
  *
  * Does **not** call `exit` or throw InterruptError.
@@ -55,8 +55,7 @@ export function AppShell({
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Ink installs useInput listeners in passive effects. Do not show an
-    // interactive tree until those listeners and raw mode are active, or a
+    // Do not show an interactive tree until key listeners are active, or a
     // fast keypress can be echoed by the terminal and lost between screens.
     const timer = setTimeout(() => setReady(true), 0);
     return () => clearTimeout(timer);
@@ -109,7 +108,12 @@ function AppShellBody({
   });
 
   return (
-    <Box display={ready ? 'flex' : 'none'} flexDirection="column">
+    <Box
+      display={ready ? 'flex' : 'none'}
+      flexDirection="column"
+      width="100%"
+      height="100%"
+    >
       {children}
     </Box>
   );

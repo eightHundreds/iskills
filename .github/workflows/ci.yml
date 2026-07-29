@@ -18,6 +18,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      # OpenTUI native Zig core loads under Bun (Node lacks node:ffi on stock 24.x).
+      # UI frame tests and interactive bin re-exec require Bun on PATH.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - run: pnpm install --frozen-lockfile
       - run: git config --global init.defaultBranch main
       - run: env -u CI ISKILLS_DISABLE_MOUSE=1 pnpm test

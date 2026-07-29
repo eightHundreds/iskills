@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -21,8 +21,8 @@ function bodyLines(content: string[], inner: number): string[] {
 
 /**
  * Framed dialog body for absolute modal overlays.
- * Only paints the box itself — no full-viewport blank fill — so the screen
- * underneath shows through around the frame.
+ * Solid panel fill follows terminal light/dark themeMode; does not repaint
+ * the whole terminal — only the dialog box.
  *
  * When body content exceeds the height budget, the panel scrolls with ↑/↓.
  */
@@ -45,6 +45,7 @@ export function FramedPanel({
   onKey?: (input: string, key: { return: boolean; escape: boolean }) => void;
 }): ReactNode {
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
   const viewportWidth = stdout.columns ?? 80;
   const viewportRows = stdout.rows ?? 24;
   const width = Math.min(preferredWidth ?? 76, Math.max(36, viewportWidth - 6));
@@ -83,10 +84,13 @@ export function FramedPanel({
 
   const top = framedBorderTop(title, width);
   const bottom = framedBorderBottom(width);
+  const panelBg = chrome.surface;
 
   return (
-    <Box flexDirection="column">
-      <Text color={termcnColors.primary}>{top}</Text>
+    <Box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
+      <Text color={termcnColors.primary} backgroundColor={panelBg}>
+        {top}
+      </Text>
       {visibleBody.map((body, index) => {
         const absoluteIndex = scroll + index;
         const mute =
@@ -94,20 +98,31 @@ export function FramedPanel({
           absoluteIndex === allBody.length - 1 &&
           index === lastBodyIndex;
         return (
-          <Text key={`frame-body:${absoluteIndex}`}>
-            <Text color={termcnColors.primary}>│ </Text>
+          <Text key={`frame-body:${absoluteIndex}`} backgroundColor={panelBg}>
+            <Text color={termcnColors.primary} backgroundColor={panelBg}>
+              │{' '}
+            </Text>
             {mute ? (
-              <Text color={termcnColors.muted}>{body}</Text>
+              <Text color={chrome.muted} backgroundColor={panelBg}>
+                {body}
+              </Text>
             ) : (
-              body
+              <Text color={chrome.body} backgroundColor={panelBg}>
+                {body}
+              </Text>
             )}
-            <Text color={termcnColors.primary}> │</Text>
+            <Text color={termcnColors.primary} backgroundColor={panelBg}>
+              {' '}
+              │
+            </Text>
           </Text>
         );
       })}
-      <Text color={termcnColors.primary}>{bottom}</Text>
+      <Text color={termcnColors.primary} backgroundColor={panelBg}>
+        {bottom}
+      </Text>
       {maxOffset > 0 ? (
-        <Text color={termcnColors.muted}>
+        <Text color={chrome.muted} backgroundColor={panelBg}>
           {`↑/↓ 滚动 ${scroll + 1}–${Math.min(scroll + maxBody, allBody.length)} / ${allBody.length}`}
         </Text>
       ) : null}

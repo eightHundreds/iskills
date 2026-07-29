@@ -2,7 +2,7 @@
  * Remote search package entry: one-shot search screen via static Layer.
  * Protocol types live in `types.ts`.
  */
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from './types.js';

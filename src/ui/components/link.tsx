@@ -1,9 +1,7 @@
 /*
- * Forked from ink-link 5.0.0.
- * Copyright (c) Sindre Sorhus <sindresorhus@gmail.com>
- * Licensed under the MIT License; see THIRD_PARTY_NOTICES.md.
+ * Hyperlink helper: prefer OpenTUI `<a href>` when label is plain text;
+ * fall back to terminal-link for custom fallback formatters.
  */
-import { Text, Transform } from 'ink';
 import type { ReactNode } from 'react';
 import terminalLink from 'terminal-link';
 
@@ -18,9 +16,32 @@ export function Link({
   url: string;
   fallback?: LinkFallback;
 }): ReactNode {
+  const label =
+    typeof children === 'string' || typeof children === 'number'
+      ? String(children)
+      : '';
+
+  // Custom fallback fn → keep terminal-link formatting for non-OSC8 terminals.
+  if (typeof fallback === 'function') {
+    const text = label || url;
+    return (
+      <text>
+        <span>{terminalLink(text, url, { fallback })}</span>
+      </text>
+    );
+  }
+
+  if (label) {
+    return (
+      <text>
+        <a href={url}>{label}</a>
+      </text>
+    );
+  }
+
   return (
-    <Transform transform={(text) => terminalLink(text, url, { fallback })}>
-      <Text>{children}</Text>
-    </Transform>
+    <text>
+      <a href={url}>{url}</a>
+    </text>
   );
 }

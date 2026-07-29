@@ -1,4 +1,3 @@
-import { render, useApp, type Instance } from 'ink';
 import type { ReactNode } from 'react';
 import {
   getActiveOverlayHost,
@@ -6,57 +5,199 @@ import {
   type OverlayHostHandle,
 } from '../overlay/bridge.js';
 import { InterruptError } from './terminal.js';
-import { AppShell } from './app-shell.js';
+import {
+  getActiveTui,
+  setActiveTui,
+  closeTui,
+  type TuiDisposer,
+} from './lifecycle.js';
+
+export { closeTui, closeInk } from './lifecycle.js';
 
 /**
- * Ink UI runtime (shell package): mount registry + session runners + AppShell.
+ * OpenTUI UI runtime (shell package): mount registry + session runners + AppShell.
  *
- * - `mountInk` / `closeInk` — process-level active instance
+ * OpenTUI is loaded lazily so non-interactive CLI paths never touch the native core.
+ *
+ * - `mountTui` / `closeTui` — process-level active instance
  * - `runScreen` — low-level one-shot Promise screen (prefer Modal/Layer + bootstrap)
  * - `startApp` / `runApp` — long-lived tree (`ui/browser`); remount via handle
  * - registers overlay bootstrap so static Modal/Layer work without a pre-mounted tree
  */
 
-// ─── mount registry ─────────────────────────────────────────────────────────
+export type TuiInstance = TuiDisposer & {
+  renderer: { destroy: () => void };
+  root: { render: (node: ReactNode) => void; unmount: () => void };
+  waitUntilExit: () => Promise<void>;
+  settle: (error?: Error) => void;
+};
 
-let activeInstance: Instance | undefined;
+type AppExit = (error?: Error | undefined) => void;
+
+async function loadOpenTui(): Promise<{
+  createCliRenderer: (config?: Record<string, unknown>) => Promise<{
+    destroy: () => void;
+  }>;
+  createRoot: (renderer: { destroy: () => void }) => {
+    render: (node: ReactNode) => void;
+    unmount: () => void;
+  };
+  ExitProvider: (props: { exit: AppExit; children: ReactNode }) => ReactNode;
+  AppShell: (props: {
+    cancelOnEscape?: boolean;
+    onCancel?: () => void;
+    onCtrlC?: () => void;
+    bottomChrome?: ReactNode;
+    children: ReactNode;
+  }) => ReactNode;
+  createElement: typeof import('react').createElement;
+}> {
+  const [{ createCliRenderer }, { createRoot }, hooks, appShell, react] =
+    await Promise.all([
+      import('@opentui/core'),
+      import('@opentui/react'),
+      import('../tui/hooks.js'),
+      import('./app-shell.js'),
+      import('react'),
+    ]);
+  return {
+    createCliRenderer: createCliRenderer as never,
+    createRoot: createRoot as never,
+    ExitProvider: hooks.ExitProvider,
+    AppShell: appShell.AppShell,
+    createElement: react.createElement,
+  };
+}
+
+function createExitController(): {
+  exit: AppExit;
+  waitUntilExit: () => Promise<void>;
+  settle: (error?: Error) => void;
+} {
+  let settled = false;
+  let resolveExit!: () => void;
+  let rejectExit!: (error: Error) => void;
+  const promise = new Promise<void>((resolve, reject) => {
+    resolveExit = resolve;
+    rejectExit = reject;
+  });
+  void promise.catch(() => undefined);
+
+  const settle = (error?: Error): void => {
+    if (settled) return;
+    settled = true;
+    if (error) rejectExit(error);
+    else resolveExit();
+  };
+
+  const exit: AppExit = (error) => {
+    settle(error);
+  };
+
+  return {
+    exit,
+    waitUntilExit: () => promise,
+    settle,
+  };
+}
 
 /** Mount a root node; replaces the process-level active instance pointer. */
-export function mountInk(node: ReactNode): Instance {
-  const instance = render(node, { exitOnCtrlC: false });
-  activeInstance = instance;
+export async function mountTui(
+  node: ReactNode,
+  options: { alternateScreen?: boolean; useMouse?: boolean } = {}
+): Promise<TuiInstance> {
+  const { createCliRenderer, createRoot, ExitProvider, createElement } =
+    await loadOpenTui();
+  const controller = createExitController();
+  let renderer: { destroy: () => void };
+  try {
+    const useMouse = options.useMouse ?? true;
+    renderer = await createCliRenderer({
+      exitOnCtrlC: false,
+      useMouse,
+      // Hover (onMouseOver/Out) needs movement reports, not just button clicks.
+      enableMouseMovement: useMouse,
+      // Do NOT force backgroundColor — inherit the terminal's default bg (user theme).
+      screenMode: options.alternateScreen ? 'alternate-screen' : 'main-screen',
+      clearOnShutdown: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/native FFI|not available for this runtime/i.test(message)) {
+      throw new Error(
+        'OpenTUI native renderer is unavailable in this runtime. ' +
+          'Interactive TUI requires Bun on PATH (bin/iskills.js re-execs to bun when Node lacks node:ffi) ' +
+          'or a Node build with node:ffi. Install: https://bun.sh — then re-run `iskills`. ' +
+          `Underlying error: ${message}`
+      );
+    }
+    throw error;
+  }
+
+  const root = createRoot(renderer);
+  let disposed = false;
+
+  const cleanup = (): void => {
+    if (disposed) return;
+    disposed = true;
+    try {
+      root.unmount();
+    } catch {
+      // ignore double-unmount
+    }
+    try {
+      renderer.destroy();
+    } catch {
+      // ignore double-destroy
+    }
+    if (getActiveTui() === instance) {
+      setActiveTui(undefined);
+    }
+  };
+
+  const instance: TuiInstance = {
+    renderer,
+    root,
+    waitUntilExit: controller.waitUntilExit,
+    unmount: () => {
+      controller.settle();
+      cleanup();
+    },
+    cleanup,
+    settle: controller.settle,
+  };
+
+  setActiveTui(instance);
+
+  const exit: AppExit = (error) => {
+    controller.settle(error);
+    cleanup();
+  };
+
+  root.render(createElement(ExitProvider, { exit, children: node }));
   return instance;
 }
 
+/** @deprecated Prefer mountTui — kept as alias during migration. */
+export const mountInk = mountTui;
+
 /** Cleanup after exit/unmount; clear active if it matches. */
-export function releaseInk(instance: Instance): void {
+export function releaseTui(instance: TuiInstance): void {
   instance.cleanup();
-  if (activeInstance === instance) activeInstance = undefined;
+  if (getActiveTui() === instance) setActiveTui(undefined);
 }
+
+export const releaseInk = releaseTui;
 
 /** Unmount + cleanup one instance; clears active if it matches. */
-export function unmountInk(instance: Instance): void {
+export function unmountTui(instance: TuiInstance): void {
   instance.unmount();
-  releaseInk(instance);
+  releaseTui(instance);
 }
 
-/** Force-unmount whatever is active (CLI main `finally`). */
-export function closeInk(): void {
-  if (!activeInstance) return;
-  unmountInk(activeInstance);
-}
+export const unmountInk = unmountTui;
 
 // ─── one-shot screen ────────────────────────────────────────────────────────
-
-function ExitBridge({
-  register,
-}: {
-  register: (exit: (error?: Error | undefined) => void) => void;
-}): null {
-  const { exit } = useApp();
-  register(exit);
-  return null;
-}
 
 /**
  * One-shot screen: mount → await finish/cancel/interrupt → unmount.
@@ -65,51 +206,44 @@ function ExitBridge({
  * - Ctrl+C → reject `InterruptError`
  * - `finish(value)` → resolve value
  */
-export function runScreen<T>(
+export async function runScreen<T>(
   cancelledValue: T,
   component: (finish: (value: T) => void) => ReactNode,
   cancelOnEscape = true
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
+  const { AppShell, createElement } = await loadOpenTui();
+
+  return new Promise<T>((resolve, reject) => {
     let finished = false;
-    let exit: ((error?: Error | undefined) => void) | undefined;
-    let instance: Instance;
+    let instance: TuiInstance | undefined;
 
     const settle = (complete: () => void): void => {
       if (finished) return;
       finished = true;
-      const exited = instance.waitUntilExit();
-      if (exit) exit();
-      else instance.unmount();
-      void exited.then(
-        () => {
-          releaseInk(instance);
-          // React runs passive useInput cleanup after Ink resolves its exit promise.
-          setTimeout(complete, 10);
-        },
-        (error: unknown) => {
-          releaseInk(instance);
-          reject(error);
-        }
-      );
+      if (instance) {
+        instance.settle();
+        instance.cleanup();
+      }
+      setTimeout(complete, 10);
     };
 
     const finish = (value: T): void => settle(() => resolve(value));
 
-    instance = mountInk(
-      <AppShell
-        cancelOnEscape={cancelOnEscape}
-        onCancel={() => finish(cancelledValue)}
-        onCtrlC={() => settle(() => reject(new InterruptError()))}
-      >
-        <ExitBridge
-          register={(value) => {
-            exit = value;
-          }}
-        />
-        {component(finish)}
-      </AppShell>
-    );
+    void mountTui(
+      createElement(AppShell, {
+        cancelOnEscape,
+        onCancel: () => finish(cancelledValue),
+        onCtrlC: () => settle(() => reject(new InterruptError())),
+        children: component(finish),
+      })
+    )
+      .then((mounted) => {
+        instance = mounted;
+        if (finished) {
+          mounted.cleanup();
+        }
+      })
+      .catch(reject);
   });
 }
 
@@ -123,7 +257,7 @@ export interface RunAppHandle {
   /** Replace the mounted tree (e.g. after suspendForSubprocess). */
   remount: (node: ReactNode) => void;
   waitUntilExit: () => Promise<void>;
-  /** Unmount + cleanup (caller owns alternate-screen ANSI). */
+  /** Unmount + cleanup. */
   dispose: () => void;
 }
 
@@ -141,41 +275,63 @@ export function leaveAlternateScreen(): void {
 }
 
 /**
- * Long-lived Ink app: mount until the tree exits, then cleanup.
+ * Long-lived OpenTUI app: mount until the tree exits, then cleanup.
  * Prefer `startApp` when the host must remount (e.g. Git TTY handoff).
  */
 export async function runApp(
   node: ReactNode,
   options: RunAppOptions = {}
 ): Promise<void> {
-  if (options.alternateScreen) enterAlternateScreen();
-  const instance = mountInk(node);
+  const mountOptions =
+    options.alternateScreen === undefined
+      ? {}
+      : { alternateScreen: options.alternateScreen };
+  const instance = await mountTui(node, mountOptions);
   try {
     await instance.waitUntilExit();
   } finally {
-    unmountInk(instance);
-    if (options.alternateScreen) leaveAlternateScreen();
+    instance.cleanup();
   }
 }
 
 /**
  * Start a long-lived app and return a handle for remount / wait / dispose.
- * Does not manage alternate screen — browser pairs this with enter/leave helpers.
+ * Uses OpenTUI alternate-screen mode when `alternateScreen` is true.
  */
-export function startApp(node: ReactNode): RunAppHandle {
-  let instance: Instance = mountInk(node);
+export async function startApp(
+  node: ReactNode,
+  options: RunAppOptions = {}
+): Promise<RunAppHandle> {
+  const mountOptions =
+    options.alternateScreen === undefined
+      ? {}
+      : { alternateScreen: options.alternateScreen };
+  const instance: TuiInstance = await mountTui(node, mountOptions);
+  const { ExitProvider, createElement } = await loadOpenTui();
+
   return {
     remount: (next) => {
-      unmountInk(instance);
-      instance = mountInk(next);
+      const exit: AppExit = (error) => {
+        instance.settle(error);
+        instance.cleanup();
+      };
+      instance.root.render(createElement(ExitProvider, { exit, children: next }));
     },
     waitUntilExit: async () => {
       await instance.waitUntilExit();
     },
     dispose: () => {
-      unmountInk(instance);
+      instance.unmount();
     },
   };
+}
+
+/** Rebuild a disposed app (e.g. after subprocess TTY handoff). */
+export async function restartApp(
+  node: ReactNode,
+  options: RunAppOptions = {}
+): Promise<RunAppHandle> {
+  return startApp(node, options);
 }
 
 // ─── overlay bootstrap (CLI confirm without a pre-mounted tree) ─────────────
@@ -204,38 +360,25 @@ function waitForOverlayHost(timeoutMs = 5000): Promise<OverlayHostHandle> {
  * Registered for `ui/overlay` withOverlayHost — overlay never imports this module.
  */
 setOverlayBootstrap(async () => {
+  const { AppShell, createElement } = await loadOpenTui();
   let finished = false;
-  let exit: ((error?: Error | undefined) => void) | undefined;
-  let instance: Instance;
+  let instance: TuiInstance | undefined;
   let rejectInterrupt: ((error: InterruptError) => void) | undefined;
 
   const interrupted = new Promise<never>((_resolve, reject) => {
     rejectInterrupt = reject;
   });
-  // Avoid unhandled rejection if dispose wins the race first.
   void interrupted.catch(() => undefined);
 
-  const dispose = (): Promise<void> =>
-    new Promise((resolve, reject) => {
-      if (finished) {
-        resolve();
-        return;
-      }
-      finished = true;
-      const exited = instance.waitUntilExit();
-      if (exit) exit();
-      else instance.unmount();
-      void exited.then(
-        () => {
-          releaseInk(instance);
-          setTimeout(resolve, 10);
-        },
-        (error: unknown) => {
-          releaseInk(instance);
-          reject(error);
-        }
-      );
-    });
+  const dispose = async (): Promise<void> => {
+    if (finished) return;
+    finished = true;
+    if (instance) {
+      instance.settle();
+      instance.cleanup();
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  };
 
   const settleOverlays = (): void => {
     const host = getActiveOverlayHost();
@@ -243,25 +386,19 @@ setOverlayBootstrap(async () => {
     host?.layer.destroyAll();
   };
 
-  instance = mountInk(
-    <AppShell
-      cancelOnEscape
-      onCancel={() => {
+  instance = await mountTui(
+    createElement(AppShell, {
+      cancelOnEscape: true,
+      onCancel: () => {
         settleOverlays();
         void dispose();
-      }}
-      onCtrlC={() => {
-        // Prefer InterruptError over destroyValue so CLI exits 130 (not soft-cancel).
+      },
+      onCtrlC: () => {
         rejectInterrupt?.(new InterruptError());
         void dispose();
-      }}
-    >
-      <ExitBridge
-        register={(value) => {
-          exit = value;
-        }}
-      />
-    </AppShell>
+      },
+      children: null,
+    })
   );
 
   const host = await waitForOverlayHost();

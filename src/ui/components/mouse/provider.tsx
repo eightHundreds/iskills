@@ -1,20 +1,12 @@
-import { useStdin, useStdout, type DOMElement } from 'ink';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   type ReactNode,
   type RefObject,
 } from 'react';
-import { getElementBounds, pointInBounds } from './bounds.js';
-import { parseLeftPresses } from './parse.js';
-
-/** xterm button tracking + SGR coords (clicks only, no all-motion). */
-const ENABLE = '\u001B[?1000h\u001B[?1006h';
-const DISABLE = '\u001B[?1000l\u001B[?1006l';
 
 /** Root surface: main chrome (tabs, list hit targets). Always at stack bottom. */
 export const POINTER_SURFACE_BASE = 'base';
@@ -22,113 +14,79 @@ export const POINTER_SURFACE_BASE = 'base';
 type ClickHandler = () => void;
 
 type Registration = {
-  ref: RefObject<DOMElement | null>;
+  ref: RefObject<unknown>;
   onClick: ClickHandler;
-  /** Which interaction surface this target belongs to. */
   surface: string;
 };
 
 type MouseRegistry = {
-  register: (id: string, registration: Registration) => () => void;
-  /** Push exclusive surface (modal / filter). Only top receives hits. */
+  /** True when `surface` is the exclusive top of the stack (modal/filter). */
+  isTopSurface: (surface: string) => boolean;
   pushSurface: (surface: string) => void;
   popSurface: (surface: string) => void;
 };
 
 const MouseRegistryContext = createContext<MouseRegistry | null>(null);
-/** Nearest {@link PointerSurface} id; registrations inherit this. */
 const PointerSurfaceIdContext = createContext<string>(POINTER_SURFACE_BASE);
 
 /**
- * Owns terminal mouse mode + stdin parse + hit-test dispatch.
- * Pattern from @ink-tools/ink-mouse; copy-owned, left-click only.
- *
- * **Interaction surfaces** (stack, not z-index): only the top surface's
- * targets receive clicks. Exclusive UI (modal, filter) pushes a surface so
- * base chrome does not need per-component `mouseActive` flags.
+ * Tracks exclusive pointer surfaces (modal / filter). Hit testing itself is
+ * OpenTUI-native (`onMouse*` on boxes); this only gates product Clickable so
+ * base chrome does not steal clicks while a modal is open.
  */
 export function MouseProvider({
   children,
-  autoEnable = true,
 }: {
   children: ReactNode;
+  /** @deprecated OpenTUI enables mouse on the renderer; ignored. */
   autoEnable?: boolean;
 }): ReactNode {
-  const { stdin } = useStdin();
-  const { stdout } = useStdout();
-  const targets = useRef(new Map<string, Registration>());
-  /** Bottom = base; higher exclusive contexts on top. */
-  const surfaceStack = useRef<string[]>([POINTER_SURFACE_BASE]);
-
-  const register = useCallback((id: string, registration: Registration) => {
-    targets.current.set(id, registration);
-    return () => {
-      targets.current.delete(id);
-    };
-  }, []);
-
-  const pushSurface = useCallback((surface: string) => {
-    if (surface === POINTER_SURFACE_BASE) return;
-    surfaceStack.current.push(surface);
-  }, []);
-
-  const popSurface = useCallback((surface: string) => {
-    if (surface === POINTER_SURFACE_BASE) return;
-    const stack = surfaceStack.current;
-    const index = stack.lastIndexOf(surface);
-    if (index > 0) stack.splice(index, 1);
-  }, []);
-
-  const registry = useMemo<MouseRegistry>(
-    () => ({ register, pushSurface, popSurface }),
-    [register, pushSurface, popSurface]
+  const surfaceStack = useMemo(
+    () => ({ current: [POINTER_SURFACE_BASE] as string[] }),
+    []
   );
 
-  useEffect(() => {
-    const tty = Boolean(stdin?.isTTY && stdout?.isTTY);
-    // CI PTY suites and ink-testing-library inject sequences without real mouse;
-    // enabling tracking there can race alternate-screen frames under load.
-    const allowEnable =
-      autoEnable && tty && process.env.ISKILLS_DISABLE_MOUSE !== '1';
-    if (allowEnable) {
-      stdout.write(ENABLE);
-    }
+  const isTopSurface = useCallback(
+    (surface: string) => {
+      const stack = surfaceStack.current;
+      return stack[stack.length - 1] === surface;
+    },
+    [surfaceStack]
+  );
 
-    const onData = (chunk: Buffer | string): void => {
-      const input = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-      const presses = parseLeftPresses(input);
-      if (!presses.length) return;
-      const top =
-        surfaceStack.current[surfaceStack.current.length - 1] ?? POINTER_SURFACE_BASE;
-      for (const press of presses) {
-        for (const { ref, onClick, surface } of targets.current.values()) {
-          if (surface !== top) continue;
-          const bounds = getElementBounds(ref.current);
-          if (bounds && pointInBounds(press.x, press.y, bounds)) {
-            onClick();
-            return;
-          }
-        }
-      }
-    };
+  const pushSurface = useCallback(
+    (surface: string) => {
+      if (surface === POINTER_SURFACE_BASE) return;
+      surfaceStack.current.push(surface);
+    },
+    [surfaceStack]
+  );
 
-    stdin?.on('data', onData);
-    return () => {
-      stdin?.off('data', onData);
-      if (allowEnable) {
-        stdout.write(DISABLE);
-      }
-    };
-  }, [autoEnable, stdin, stdout]);
+  const popSurface = useCallback(
+    (surface: string) => {
+      if (surface === POINTER_SURFACE_BASE) return;
+      const stack = surfaceStack.current;
+      const index = stack.lastIndexOf(surface);
+      if (index > 0) stack.splice(index, 1);
+    },
+    [surfaceStack]
+  );
+
+  const registry = useMemo(
+    () => ({ isTopSurface, pushSurface, popSurface }),
+    [isTopSurface, popSurface, pushSurface]
+  );
 
   return (
-    <MouseRegistryContext.Provider value={registry}>{children}</MouseRegistryContext.Provider>
+    <MouseRegistryContext.Provider value={registry}>
+      {children}
+    </MouseRegistryContext.Provider>
   );
 }
 
 /**
- * Push an exclusive interaction surface while mounted.
- * Children register clicks on this surface; base chrome is muted until unmount.
+ * Marks an exclusive interaction surface (modal / filter). While mounted,
+ * {@link Clickable} under base chrome will not fire.
  */
 export function PointerSurface({
   id,
@@ -140,32 +98,30 @@ export function PointerSurface({
   const registry = useContext(MouseRegistryContext);
 
   useEffect(() => {
-    if (!registry) return undefined;
+    if (!registry || id === POINTER_SURFACE_BASE) return;
     registry.pushSurface(id);
-    return () => {
-      registry.popSurface(id);
-    };
-  }, [registry, id]);
+    return () => registry.popSurface(id);
+  }, [id, registry]);
 
   return (
-    <PointerSurfaceIdContext.Provider value={id}>{children}</PointerSurfaceIdContext.Provider>
+    <PointerSurfaceIdContext.Provider value={id}>
+      {children}
+    </PointerSurfaceIdContext.Provider>
   );
 }
 
-/**
- * Register a left-click hit target on the nearest surface.
- * No-op outside {@link MouseProvider}.
- */
-export function useOnClick(
-  ref: RefObject<DOMElement | null>,
-  onClick: ClickHandler | null | undefined
-): void {
-  const registry = useContext(MouseRegistryContext);
-  const surface = useContext(PointerSurfaceIdContext);
-  const idRef = useRef(`click-${Math.random().toString(36).slice(2)}`);
+export function usePointerSurfaceId(): string {
+  return useContext(PointerSurfaceIdContext);
+}
 
-  useEffect(() => {
-    if (!registry || !onClick) return undefined;
-    return registry.register(idRef.current, { ref, onClick, surface });
-  }, [registry, ref, onClick, surface]);
+export function useMouseRegistry(): MouseRegistry | null {
+  return useContext(MouseRegistryContext);
+}
+
+/** @deprecated Prefer {@link Clickable}; kept for API stability. */
+export function useOnClick(
+  _ref: RefObject<unknown>,
+  _onClick: ClickHandler | null
+): void {
+  // no-op — OpenTUI hit-testing replaces ref registration
 }

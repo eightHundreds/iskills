@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';

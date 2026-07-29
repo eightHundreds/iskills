@@ -46,6 +46,10 @@ export async function withOverlayHost<T>(
 ): Promise<T> {
   if (activeHost) return work(activeHost);
   if (!bootstrap) {
+    // Side-effect: shell registers temporary AppShell bootstrap (lazy OpenTUI).
+    await import('../shell/run.js');
+  }
+  if (!bootstrap) {
     throw new Error(
       'No OverlayHost is mounted and no bootstrap is registered (import ui/shell/run first)'
     );

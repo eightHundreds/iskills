@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -56,12 +56,42 @@ function OptionMultiSelect({
         const isFocused = from + index === focus;
         const isSelected = selected.has(option.value);
         return (
-          <Box key={option.value} gap={1} paddingLeft={isFocused ? 0 : 2}>
-            {isFocused && <Text color={termcnColors.primary}>❯</Text>}
-            <Text color={isFocused || isSelected ? termcnColors.primary : termcnColors.muted}>
+          <Box
+            key={option.value}
+            gap={1}
+            paddingLeft={isFocused ? 0 : 2}
+            {...(isFocused
+              ? { backgroundColor: termcnColors.selectionBg }
+              : {})}
+          >
+            {isFocused && (
+              <Text color={termcnColors.selectionFg} backgroundColor={termcnColors.selectionBg}>
+                ❯
+              </Text>
+            )}
+            <Text
+              color={
+                isFocused
+                  ? termcnColors.selectionFg
+                  : isSelected
+                    ? termcnColors.primary
+                    : termcnColors.muted
+              }
+              {...(isFocused ? { backgroundColor: termcnColors.selectionBg } : {})}
+            >
               {isSelected ? '●' : '○'}
             </Text>
-            <Text {...(isFocused ? { color: termcnColors.primary, bold: true } : {})}>
+            <Text
+              {...(isFocused
+                ? {
+                    color: termcnColors.selectionFg,
+                    backgroundColor: termcnColors.selectionBg,
+                    bold: true,
+                  }
+                : isSelected
+                  ? { color: termcnColors.primary, bold: true }
+                  : { bold: isSelected })}
+            >
               {option.label}
             </Text>
           </Box>

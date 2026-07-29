@@ -30,28 +30,52 @@
     "start": "pnpm run -s build && node ./bin/iskills.js",
     "test": "pnpm run -s build && node scripts/test-dev.mjs",
     "test:dev": "pnpm run -s build && node scripts/test-dev.mjs",
-    "test:fast": "pnpm run -s build && vitest run --project parallel",
-    "test:git": "pnpm run -s build && vitest run --project git",
-    "test:tty": "pnpm run -s build && vitest run --project tty",
+    "test:fast": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project parallel",
+    "test:git": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project git",
+    "test:tty": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project tty",
     "type-check": "tsc --noEmit",
-    "prepack": "pnpm run build"
+    "prepack": "pnpm run build",
+    "postinstall": "node ./bin/patch-react-reconciler.mjs || true"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
-    "ink": "^6.5.1",
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5",
     "jotai": "^2.20.2",
     "react": "^19.2.0",
     "string-width": "^8.2.2",
-    "terminal-link": "^5.0.0"
+    "terminal-link": "^5.0.0",
+    "react-reconciler": "^0.33.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@xterm/headless": "^6.0.0",
-    "ink-testing-library": "^4.0.0",
     "typescript": "^7.0.0",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "react-reconciler": {
+        "exports": {
+          ".": {
+            "require": "./index.js",
+            "default": "./index.js"
+          },
+          "./constants": {
+            "require": "./constants.js",
+            "default": "./constants.js"
+          },
+          "./constants.js": "./constants.js",
+          "./reflection": {
+            "require": "./reflection.js",
+            "default": "./reflection.js"
+          },
+          "./package.json": "./package.json"
+        }
+      }
+    }
   }
 }

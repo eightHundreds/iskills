@@ -1,4 +1,4 @@
-import { Box, Text } from 'ink';
+import { Box, Text } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import type { ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -60,20 +60,28 @@ export function Tabs({
     { isActive }
   );
 
+  const widthProp = width === undefined ? {} : { width };
+
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row" paddingX={1} width={width}>
+      <Box flexDirection="row" paddingX={1} {...widthProp}>
         <Box flexDirection="row" flexGrow={1}>
           {tabs.map((tab, index) => (
             <Box key={tab.key}>
               <Clickable onClick={() => onTabChange(tab.key)}>
                 <Text
-                  color={tab.key === activeTab ? termcnColors.primary : termcnColors.muted}
+                  color={
+                    focused && tab.key === activeTab
+                      ? termcnColors.selectionFg
+                      : tab.key === activeTab
+                        ? termcnColors.primary
+                        : termcnColors.muted
+                  }
+                  {...(focused && tab.key === activeTab
+                    ? { backgroundColor: termcnColors.selectionBg }
+                    : {})}
                   bold={tab.key === activeTab}
                   underline={tab.key === activeTab && !chip}
-                  // Inverse is the keyboard-focus affordance, not content selection.
-                  // Chip mode still uses primary/bold for the active content tab.
-                  inverse={focused && tab.key === activeTab}
                 >
                   {tab.label}
                 </Text>
@@ -85,11 +93,11 @@ export function Tabs({
         {trailing}
       </Box>
       {bordered ? (
-        <Box borderStyle="round" borderColor={termcnColors.border} paddingX={1} width={width}>
+        <Box borderStyle="round" borderColor={termcnColors.border} paddingX={1} {...widthProp}>
           {tabs.find((tab) => tab.key === activeTab)?.content}
         </Box>
       ) : (
-        <Box flexDirection="column" paddingX={1} width={width}>
+        <Box flexDirection="column" paddingX={1} {...widthProp}>
           {tabs.find((tab) => tab.key === activeTab)?.content}
         </Box>
       )}

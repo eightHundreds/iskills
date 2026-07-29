@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useAtom, useAtomValue, useStore } from 'jotai';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
@@ -201,7 +201,14 @@ function SkillPane({
       <Text
         key={`${row.group}:${skill.path}:${index}`}
         wrap="truncate-end"
-        {...(current ? { color: termcnColors.primary } : {})}
+        // Active: primary. Idle skill name: omit color → terminal default fg.
+        {...(current
+          ? {
+              color: termcnColors.selectionFg,
+              backgroundColor: termcnColors.selectionBg,
+              bold: true,
+            }
+          : {})}
       >
         {nameLine}
       </Text>
@@ -260,18 +267,33 @@ function masterDetailColumnText(
   options: {
     color?: string;
     bold?: boolean;
-    inverse?: boolean;
+    /** Focused cursor row — explicit selection colors (never ANSI inverse). */
+    selected?: boolean;
     muted?: boolean;
   } = {}
 ): ReactNode {
   const padded = padColumns(sliceColumns(line, 0, width), width);
+  if (options.selected) {
+    return (
+      <Text
+        wrap="truncate-end"
+        color={termcnColors.selectionFg}
+        backgroundColor={termcnColors.selectionBg}
+        bold
+      >
+        {padded}
+      </Text>
+    );
+  }
   return (
     <Text
       wrap="truncate-end"
-      {...(options.color ? { color: options.color } : {})}
+      {...(options.muted
+        ? { color: termcnColors.muted }
+        : options.color
+          ? { color: options.color }
+          : {})}
       {...(options.bold ? { bold: true } : {})}
-      {...(options.inverse ? { inverse: true } : {})}
-      {...(options.muted ? { color: termcnColors.muted } : {})}
     >
       {padded}
     </Text>
@@ -353,16 +375,19 @@ function MasterDetailBody({
             {masterDetailColumnText(tagLines[index] ?? '', tagWidth, {
               ...(tagActive && tagLines[index]?.startsWith('›')
                 ? collectionHome
-                  ? { inverse: true }
-                  : { color: termcnColors.primary }
+                  ? { selected: true }
+                  : { color: termcnColors.primary, bold: true }
                 : {}),
             })}
             {divider ? <Text color={termcnColors.border}>{divider}</Text> : null}
           </Box>
           <Box width={listColumnWidth} flexDirection="row">
             {masterDetailColumnText(listLines[index] ?? '', listWidth, {
+              // Skill name rows: no forced color → terminal default fg (works light/dark).
+              // Description rows (odd index in paired layout): muted gray.
+              // Focus / multi-select: selection tokens or primary — never light-on-light.
               ...(listActiveLineIndexes?.has(index)
-                ? { inverse: true }
+                ? { selected: true }
                 : listSelectedLineIndexes?.has(index)
                   ? { color: termcnColors.primary, bold: true }
                   : listActive && listLines[index]?.startsWith('›')

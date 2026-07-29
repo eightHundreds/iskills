@@ -2,7 +2,7 @@
  * Browser TUI package entry: launch + phase shell.
  * Screen bodies live in `browser.tsx` (list) and related modules.
  */
-import { Text, useApp } from 'ink';
+import { Text, useApp } from '../tui/index.js';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
@@ -14,11 +14,7 @@ import {
 import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../shell/terminal.js';
 import { AppShell } from '../shell/app-shell.js';
-import {
-  enterAlternateScreen,
-  leaveAlternateScreen,
-  startApp,
-} from '../shell/run.js';
+import { startApp } from '../shell/run.js';
 import { BrowserShellFooter } from './footer.js';
 import {
   activeAbortAtom,
@@ -254,28 +250,27 @@ export async function runBrowserApp(
   const initialData = await loadBrowserData();
   appStore.set(browserDataAtom, initialData);
 
-  enterAlternateScreen();
-
-  let app!: ReturnType<typeof startApp>;
+  let app!: Awaited<ReturnType<typeof startApp>>;
 
   const lifecycle: BrowserAppLifecycle = {
     suspendForSubprocess: async (task) => {
       app.dispose();
-      leaveAlternateScreen();
       try {
         await task();
       } finally {
-        enterAlternateScreen();
-        app = startApp(browserRoot(appStore, lifecycle));
+        app = await startApp(browserRoot(appStore, lifecycle), {
+          alternateScreen: true,
+        });
       }
     },
   };
 
-  app = startApp(browserRoot(appStore, lifecycle));
+  app = await startApp(browserRoot(appStore, lifecycle), {
+    alternateScreen: true,
+  });
   try {
     await app.waitUntilExit();
   } finally {
     app.dispose();
-    leaveAlternateScreen();
   }
 }

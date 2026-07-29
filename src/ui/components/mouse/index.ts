@@ -6,4 +6,6 @@ export {
   PointerSurface,
   POINTER_SURFACE_BASE,
   useOnClick,
+  useMouseRegistry,
+  usePointerSurfaceId,
 } from './provider.js';

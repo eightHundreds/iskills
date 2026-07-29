@@ -1,4 +1,4 @@
-import { useStdout } from 'ink';
+import { useStdout } from '../tui/index.js';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import type { CollectedSkill, Skill } from '../../domain/types.js';

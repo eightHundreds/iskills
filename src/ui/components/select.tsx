@@ -1,56 +1,16 @@
-import { Box, Text, useStdout } from 'ink';
-import { useInput } from './use-input.js';
+/**
+ * Product Select — OpenTUI `<select>` with iskills Option&lt;T&gt; contract.
+ * Esc cancel + optional 1–9 shortcuts stay product-side.
+ */
 import { useMemo, type ReactNode } from 'react';
+import { Box, Text, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
-import { isReturn } from './text.js';
 import {
   resolveOptionValue,
-  toInkOptions,
-  useScrollWindow,
   visibleOptionCount,
-  type InternalOption,
   type Option,
 } from './options.js';
-
-function OptionSelect({
-  options,
-  visibleCount,
-  onChange,
-  onCancel,
-}: {
-  options: InternalOption[];
-  visibleCount: number;
-  onChange: (value: string) => void;
-  onCancel?: () => void;
-}): ReactNode {
-  const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
-    options.length,
-    visibleCount
-  );
-  useInput((input, key) => {
-    if (key.escape) return onCancel?.();
-    if (key.downArrow) return focusNext();
-    if (key.upArrow) return focusPrevious();
-    if (isReturn(input, key.return)) {
-      const option = options[focus];
-      if (option) onChange(option.value);
-    }
-  });
-  const visible = options.slice(from, from + count);
-  return (
-    <Box flexDirection="column">
-      {visible.map((option, index) => {
-        const isFocused = from + index === focus;
-        return (
-          <Box key={option.value} gap={1} paddingLeft={isFocused ? 0 : 2}>
-            {isFocused && <Text color={termcnColors.primary}>❯</Text>}
-            <Text {...(isFocused ? { color: termcnColors.primary } : {})}>{option.label}</Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
-}
+import { useInput } from './use-input.js';
 
 export function Select<T>({
   label,
@@ -66,27 +26,65 @@ export function Select<T>({
   numbered?: boolean;
 }): ReactNode {
   const { stdout } = useStdout();
-  const inkOptions = useMemo(() => toInkOptions(options, numbered), [numbered, options]);
+  const rows = stdout.rows ?? 24;
+  const visible = visibleOptionCount(rows, label);
+  const height = Math.max(3, Math.min(visible, Math.max(1, options.length)));
+
+  const selectOptions = useMemo(
+    () =>
+      options.map((option, index) => ({
+        name: numbered ? `${index + 1}. ${option.label}` : option.label,
+        description: option.hint ?? '',
+        value: String(index),
+      })),
+    [numbered, options]
+  );
+
+  const showDescription = options.some((option) => Boolean(option.hint));
+
   useInput((input, key) => {
-    if (key.escape) return onCancel?.();
+    if (key.escape) {
+      onCancel?.();
+      return;
+    }
     if (!numbered || !/^[1-9]$/.test(input)) return;
     const option = options[Number(input) - 1];
     if (option) onSubmit(option.value);
   });
+
   return (
     <Box flexDirection="column">
-      {label && <Text bold>{label}</Text>}
-      <OptionSelect
-        visibleCount={visibleOptionCount(stdout.rows ?? 24, label)}
-        options={inkOptions}
-        onChange={(value) => {
-          const resolved = resolveOptionValue(options, value);
-          if (resolved !== undefined) onSubmit(resolved);
-        }}
-        {...(onCancel ? { onCancel } : {})}
-      />
+      {label ? <Text bold>{label}</Text> : null}
+      <Box height={height} flexDirection="column" width="100%">
+        <select
+          focused
+          options={selectOptions}
+          showDescription={showDescription}
+          showScrollIndicator={options.length > height}
+          showSelectionIndicator
+          selectedTextColor={termcnColors.selectionFg}
+          selectedBackgroundColor={termcnColors.selectionBg}
+          // Avoid OpenTUI select default (often near-white text on dark chip) looking
+          // wrong next to a light terminal; use brand selection for focus only and
+          // mid-gray for idle rows so both light/dark canvases stay readable.
+          textColor={termcnColors.muted}
+          focusedTextColor={termcnColors.muted}
+          descriptionColor={termcnColors.muted}
+          selectedDescriptionColor={termcnColors.selectionFg}
+          backgroundColor="transparent"
+          focusedBackgroundColor="transparent"
+          height={height}
+          flexGrow={1}
+          onSelect={(_index, option) => {
+            if (!option) return;
+            const resolved = resolveOptionValue(options, String(option.value));
+            if (resolved !== undefined) onSubmit(resolved);
+          }}
+        />
+      </Box>
       <Text color={termcnColors.muted}>
-        {numbered ? `1–${Math.min(options.length, 9)} 快选 · ` : ''}↑/↓ 选择 · Enter 确认 · Esc 取消
+        {numbered ? `1–${Math.min(options.length, 9)} 快选 · ` : ''}
+        ↑/↓ 选择 · Enter 确认 · Esc 取消
       </Text>
     </Box>
   );

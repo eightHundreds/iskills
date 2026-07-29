@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
@@ -52,6 +52,8 @@ function formatItemLine(label: string, keys: string, width: number): string {
 /**
  * Keyboard shortcuts help — list/tree style:
  * ◆ / › groups, action left, keys right-aligned, expand/collapse, height-capped scroll.
+ *
+ * Solid panel fill follows terminal light/dark themeMode (neutral, not purple wash).
  */
 export function ShortcutHelpPanel({
   onClose,
@@ -63,6 +65,7 @@ export function ShortcutHelpPanel({
   maxBodyRows?: number;
 }): ReactNode {
   const { stdout } = useStdout();
+  const chrome = useModalChrome();
   const sections = useMemo(() => shortcutHelpSections(), []);
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(sections.slice(0, 2).map((section) => section.id))
@@ -133,10 +136,15 @@ export function ShortcutHelpPanel({
   const titleWidth = textWidth(title);
   const top = `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`;
   const bottom = `╰${'─'.repeat(Math.max(0, width - 2))}╯`;
+  const panelBg = chrome.surface;
+  const bodyFg = chrome.body;
 
+  // Manual ╭│╰ frame only — do not also set borderStyle (double border).
   return (
-    <Box flexDirection="column">
-      <Text color={termcnColors.primary}>{top}</Text>
+    <Box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
+      <Text color={termcnColors.primary} backgroundColor={panelBg} bold>
+        {top}
+      </Text>
       {painted.map((row, index) => {
         const absolute = start + index;
         const selected = absolute === clampedCursor;
@@ -148,18 +156,35 @@ export function ShortcutHelpPanel({
             inner
           );
           return (
-            <Box key={`s:${row.section.id}:${absolute}`} flexDirection="row">
-              <Text color={termcnColors.primary}>│ </Text>
+            <Box
+              key={`s:${row.section.id}:${absolute}`}
+              flexDirection="row"
+              backgroundColor={panelBg}
+            >
+              <Text color={termcnColors.primary} backgroundColor={panelBg}>
+                │{' '}
+              </Text>
               {selected ? (
-                <Text inverse bold={false}>
+                <Text
+                  bold
+                  color={termcnColors.selectionFg}
+                  backgroundColor={termcnColors.selectionBg}
+                >
                   {text}
                 </Text>
               ) : (
-                <Text bold={row.expanded} color={termcnColors.primary}>
+                <Text
+                  bold={row.expanded}
+                  color={termcnColors.primary}
+                  backgroundColor={panelBg}
+                >
                   {text}
                 </Text>
               )}
-              <Text color={termcnColors.primary}> │</Text>
+              <Text color={termcnColors.primary} backgroundColor={panelBg}>
+                {' '}
+                │
+              </Text>
             </Box>
           );
         }
@@ -168,15 +193,30 @@ export function ShortcutHelpPanel({
           <Box
             key={`i:${row.sectionId}:${row.keys}:${absolute}`}
             flexDirection="row"
+            backgroundColor={panelBg}
           >
-            <Text color={termcnColors.primary}>│ </Text>
-            <Text inverse={selected}>{line}</Text>
-            <Text color={termcnColors.primary}> │</Text>
+            <Text color={termcnColors.primary} backgroundColor={panelBg}>
+              │{' '}
+            </Text>
+            <Text
+              color={selected ? termcnColors.selectionFg : bodyFg}
+              backgroundColor={
+                selected ? termcnColors.selectionBg : panelBg
+              }
+            >
+              {line}
+            </Text>
+            <Text color={termcnColors.primary} backgroundColor={panelBg}>
+              {' '}
+              │
+            </Text>
           </Box>
         );
       })}
-      <Text color={termcnColors.primary}>{bottom}</Text>
-      <Text color={termcnColors.muted}>
+      <Text color={termcnColors.primary} backgroundColor={panelBg}>
+        {bottom}
+      </Text>
+      <Text color={chrome.muted} backgroundColor={panelBg}>
         {maxOffset > 0
           ? `↑/↓ 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭  ${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}`
           : '↑/↓ 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭'}
