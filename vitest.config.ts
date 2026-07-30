@@ -71,11 +71,13 @@ export default defineConfig({
       {
         test: {
           name: 'tty',
+          // PTY sessions are process/CPU heavy; serialize to avoid CI flakes
+          // (OpenTUI paints + multi-session key timing races).
           include: ['test/tty.test.ts'],
           fileParallelism: false,
-          maxConcurrency: 4,
+          maxConcurrency: 1,
           sequence: { groupOrder: 2 },
-          testTimeout: 30_000,
+          testTimeout: 60_000,
         },
       },
     ],
