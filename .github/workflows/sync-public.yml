@@ -7,8 +7,9 @@ name: Sync public
 #   - AGENTS.md
 #   - CONTEXT.md
 #
-# Requires secret PUBLIC_REPO_TOKEN: classic PAT (repo) or fine-grained
-# token with Contents: Read and write on eightHundreds/iskills.
+# Auth (either secret works):
+#   - PUBLIC_REPO_SSH_KEY: write deploy key private key for eightHundreds/iskills
+#   - PUBLIC_REPO_TOKEN: PAT with Contents write on eightHundreds/iskills
 on:
   push:
     branches: [main]
@@ -31,17 +32,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require PUBLIC_REPO_TOKEN
+      - name: Require sync credentials
         env:
+          PUBLIC_REPO_SSH_KEY: ${{ secrets.PUBLIC_REPO_SSH_KEY }}
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
-          if [ -z "${PUBLIC_REPO_TOKEN:-}" ]; then
-            echo '::error::Missing secret PUBLIC_REPO_TOKEN (write access to eightHundreds/iskills)'
+          if [ -z "${PUBLIC_REPO_SSH_KEY:-}" ] && [ -z "${PUBLIC_REPO_TOKEN:-}" ]; then
+            echo '::error::Set PUBLIC_REPO_SSH_KEY (deploy key) or PUBLIC_REPO_TOKEN (PAT) on iskills-private'
             exit 1
           fi
 
       - name: Build filtered tree and push to public
         env:
+          PUBLIC_REPO_SSH_KEY: ${{ secrets.PUBLIC_REPO_SSH_KEY }}
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
           set -euo pipefail
@@ -57,8 +60,6 @@ jobs:
           FILTERED=$(mktemp -d)
           PUBLIC=$(mktemp -d)
 
-          # Allowlist-style: copy all tracked-ish workspace files, then drop private paths.
-          # Exclude build artifacts and VCS; private paths removed after rsync.
           rsync -a \
             --exclude '.git/' \
             --exclude 'node_modules/' \
@@ -74,15 +75,22 @@ jobs:
             "${FILTERED}/AGENTS.md" \
             "${FILTERED}/CONTEXT.md"
 
-          git clone --depth 1 \
-            "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/eightHundreds/iskills.git" \
-            "${PUBLIC}"
+          if [ -n "${PUBLIC_REPO_SSH_KEY:-}" ]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "$PUBLIC_REPO_SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+            CLONE_URL="git@github.com:eightHundreds/iskills.git"
+          else
+            CLONE_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/eightHundreds/iskills.git"
+          fi
+
+          git clone --depth 1 "${CLONE_URL}" "${PUBLIC}"
 
           cd "${PUBLIC}"
           git config user.name 'iskills-sync[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Replace worktree (keep .git only).
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           rsync -a "${FILTERED}/" .
 
@@ -96,7 +104,6 @@ jobs:
           git push origin HEAD:main
 
           if [ "${IS_TAG}" = true ]; then
-            # Point public tag at the filtered commit (rewrites prior same-name tag if any).
             git tag -f "${REF_NAME}"
             git push origin "refs/tags/${REF_NAME}" --force
             echo "Pushed tag ${REF_NAME} → public (triggers Release on iskills)"
