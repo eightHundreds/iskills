@@ -124,7 +124,6 @@ pnpm install --frozen-lockfile
 pnpm run build
 pnpm start -- --help
 pnpm run type-check
-pnpm test
 pnpm pack --dry-run
 ```
 
@@ -139,7 +138,7 @@ pnpm pack --dry-run
 
 ## 贡献
 
-欢迎 Issue 与 Pull Request。改动请对齐 `docs/` 下的交互与领域规范，提交前运行 `pnpm test`。
+测试与内部文档不在本公开仓库中。**欢迎提 Issue**（缺陷、想法、问题均可）。
 
 ## 许可
 

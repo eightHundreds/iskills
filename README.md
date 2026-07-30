@@ -124,7 +124,6 @@ pnpm install --frozen-lockfile
 pnpm run build
 pnpm start -- --help
 pnpm run type-check
-pnpm test
 pnpm pack --dry-run
 ```
 
@@ -139,7 +138,7 @@ Stack: TypeScript (strict), OpenTUI, React. The published package ships compiled
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep changes aligned with the interaction and domain specs under `docs/`, and run `pnpm test` before submitting.
+Tests and internal documentation live outside this public tree. **Issues are welcome** — bugs, ideas, and questions.
 
 ## License
 
