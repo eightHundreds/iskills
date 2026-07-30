@@ -79,6 +79,12 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
       ...helpQuit(),
     ];
   }
+  if (browse.focus === 'detail') {
+    const items: FooterItem[] = [{ key: '↑↓', label: '移动' }];
+    if (browse.canEditDetailField) items.push({ key: 'Enter', label: '编辑' });
+    items.push({ key: '←', label: '列表' }, ...filterHelp(), ...helpQuit());
+    return items;
+  }
 
   // List: lead with selection so next-step is obvious on first glance.
   const items: FooterItem[] = [{ key: 'Space', label: '选中' }];
@@ -86,6 +92,7 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.enterAction === 'add') items.push({ key: 'Enter', label: '添加' });
   else if (browse.enterAction === 'detail') items.push({ key: 'Enter', label: '详情' });
   else if (browse.enterAction === 'view') items.push({ key: 'Enter', label: '查看' });
+  if (browse.canFocusDetail) items.push({ key: '→', label: '详情' });
   if (browse.canImport) items.push({ key: 'i', label: '收藏' });
   if (browse.canMaterialize) items.push({ key: 'm', label: '更多' });
   if (browse.canTag) items.push({ key: 't', label: '标签' });

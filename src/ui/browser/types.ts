@@ -5,7 +5,10 @@
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 
 export type BrowserTab = 'project' | 'collection' | 'global';
-export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list';
+/** tags/list/detail = 3-column body; detail = right peek field focus. */
+export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
+/** Focusable fields in the master-detail right column (collection only). */
+export type DetailFieldId = 'tags' | 'note';
 
 export interface BrowserState {
   tab: BrowserTab;
@@ -29,6 +32,8 @@ export type BrowserResult =
   | { type: 'quit' }
   | { type: 'sync' }
   | { type: 'tags'; skills: Skill[] }
+  | { type: 'editTags'; skill: Skill }
+  | { type: 'editNote'; skill: Skill }
   | { type: 'update'; skills: CollectedSkill[] }
   | { type: 'add'; skills: CollectedSkill[] }
   | { type: 'removeCollection'; skills: CollectedSkill[] }

@@ -2,7 +2,7 @@
  * Pure view formatting + focus ladder (no React TUI components).
  * Column/row strings, filters, modal copy, detail text model.
  */
-import type { BrowserFocus, BrowserTab, SkillGroup } from './types.js';
+import type { BrowserFocus, BrowserTab, DetailFieldId, SkillGroup } from './types.js';
 import { matchesSkill } from '../../domain/skill-query.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
@@ -30,6 +30,11 @@ export function focusAfterUpFromTags(hasAgentTabs: boolean): BrowserFocus {
 
 export function focusAfterDownFromAgents(useMasterDetail: boolean): BrowserFocus {
   return useMasterDetail ? 'tags' : 'list';
+}
+
+/** Editable fields in the right peek column (collection only). */
+export function detailEditableFields(collection: boolean): DetailFieldId[] {
+  return collection ? ['tags', 'note'] : [];
 }
 
 export function nextMainTab(tab: BrowserTab, direction: -1 | 1): BrowserTab | undefined {
@@ -529,6 +534,8 @@ export interface CollectionDetailRow {
   /** Mute the value (or whole line when no label). Labels are always muted. */
   muted?: boolean;
   primary?: boolean;
+  /** Marks a focusable field row in the right column (all wrapped lines share id). */
+  field?: DetailFieldId;
 }
 
 export const DETAIL_LABEL_WIDTH = 6;
@@ -539,7 +546,7 @@ export function peekFieldRows(
   value: string,
   width: number,
   maxLines: number,
-  options: { mutedValue?: boolean } = {}
+  options: { mutedValue?: boolean; field?: DetailFieldId } = {}
 ): CollectionDetailRow[] {
   const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
   const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
@@ -547,6 +554,7 @@ export function peekFieldRows(
     text: line,
     label: index === 0 ? label : '',
     ...(options.mutedValue ? { muted: true } : {}),
+    ...(options.field ? { field: options.field } : {}),
   }));
 }
 
@@ -587,8 +595,8 @@ export function browseDetailRows(
     rows.push(
       ...peekFieldRows('来源', collectionSourceLabel(collected), width, 1),
       ...peekFieldRows('版本', version, width, 1),
-      ...peekFieldRows('标签', triggerTags, width, 2),
-      ...peekFieldRows('备注', note, width, 2)
+      ...peekFieldRows('标签', triggerTags, width, 2, { field: 'tags' }),
+      ...peekFieldRows('备注', note, width, 2, { field: 'note' })
     );
   } else {
     rows.push(...peekFieldRows('位置', skill.path, width, 2));

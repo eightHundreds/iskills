@@ -25,7 +25,7 @@ export type FooterView =
 
 export type FooterEnterAction = 'add' | 'detail' | 'view' | null;
 
-export type FooterBrowseFocus = 'tabs' | 'agents' | 'tags' | 'list';
+export type FooterBrowseFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
 
 export interface FooterBrowseCapabilities {
   focus: FooterBrowseFocus;
@@ -39,6 +39,10 @@ export interface FooterBrowseCapabilities {
   /** When updateCount > 0 and selection-based, show (N). */
   updateIsSelection: boolean;
   selectionCount: number;
+  /** Master-detail: list can move → into the right detail column. */
+  canFocusDetail?: boolean;
+  /** Detail column has an editable field under the cursor (Enter 编辑). */
+  canEditDetailField?: boolean;
 }
 
 export interface FooterWorkingState {

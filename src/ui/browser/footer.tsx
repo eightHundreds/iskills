@@ -216,8 +216,20 @@ function computeBrowseCapabilities(
   const projectRows = groupedRows(projectGroup?.skills ?? [], query);
   const collectionRows = groupedRows(data.collection, query);
   const globalRows = flatRows(globalGroup?.skills ?? [], query);
-  const rows =
-    tab === 'project' ? projectRows : tab === 'global' ? globalRows : collectionRows;
+  // Master-detail skill column is flat (no group headers), matching Browser listRows.
+  const tabSkills =
+    tab === 'collection'
+      ? data.collection
+      : tab === 'project'
+        ? projectGroup?.skills ?? []
+        : globalGroup?.skills ?? [];
+  const rows = masterDetail
+    ? flatRows(tabSkills, query)
+    : tab === 'project'
+      ? projectRows
+      : tab === 'global'
+        ? globalRows
+        : collectionRows;
   const currentRow = rows[navigation.cursor];
   const currentSkill =
     currentRow?.type === 'skill' ? currentRow.skill : undefined;
@@ -287,6 +299,11 @@ function computeBrowseCapabilities(
     }
   }
 
+  const canFocusDetail =
+    focus === 'list' && masterDetail && currentRow?.type === 'skill';
+  // Collection only: tags + note are editable from the right column.
+  const canEditDetailField = focus === 'detail' && tab === 'collection' && Boolean(currentSkill);
+
   return {
     focus: focus as FooterBrowseCapabilities['focus'],
     canDelete,
@@ -300,5 +317,7 @@ function computeBrowseCapabilities(
     updateCount,
     updateIsSelection,
     selectionCount: focus === 'list' ? selectionCount : 0,
+    canFocusDetail,
+    canEditDetailField,
   };
 }

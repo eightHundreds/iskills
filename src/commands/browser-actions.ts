@@ -145,6 +145,16 @@ export async function handleBrowserResult(
     case 'tags':
       await handleTags(host, result.skills);
       break;
+    case 'editTags':
+    case 'editNote': {
+      const metadata = await readMetadata(result.skill.name);
+      await handleDetailAction(
+        host,
+        { skill: result.skill, metadata },
+        result.type === 'editTags' ? 'tags' : 'note'
+      );
+      break;
+    }
     case 'add':
       await handleAdd(host, result.skills);
       break;
@@ -372,7 +382,11 @@ export async function handleDetailAction(
 ): Promise<void> {
   const { skill, metadata } = context;
   if (action === 'note') {
-    const note = await promptText('编辑备注（Enter 保存，Esc 取消）', metadata.note);
+    const note = await promptText(
+      '备注（Enter 保存，Esc 取消）',
+      metadata.note,
+      '编辑备注'
+    );
     if (note === undefined) return;
     metadata.note = note;
     await writeMetadata(metadata);

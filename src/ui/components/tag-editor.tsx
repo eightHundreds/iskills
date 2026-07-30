@@ -8,13 +8,11 @@ import { isReturn } from './text.js';
 export function TagEditor({
   tags,
   initialValues,
-  title = '编辑标签',
   onSubmit,
   onCancel,
 }: {
   tags: string[];
   initialValues: string[];
-  title?: string;
   onSubmit: (tags: string[]) => void;
   onCancel?: () => void;
 }): ReactNode {
@@ -23,7 +21,8 @@ export function TagEditor({
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialValues));
   const [focus, setFocus] = useState<'list' | 'input'>(tags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
-  const height = Math.max(3, (stdout.rows ?? 24) - 13);
+  // Compact list for modal overlay: leave room for title, input, help, shell footer.
+  const height = Math.max(3, Math.min(8, (stdout.rows ?? 24) - 16));
   const offset = Math.max(0, Math.min(cursor - Math.floor(height / 2), tags.length - height));
   const visible = tags.slice(offset, offset + height);
   const save = (input: string): void => onSubmit([
@@ -59,7 +58,7 @@ export function TagEditor({
   return (
     <box flexDirection="column">
       <Text bold color={chrome.body}>
-        {title} · 已选 {selected.size}
+        已选 {selected.size}
       </Text>
       <Text bold color={chrome.body}>
         已有标签

@@ -22,11 +22,13 @@ import type { Choice, CollectedSkill, Skill } from '../../domain/types.js';
 /** Single-line text — absolute modal with theme-aware solid panel. */
 export function promptText(
   label: string,
-  initialValue = ''
+  initialValue = '',
+  /** Optional top-left border title (same chrome as tag editor). */
+  title?: string
 ): Promise<string | undefined> {
   return Modal.open<string | undefined>({
     content: (close) => (
-      <ModalPanel>
+      <ModalPanel {...(title !== undefined ? { title: ` ${title} ` } : {})}>
         <TextInput
           key={label}
           label={label}
@@ -39,22 +41,23 @@ export function promptText(
   });
 }
 
-/** Tag editor — full-page layer. */
+/** Tag editor — absolute modal over the current screen (browser stays visible). */
 export function promptTags(
   tags: string[],
   initialValues: string[],
   title: string
 ): Promise<string[] | undefined> {
-  return Layer.open<string[] | undefined>({
+  return Modal.open<string[] | undefined>({
     content: (close) => (
-      <TagEditor
-        key={title}
-        title={title}
-        tags={tags}
-        initialValues={initialValues}
-        onSubmit={(value) => close(value)}
-        onCancel={() => close(undefined)}
-      />
+      <ModalPanel title={` ${title} `}>
+        <TagEditor
+          key={title}
+          tags={tags}
+          initialValues={initialValues}
+          onSubmit={(value) => close(value)}
+          onCancel={() => close(undefined)}
+        />
+      </ModalPanel>
     ),
   });
 }

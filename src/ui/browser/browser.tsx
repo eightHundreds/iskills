@@ -39,6 +39,7 @@ import {
   collectionCategoryLines,
   collectionListColumnLines,
   DETAIL_LABEL_WIDTH,
+  detailEditableFields,
   flatRows,
   focusAfterDownFromAgents,
   focusAfterDownFromTabs,
@@ -60,6 +61,7 @@ import {
   type SkillRow,
   visibleAgentGroups,
 } from './format.js';
+import type { DetailFieldId } from './types.js';
 import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { FramedPanel } from '../components/framed-panel.js';
 import {
@@ -365,10 +367,34 @@ function masterDetailColumnText(
 function DetailColumnRow({
   row,
   width,
+  selected = false,
 }: {
   row: CollectionDetailRow;
   width: number;
+  /** Field under detail-column keyboard focus. */
+  selected?: boolean;
 }): ReactNode {
+  if (selected) {
+    return (
+      <Text
+        wrap="truncate-end"
+        color={termcnColors.selectionFg}
+        backgroundColor={termcnColors.selectionBg}
+        bold
+      >
+        {padColumns(
+          sliceColumns(
+            row.label !== undefined
+              ? `${padColumns(row.label, DETAIL_LABEL_WIDTH)}${row.text}`
+              : row.text,
+            0,
+            width
+          ),
+          width
+        )}
+      </Text>
+    );
+  }
   if (row.label !== undefined) {
     const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
     return (
@@ -405,12 +431,15 @@ function MasterDetailBody({
   peekWidth,
   tagActive,
   listActive,
+  detailActive = false,
+  detailActiveField,
   collectionHome = false,
   listActiveLineIndexes,
   listSelectedLineIndexes,
   detailRows,
   onTagLineClick,
   onListLineClick,
+  onDetailLineClick,
   onListScroll,
 }: {
   tagLines: string[];
@@ -421,12 +450,15 @@ function MasterDetailBody({
   peekWidth: number;
   tagActive: boolean;
   listActive: boolean;
+  detailActive?: boolean;
+  detailActiveField?: DetailFieldId;
   collectionHome?: boolean;
   listActiveLineIndexes?: Set<number>;
   listSelectedLineIndexes?: Set<number>;
   detailRows?: CollectionDetailRow[];
   onTagLineClick?: (visibleIndex: number) => void;
   onListLineClick?: (visibleIndex: number) => void;
+  onDetailLineClick?: (visibleIndex: number) => void;
   onListScroll?: (delta: number) => void;
 }): ReactNode {
   const rows = Math.max(tagLines.length, listLines.length, peekLines.length, detailRows?.length ?? 0);
@@ -508,7 +540,25 @@ function MasterDetailBody({
               onMouseScroll={swallowScroll}
             >
               {detailRows?.[index] ? (
-                <DetailColumnRow row={detailRows[index]!} width={peekWidth} />
+                (() => {
+                  const detailRow = detailRows[index]!;
+                  const fieldSelected =
+                    detailActive &&
+                    detailRow.field !== undefined &&
+                    detailRow.field === detailActiveField;
+                  const cell = (
+                    <DetailColumnRow
+                      row={detailRow}
+                      width={peekWidth}
+                      selected={fieldSelected}
+                    />
+                  );
+                  return onDetailLineClick && detailRow.field ? (
+                    <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
+                  ) : (
+                    cell
+                  );
+                })()
               ) : (
                 <Text
                   wrap="truncate-end"
@@ -665,6 +715,10 @@ export function Browser({
   const [tagCursor, setTagCursor] = useState(0);
   const tagCursorRef = useRef(tagCursor);
   tagCursorRef.current = tagCursor;
+  /** Index into detailEditableFields(collection) while focus === 'detail'. */
+  const [detailFieldIndex, setDetailFieldIndex] = useState(0);
+  const detailFieldIndexRef = useRef(detailFieldIndex);
+  detailFieldIndexRef.current = detailFieldIndex;
   const masterDetailSkills = useMemo(
     () => skillsForTagFilter(tabSkills, tagFilter),
     [tabSkills, tagFilter]
@@ -781,10 +835,25 @@ export function Browser({
       )
     : 0;
   const peekSkill =
-    focus === 'list' && currentRow?.type === 'skill' ? currentRow.skill : undefined;
+    (focus === 'list' || focus === 'detail') && currentRow?.type === 'skill'
+      ? currentRow.skill
+      : undefined;
+  const detailFields = detailEditableFields(tab === 'collection');
+  const activeDetailField =
+    focus === 'detail' && detailFields.length
+      ? detailFields[Math.max(0, Math.min(detailFieldIndex, detailFields.length - 1))]
+      : undefined;
   useEffect(() => {
-    if (focus === 'tags' && !useMasterDetail) setFocus('list');
+    if ((focus === 'detail' || focus === 'tags') && !useMasterDetail) setFocus('list');
   }, [focus, useMasterDetail, setFocus]);
+  useEffect(() => {
+    if (focus === 'detail' && currentRow?.type !== 'skill') setFocus('list');
+  }, [focus, currentRow, setFocus]);
+  useEffect(() => {
+    if (detailFieldIndex >= detailFields.length && detailFields.length > 0) {
+      setDetailFieldIndex(detailFields.length - 1);
+    }
+  }, [detailFieldIndex, detailFields.length]);
   useInput(
     (input, key) => {
       const live = navigationRef.current;
@@ -917,6 +986,34 @@ export function Browser({
         }
         return;
       }
+      // Right column: move among editable fields (标签 / 备注); Enter opens editor.
+      if (liveFocus === 'detail' || focus === 'detail') {
+        const detailRow = listRows[cursorRef.current];
+        const skill = detailRow?.type === 'skill' ? detailRow.skill : undefined;
+        const fields = detailEditableFields(tab === 'collection');
+        if (key.leftArrow) return setFocus('list');
+        if (key.upArrow) {
+          if (!fields.length) return;
+          setDetailFieldIndex((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.downArrow) {
+          if (!fields.length) return;
+          setDetailFieldIndex((index) => Math.min(fields.length - 1, index + 1));
+          return;
+        }
+        if (key.rightArrow) return;
+        const field = fields[detailFieldIndexRef.current] ?? fields[0];
+        if (skill && field && (key.return || input.includes('\r') || input.includes('\n'))) {
+          if (field === 'tags') return finish({ type: 'editTags', skill });
+          if (field === 'note') return finish({ type: 'editNote', skill });
+        }
+        if (skill && tab === 'collection') {
+          if (input === 't') return finish({ type: 'editTags', skill });
+          if (input === 'n') return finish({ type: 'editNote', skill });
+        }
+        return;
+      }
       if ((navigationRef.current?.focus ?? focus) !== 'list') return;
       const row = listRows[cursorRef.current];
       if (input === 'm' && canOpenActions) {
@@ -1037,11 +1134,17 @@ export function Browser({
           return next;
         });
       }
-      // 3-column layout peeks detail in the right pane — neither → nor Enter
-      // open fullscreen there (narrow list keeps → / Enter as before).
-      if (key.rightArrow && row?.type === 'skill' && !useBrowseHome) {
-        if (tab === 'collection') return openDetail(row.skill, true);
-        if (row.skill.fromCollection) return openDetail(row.skill, true);
+      // Wide 3-column: → moves focus into the right detail column (editable fields).
+      // Narrow layout keeps → as fullscreen detail for collection / collected skills.
+      if (key.rightArrow && row?.type === 'skill') {
+        if (useMasterDetail) {
+          setDetailFieldIndex(0);
+          return setFocus('detail');
+        }
+        if (!useBrowseHome) {
+          if (tab === 'collection') return openDetail(row.skill, true);
+          if (row.skill.fromCollection) return openDetail(row.skill, true);
+        }
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {
         if (tab === 'collection' && selectedCollection.length) {
@@ -1186,6 +1289,8 @@ export function Browser({
             peekWidth={peekWidth}
             tagActive={focus === 'tags'}
             listActive={focus === 'list'}
+            detailActive={focus === 'detail'}
+            {...(activeDetailField ? { detailActiveField: activeDetailField } : {})}
             collectionHome
             {...(listActiveLineIndexes ? { listActiveLineIndexes } : {})}
             {...(listSelectedLineIndexes ? { listSelectedLineIndexes } : {})}
@@ -1219,6 +1324,14 @@ export function Browser({
                 }
                 return next;
               });
+            }}
+            onDetailLineClick={(visibleIndex) => {
+              const row = detailRows[visibleIndex];
+              if (!row?.field) return;
+              const index = detailFields.indexOf(row.field);
+              if (index < 0) return;
+              setDetailFieldIndex(index);
+              setFocus('detail');
             }}
             onListScroll={(delta) => {
               setFocus('list');
