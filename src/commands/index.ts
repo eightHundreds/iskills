@@ -1,9 +1,11 @@
+import { t } from '../i18n/index.js';
 import { parseArgs } from 'node:util';
 import { agentIds } from '../domain/core.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
 } from '../domain/git.js';
+
 export async function commandAdd(argv: string[]): Promise<void> {
   return (await import('./library.js')).commandAdd(argv);
 }
@@ -20,114 +22,55 @@ export async function commandSearch(argv: string[]): Promise<void> {
   return (await import('./search.js')).commandSearch(argv);
 }
 
+export async function commandConfig(argv: string[] = []): Promise<void> {
+  return (await import('./config.js')).commandConfig(argv);
+}
+
 export async function commandInit(argv: string[] = []): Promise<void> {
   const { values } = parseArgs({
     args: argv,
     options: { remote: { type: 'string' } },
   });
   const initialized = await initCollectionGit();
-  console.log(initialized ? '已初始化收藏夹 Git。' : '收藏夹 Git 已初始化。');
+  console.log(initialized ? t('git.initDone') : t('git.alreadyInit'));
   let remote = values.remote;
   if (!remote && initialized && process.stdin.isTTY) {
     const [{ Modal }, { promptText }] = await Promise.all([
       import('../ui/overlay/static.js'),
       import('../ui/prompts/present.js'),
     ]);
-    if (await Modal.confirm({ title: '确认', message: '是否配置远程仓库？' })) {
-      remote = await promptText('远程仓库地址：');
+    if (await Modal.confirm({ title: t('common.confirm'), message: t('git.configureRemotePrompt') })) {
+      remote = await promptText(t('git.remoteAddressPrompt'));
     }
   }
   if (remote) {
     await configureCollectionRemote(remote);
-    console.log('已配置远程仓库 origin。');
+    console.log(t('git.remoteConfigured'));
   }
 }
 
 function agentHelpNames(): string {
-  return agentIds().join('、');
+  return agentIds().join(t('common.listSep'));
 }
 
-function commandHelp(): Record<string, string> {
+function commandHelp(): Record<string, () => string> {
   const agents = agentHelpNames();
   return {
-    search: `用法：
-  iskills search [关键词]
-
-实时搜索 skills.sh，选择后保存到收藏夹。
-
-选项：
-  --replace          替换异源同名收藏
-  -h, --help         显示帮助
-`,
-    add: `用法：
-  iskills add [技能...] [选项]
-
-从收藏夹添加技能到当前项目或 Agent 全局目录。
-
-选项：
-  --agent <名称>     限定 Agent，可重复使用（${agents}）
-  -g, --global       添加到 Agent 全局 Skill 目录
-  --to <目录>        指定目标目录
-  --copy             复制而非创建软链
-  --replace          替换已存在的技能
-  -y, --yes          跳过确认
-  -h, --help         显示帮助
-`,
-    create: `用法：
-  iskills create [名称]
-
-在收藏夹新建技能，并打开技能目录。
-
-选项：
-  -h, --help         显示帮助
-`,
-    import: `用法：
-  iskills import [路径或 Git URL] [选项]
-
-导入本地路径或 Git 来源到收藏夹。
-
-选项：
-  -g, --global       扫描 Agent 全局 Skill 目录
-  --agent <名称>     限定 Agent，可重复使用（${agents}）
-  --all              导入发现的全部技能
-  --replace          替换收藏夹中的同名技能
-  -y, --yes          跳过确认
-  -h, --help         显示帮助
-`,
-    init: `用法：
-  iskills init [选项]
-
-初始化收藏夹 Git 仓库并创建首次提交。
-
-选项：
-  --remote <Git URL>  配置或更新 origin
-  -h, --help         显示帮助
-`,
+    search: () => t('help.search'),
+    add: () => t('help.add', { agents }),
+    create: () => t('help.create'),
+    import: () => t('help.import', { agents }),
+    init: () => t('help.init'),
+    config: () => t('help.config'),
   };
 }
 
 export function printHelp(command?: string): void {
   const help = command ? commandHelp()[command] : undefined;
   if (help) {
-    console.log(help);
+    console.log(help());
     return;
   }
-  if (command) throw new Error(`未知命令：${command}`);
-  console.log(`Skill 收藏夹
-
-用法：
-  iskills [命令] [选项]
-
-命令：
-  search [关键词]    搜索技能并保存到收藏夹
-  add [技能...]      从收藏夹添加到当前项目
-  create [名称]      在收藏夹新建技能并打开目录
-  import [来源]      导入本地路径或 Git 来源
-  init               初始化收藏夹 Git
-
-选项：
-  -h, --help         显示帮助（可用 iskills help <命令>）
-  -v, --version      显示版本
-
-`);
+  if (command) throw new Error(t('cli.unknownCommand', { command }));
+  console.log(t('help.root'));
 }

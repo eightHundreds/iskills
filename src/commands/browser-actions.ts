@@ -12,7 +12,7 @@ import {
   getAgent,
   isGitSource,
   listCollection,
-  NO_PRESENT_AGENTS_ERROR,
+  noPresentAgentsError,
   agentInstallTargets,
   listPresentAgents,
   listProjectGroups,
@@ -49,6 +49,7 @@ import {
   globalSkillGroups,
   importSkillsToCollection,
 } from './library.js';
+import { t } from '../i18n/index.js';
 
 async function bindMetadataSource(
   skillName: string,
@@ -58,7 +59,7 @@ async function bindMetadataSource(
   sourcePath: string,
   refType?: GitSource['refType']
 ): Promise<void> {
-  if (!isGitSource(input)) throw new Error(`不是有效的 Git 来源：${input}`);
+  if (!isGitSource(input)) throw new Error(t('cmd.invalidGitSource', { input }));
   const parsed = parseGitSource(input);
   const resolvedRef = ref || parsed.ref;
   const source: GitSource = {
@@ -90,7 +91,7 @@ async function installTargetsAndDefaults(): Promise<{
   defaultGlobalAgents: string[];
 }> {
   const present = await listPresentAgents();
-  if (!present.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
+  if (!present.length) throw new Error(noPresentAgentsError());
   const targets = agentInstallTargets(present);
   // Available: tool root present. Project default: only if this project already has that skills dir
   // (e.g. ~/.zcode exists → zcode is listed, but not pre-checked until .zcode/skills exists).
@@ -182,7 +183,7 @@ async function handleSync(host: BrowserActionHost): Promise<void> {
   await host.lifecycle.suspendForSubprocess(async () => {
     await syncCollection(false);
   });
-  host.setStatus('同步完成', true, 'normal');
+  host.setStatus(t('cmd.syncDone'), true, 'normal');
 }
 
 async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
@@ -195,33 +196,37 @@ async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): 
       skillName: skill.name,
       current: index + 1,
       total: skills.length,
-      workingAction: '更新',
+      workingAction: 'update',
     });
     await delay(120);
     try {
       const updateStatus = await updateGitSkill(skill, false, {
         quietDelete: true,
         confirmDelete: (links) => Modal.confirm({
-          title: '上游删除',
-          message: `上游已删除 ${skill.name}，执行收藏夹移除流程吗？`,
+          title: t('cmd.upstreamDeleted'),
+          message: t('cmd.upstreamDeletedConfirm', { name: skill.name }),
           details: links.map((link) => {
-            const kind = link.kind === 'origin' ? '原始' : link.kind === 'usage' ? '使用' : '依赖';
-            return `${kind}：${link.path}`;
+            const kind = link.kind === 'origin'
+              ? t('common.origin')
+              : link.kind === 'usage'
+                ? t('common.usage')
+                : t('common.dependent');
+            return t('cmd.linkKindLine', { kind, path: link.path });
           }),
         }),
       });
       outcomes.push(`${skill.name}: ${updateStatus}`);
     } catch (error) {
       failed += 1;
-      outcomes.push(`${skill.name}: 更新失败 — ${errorMessage(error)}`);
+      outcomes.push(t('cmd.updateFailedLine', { name: skill.name, error: errorMessage(error) }));
     }
   }
   host.setWorkingProgress(null);
   const updated = skills.length - failed;
   host.setStatus(
     failed === 0
-      ? `已更新 ${updated}`
-      : `已更新 ${updated}，失败 ${failed}`,
+      ? t('cmd.updatedCount', { count: updated })
+      : t('cmd.updatedWithFailed', { updated, failed }),
     failed === 0,
     failed === 0 ? 'normal' : 'error'
   );
@@ -235,7 +240,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
   const added = await promptTags(
     existing,
     [],
-    `为 ${skills.length} 个技能添加标签`
+    t('cmd.addTagsForSkills', { count: skills.length })
   );
   if (!added?.length) return;
   await Promise.all(skills.map(async (skill) => {
@@ -244,7 +249,7 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
     await writeMetadata(metadata);
   }));
   await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`);
-  host.setStatus('已加标签', true, 'normal');
+  host.setStatus(t('cmd.tagged'), true, 'normal');
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
@@ -271,15 +276,15 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
       agent: install.agents,
       copy: install.copy,
       confirmReplace: (target) => Modal.confirm({
-        title: '替换目标',
-        message: `目标已存在，替换 ${target} 吗？`,
+        title: t('cmd.replaceTargetTitle'),
+        message: t('cmd.replaceTargetConfirm', { target }),
       }),
       ...(install.destination === 'global' ? { global: true } : {}),
     });
-    host.setStatus(`已添加 ${count}`, true, 'normal');
+    host.setStatus(t('cmd.addedCount', { count }), true, 'normal');
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
-    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
+    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
   }
 }
 
@@ -291,7 +296,7 @@ async function handleRemoveCollection(
   try {
     for (const skill of skills) await removeFromCollection(skill.name, true, true);
     host.setStatus(
-      names.length === 1 ? `已移除 ${names[0]}` : `已移除 ${names.length}`,
+      names.length === 1 ? t('cmd.removedOne', { name: names[0] ?? '' }) : t('cmd.removedCount', { count: names.length }),
       true,
       'normal'
     );
@@ -301,7 +306,7 @@ async function handleRemoveCollection(
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
+    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
   }
 }
 
@@ -309,7 +314,7 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
   try {
     const count = await removeSkillLocations(skills);
     host.setStatus(
-      count === 1 ? `已删除 ${skills[0]?.name ?? ''}` : `已删除 ${count} 处`,
+      count === 1 ? t('cmd.deletedOne', { name: skills[0]?.name ?? '' }) : t('cmd.deletedCount', { count }),
       true,
       'normal'
     );
@@ -319,7 +324,7 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
+    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
   }
 }
 
@@ -334,7 +339,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
           skillName: skill.name,
           current,
           total,
-          workingAction: '转换',
+          workingAction: 'materialize',
         });
         for (let tick = 0; tick < 12; tick += 1) {
           if (controller.signal.aborted) throw new InterruptError();
@@ -344,7 +349,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
     });
     host.setWorkingProgress(null);
     host.setStatus(
-      skills.length === 1 ? '已转副本' : `已转副本 ${skills.length}`,
+      skills.length === 1 ? t('cmd.materializedOne') : t('cmd.materializedCount', { count: skills.length }),
       true,
       'normal'
     );
@@ -353,7 +358,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
     host.setWorkingProgress(null);
     if (error instanceof InterruptError) throw error;
     if (error instanceof Error && error.name === 'AbortError') throw new InterruptError();
-    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
+    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
   } finally {
     host.setAbortController(null);
   }
@@ -364,13 +369,13 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
     const { count } = await importSkillsToCollection(skills, {
       quiet: true,
       confirmReplace: (conflicts) => Modal.confirm({
-        title: '替换收藏',
-        message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+        title: t('cmd.replaceCollectionTitle'),
+        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
       }),
     });
-    host.setStatus(`已导入 ${count}`, true, 'normal');
+    host.setStatus(t('cmd.importedShort', { count }), true, 'normal');
   } catch (error) {
-    host.setStatus(`失败：${errorMessage(error)}`, false, 'error');
+    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
   }
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }
@@ -383,9 +388,9 @@ export async function handleDetailAction(
   const { skill, metadata } = context;
   if (action === 'note') {
     const note = await promptText(
-      '备注（Enter 保存，Esc 取消）',
+      t('cmd.editNoteLabel'),
       metadata.note,
-      '编辑备注'
+      t('cmd.editNoteTitle')
     );
     if (note === undefined) return;
     metadata.note = note;
@@ -396,7 +401,7 @@ export async function handleDetailAction(
   if (action === 'tags') {
     const existing = [...new Set((await listCollection()).flatMap((item) => item.tags))]
       .sort((left, right) => left.localeCompare(right));
-    const tags = await promptTags(existing, metadata.tags, '编辑标签');
+    const tags = await promptTags(existing, metadata.tags, t('cmd.editTags'));
     if (tags === undefined) return;
     metadata.tags = tags;
     await writeMetadata(metadata);
@@ -405,15 +410,15 @@ export async function handleDetailAction(
   }
   if (action === 'source') {
     const sourceValue = await promptText(
-      'Git 来源（Enter 继续，Esc 取消）',
+      t('cmd.gitSourcePrompt'),
       metadata.source.url || ''
     );
     if (sourceValue === undefined) return;
     const sourceInput = sourceValue.trim();
-    if (!isGitSource(sourceInput)) throw new Error(`不是有效的 Git 来源：${sourceInput}`);
+    if (!isGitSource(sourceInput)) throw new Error(t('cmd.invalidGitSource', { input: sourceInput }));
     const parsed = parseGitSource(sourceInput);
     const refValue = await promptText(
-      '分支、Tag 或 Commit（Enter 继续，Esc 取消）',
+      t('cmd.refPrompt'),
       parsed.ref || metadata.source.ref || ''
     );
     if (refValue === undefined) return;
@@ -433,8 +438,8 @@ export async function handleDetailAction(
         })
         .sort((left, right) => left.rank - right.rank || left.value.localeCompare(right.value))
         .map(({ label, value }) => ({ label, value }));
-      if (!options.length) throw new Error('目标仓库中没有找到 SKILL.md');
-      const sourcePath = await promptChoice(options, '选择仓库内 Skill：');
+      if (!options.length) throw new Error(t('cmd.noSkillMdInRepo'));
+      const sourcePath = await promptChoice(options, t('cmd.selectSkillInRepo'));
       if (sourcePath === undefined) return;
       await bindMetadataSource(
         skill.name,

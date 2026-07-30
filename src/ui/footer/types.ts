@@ -46,7 +46,7 @@ export interface FooterBrowseCapabilities {
 }
 
 export interface FooterWorkingState {
-  action: '更新' | '转换';
+  action: 'update' | 'materialize';
   current: number;
   total: number;
 }

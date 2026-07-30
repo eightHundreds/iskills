@@ -11,6 +11,7 @@ import {
   type Option,
 } from './options.js';
 import { useInput } from './use-input.js';
+import { t } from '../../i18n/index.js';
 
 export function Select<T>({
   label,
@@ -86,8 +87,8 @@ export function Select<T>({
         />
       </box>
       <Text color={chrome.muted}>
-        {numbered ? `1–${Math.min(options.length, 9)} 快选 · ` : ''}
-        ↑/↓ 选择 · Enter 确认 · Esc 取消
+        {numbered ? t('comp.quickSelect', { max: Math.min(options.length, 9) }) : ''}
+        {t('ui.selectFooter')}
       </Text>
     </box>
   );

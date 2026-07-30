@@ -7,6 +7,7 @@ import { collectionMatchLabels, collectionMatchMarkers } from '../collection-mat
 import { termcnColors } from '../components/termcn.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
+import { t } from '../../i18n/index.js';
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
@@ -35,12 +36,13 @@ function detailFieldLines(
   width: number,
   muted = false
 ): DetailPreviewLine[] {
-  const labelText = `${label}：`;
+  // Match full-screen detail: label + gap (no locale-specific colon glyph).
+  const labelText = `${label}  `;
   const indentation = ' '.repeat(textWidth(labelText));
   const valueWidth = Math.max(1, width - textWidth(labelText));
   return value
     .split(/\r?\n/)
-    .flatMap((paragraph) => wrapColumns(paragraph || '无', valueWidth))
+    .flatMap((paragraph) => wrapColumns(paragraph || t('common.none'), valueWidth))
     .map((line, index) => index === 0
       ? { label: labelText, value: line, muted }
       : { value: `${indentation}${line}`, muted });
@@ -52,15 +54,15 @@ function detailPreviewLines(
   width: number
 ): DetailPreviewLine[] {
   const lines: DetailPreviewLine[] = [
-    ...detailFieldLines(skillFieldLabels.description, skill.description || '无', width),
-    ...wrapColumns(`来自 ${agent} · ${skill.path}`, width).map((value) => ({
+    ...detailFieldLines(skillFieldLabels().description, skill.description || t('common.none'), width),
+    ...wrapColumns(t('import.fromAgentPath', { agent, path: skill.path }), width).map((value) => ({
       value,
       muted: true,
     })),
   ];
-  const status = skill.collectionStatus && collectionMatchLabels[skill.collectionStatus];
+  const status = skill.collectionStatus && collectionMatchLabels()[skill.collectionStatus];
   if (status) {
-    lines.push({ value: '' }, ...detailFieldLines(skillFieldLabels.collectionStatus, status, width));
+    lines.push({ value: '' }, ...detailFieldLines(skillFieldLabels().collectionStatus, status, width));
   }
   return lines;
 }
@@ -133,7 +135,7 @@ function SkillDetailPreview<T extends Skill>({
         {maxOffset ? `${offset + 1}–${Math.min(offset + viewportHeight, lines.length)} / ${lines.length}` : ' '}
       </Text>
       <Text color={colors.muted}>
-        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}Esc 返回 · Space 选择 · Enter 确认导入`}
+        {`${maxOffset ? t('import.detailFooterScroll') : ''}${t('import.detailFooter')}`}
       </Text>
     </>
   );
@@ -308,7 +310,7 @@ export function SkillMultiSelect<T extends Skill>({
         color={viewing ? colors.primary : colors.body}
         bold
       >
-        {viewing ? `‹ ${viewing.name}` : `${label ?? '选择技能'} · 已选 ${selected.size} / 共 ${total}`}
+        {viewing ? `‹ ${viewing.name}` : t('import.selectSkillsHeader', { label: label ?? t('import.selectSkillsTitle'), selected: selected.size, total })}
       </Text>
       {!singleAgent && (
         <box flexDirection="row" paddingLeft={1}>
@@ -414,7 +416,7 @@ export function SkillMultiSelect<T extends Skill>({
               })
             ) : (
               <Text color={colors.muted} backgroundColor={colors.surface}>
-                当前 Agent 没有可导入的技能
+                {t('import.noSkillsForAgent')}
               </Text>
             )}
           </box>
@@ -425,10 +427,10 @@ export function SkillMultiSelect<T extends Skill>({
           </Text>
           <Text color={colors.muted}>
             {singleAgent
-              ? '↑/↓ 移动 · Space 选择 · → 详情 · a 全选 · Enter 确认 · Esc 取消'
+              ? t('import.skillListFooter')
               : focus === 'tabs'
-                ? '←/→ 切换 Agent · ↓ 返回技能列表 · Esc 取消'
-                : '↑/↓ 移动 · Space 选择 · → 详情 · a 全选当前 · Enter 确认 · Esc 取消'}
+                ? t('import.agentTabsFooter')
+                : t('import.skillListFooterAgent')}
           </Text>
         </>
       )}

@@ -4,6 +4,7 @@ import { useInput } from './use-input.js';
 import { useCallback, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import { padColumns, textWidth, wrapColumns } from './terminal-layout.js';
+import { t } from '../../i18n/index.js';
 
 function framedBorderTop(title: string, width: number): string {
   const titleWidth = textWidth(title);
@@ -151,7 +152,7 @@ export function FramedPanel({
       </Text>
       {maxOffset > 0 ? (
         <Text color={chrome.muted} backgroundColor={panelBg}>
-          {`↑/↓/滚轮 滚动 ${scroll + 1}–${Math.min(scroll + maxBody, allBody.length)} / ${allBody.length}`}
+          {t('comp.scrollRange', { from: scroll + 1, to: Math.min(scroll + maxBody, allBody.length), total: allBody.length })}
         </Text>
       ) : null}
     </box>

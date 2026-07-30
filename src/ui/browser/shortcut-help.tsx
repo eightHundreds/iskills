@@ -4,6 +4,7 @@ import { useInput } from '../components/use-input.js';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
 import { padColumns, textWidth } from '../components/terminal-layout.js';
+import { t } from '../../i18n/index.js';
 import {
   shortcutHelpSections,
   type ShortcutHelpSection,
@@ -154,7 +155,7 @@ export function ShortcutHelpPanel({
     [moveCursor]
   );
 
-  const title = ' 完整快捷键 ';
+  const title = t('browser.shortcutHelpTitle');
   const titleWidth = textWidth(title);
   const top = `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`;
   const bottom = `╰${'─'.repeat(Math.max(0, width - 2))}╯`;
@@ -245,8 +246,8 @@ export function ShortcutHelpPanel({
       </Text>
       <Text color={chrome.muted} backgroundColor={panelBg}>
         {maxOffset > 0
-          ? `↑/↓/滚轮 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭  ${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}`
-          : '↑/↓/滚轮 移动 · e/Space 展开/收起 · ← 收起 · Esc 关闭'}
+          ? t('browser.shortcutHelpFooterScroll', { range: `${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}` })
+          : t('browser.shortcutHelpFooter')}
       </Text>
     </box>
   );

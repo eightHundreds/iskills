@@ -33,6 +33,7 @@ import {
 } from './store.js';
 import { Browser } from './browser.js';
 import { Detail, type DetailAction } from './detail.js';
+import { t } from '../../i18n/index.js';
 import type {
   BrowserActionHost,
   BrowserAppLifecycle,
@@ -174,7 +175,7 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     }
   }, [actionHost, exit, setDetail, setPhase, store]);
 
-  if (!data || !navigation) return <Text>加载中…</Text>;
+  if (!data || !navigation) return <Text>{t('ui.loading')}</Text>;
 
   const viewInput: BrowserViewInput = {
     projectGroups: data.projectGroups,

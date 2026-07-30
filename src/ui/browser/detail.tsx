@@ -6,6 +6,7 @@ import { useOverlayBusy } from '../overlay/host.js';
 import { termcnColors } from '../components/termcn.js';
 import { detailContentLines } from './format.js';
 import { detailFrameDimensions } from './layout.js';
+import { t } from '../../i18n/index.js';
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';
 
@@ -85,7 +86,7 @@ export function Detail({
         ))}
       </box>
       <Text color={termcnColors.muted}>
-        {`${maxOffset ? '↑/↓ 滚动 · ' : ''}${collection ? 'n 备注 · t 标签 · s 来源 · Esc 返回' : 'Esc 返回'}`}
+        {`${maxOffset ? t('browser.detailFooterScroll') : ''}${collection ? t('browser.detailFooterCollection') : t('browser.detailFooterEsc')}`}
       </Text>
     </box>
   );

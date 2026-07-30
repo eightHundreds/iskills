@@ -30,7 +30,7 @@
 - 交互界面需要 TTY（`stdin` 与 `stdout`）
 - **Git** 可选 — 仅在需要收藏夹版本管理 / 远端同步时启用
 
-> **界面语言：** 当前 TUI 与 CLI 帮助为中文。
+> **界面语言：** 默认跟随系统 locale — 中文族（`zh*`）为中文，其余为英文。可用 `iskills config` 持久覆盖为中文 / English，或恢复跟随系统。
 
 ## 安装
 
@@ -77,6 +77,9 @@ iskills add my-skill --copy
 # 可选：将收藏夹初始化为 Git 仓库（并配置 origin）
 iskills init
 iskills init --remote git@github.com:you/my-skills.git
+
+# 配置 UI 语言（跟随系统 / 中文 / English）
+iskills config
 ```
 
 日常操作（浏览、删除、更新、备注、标签、同步）在主 TUI 的键盘浏览中完成。配置远程后，在收藏夹 Tab 按 **`s`** 同步。
@@ -91,6 +94,7 @@ iskills init --remote git@github.com:you/my-skills.git
 | `iskills import [来源]` | 导入本地路径或 Git URL |
 | `iskills add [技能…]` | 从收藏夹安装到项目或 Agent 全局目录 |
 | `iskills init` | 初始化收藏夹 Git（可选远程） |
+| `iskills config` | 配置界面偏好（UI 语言） |
 
 常用参数（完整列表见 `iskills help <命令>`）：
 

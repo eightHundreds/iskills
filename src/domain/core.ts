@@ -30,12 +30,13 @@ import type {
   SkillMetadata,
   SkillSource,
 } from './types.js';
+import { t } from '../i18n/index.js';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
 /** Display names for install/review UI; ids remain CLI --agent values. */
 const AGENT_DISPLAY_NAMES: Record<string, string> = {
-  agents: '标准 Agent Skills',
+  // `agents` is localized via t() in agentDisplayName.
   codex: 'Codex',
   claude: 'Claude Code',
   cursor: 'Cursor',
@@ -94,16 +95,18 @@ export function agentIds(): string[] {
 }
 
 /** When no tool root is present and the user did not pass `--agent`. */
-export const NO_PRESENT_AGENTS_ERROR =
-  '未检测到已安装的 Agent 根目录，请使用 --agent 指定';
+export function noPresentAgentsError(): string {
+  return t('cmd.noPresentAgents');
+}
 
 export function getAgent(name: string): AgentConfig {
   const agent = AGENTS[name];
-  if (!agent) throw new Error(`未知 Agent：${name}`);
+  if (!agent) throw new Error(t('cmd.unknownAgent', { name }));
   return agent;
 }
 
 function agentDisplayName(name: string): string {
+  if (name === 'agents') return t('cmd.agentDisplayAgents');
   return AGENT_DISPLAY_NAMES[name] ?? name;
 }
 
@@ -134,7 +137,7 @@ export function agentGlobalPath(name: string, home = homedir()): string {
 export function agentProjectPath(name: string): string {
   const agent = getAgent(name);
   if (!agent.project) {
-    throw new Error(`Agent ${name} 只支持全局 Skill 目录，请使用 --global`);
+    throw new Error(t('cmd.agentGlobalOnly', { name }));
   }
   return resolve(agent.project);
 }
@@ -251,7 +254,7 @@ export function assertSkillName(name: string): string {
     name.includes('\\') ||
     /[\u0000-\u001f\u007f]/.test(name)
   ) {
-    throw new Error(`不安全的技能名称：${name}`);
+    throw new Error(t('domain.unsafeSkillName', { name }));
   }
   return name;
 }
@@ -259,7 +262,7 @@ export function assertSkillName(name: string): string {
 export function assertRelativePath(path: string): string {
   const normalized = (path || '.').replace(/\\/g, '/').replace(/^\.\//, '') || '.';
   if (normalized.startsWith('/') || normalized.split('/').includes('..')) {
-    throw new Error(`不安全的来源子路径：${path}`);
+    throw new Error(t('domain.unsafeSourcePath', { path }));
   }
   return normalized;
 }
@@ -357,7 +360,7 @@ export async function validateSkillTree(root: string, current = root): Promise<v
     if (entry.isSymbolicLink()) {
       const target = resolve(dirname(path), await readlink(path));
       if (target !== rootPath && !target.startsWith(`${rootPath}${sep}`)) {
-        throw new Error(`技能包含逃出目录的软链：${path}`);
+        throw new Error(t('domain.symlinkEscapesTree', { path }));
       }
     } else if (entry.isDirectory() && entry.name !== '.git') {
       await validateSkillTree(root, path);
@@ -623,7 +626,7 @@ export async function commitCollection(message: string, strict = false): Promise
     }
   } catch (error) {
     if (strict) throw error;
-    console.error(`警告：收藏夹 Git 提交失败：${errorMessage(error)}`);
+    console.error(t('domain.gitCommitFailed', { error: errorMessage(error) }));
   }
 }
 

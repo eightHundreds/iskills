@@ -4,13 +4,14 @@ import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { TextInput, termcnColors } from '../components/termcn.js';
 import type { ImportReviewItem, ImportReviewResult } from './types.js';
+import { t } from '../../i18n/index.js';
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
 }
 
 export function ImportReview<T extends Skill>({
-  label = '确认导入',
+  label = t('import.confirmTitle'),
   items,
   existingTags,
   onSubmit,
@@ -122,7 +123,7 @@ export function ImportReview<T extends Skill>({
               bold={activeTab === tab}
               underline={activeTab === tab}
             >
-              {tab === 'tags' ? '选择分组' : '确认'}
+              {tab === 'tags' ? t('import.selectGroups') : t('common.confirm')}
             </Text>
             {index === 0 && <Text color={colors.border}> │ </Text>}
           </box>
@@ -131,7 +132,7 @@ export function ImportReview<T extends Skill>({
       {activeTab === 'tags' ? (
         <box flexDirection="column">
           <Text color={colors.muted}>
-            已选分组：{selectedTags.size ? [...selectedTags].join(', ') : '无'}
+            {t('import.selectedGroups', { tags: selectedTags.size ? [...selectedTags].join(', ') : t('common.none') })}
           </Text>
           <box border
             flexDirection="column"
@@ -156,26 +157,26 @@ export function ImportReview<T extends Skill>({
               })
             ) : (
               <Text color={colors.muted} backgroundColor={chrome.surface}>
-                暂无已有分组
+                {t('import.noExistingGroups')}
               </Text>
             )}
           </box>
           <TextInput
-            label="新增分组（逗号分隔）"
+            label={t('import.newGroupsComma')}
             isActive={tagFocus === 'input'}
             onSubmit={addTags}
           />
           <Text color={colors.muted}>
             {tagFocus === 'input'
-              ? 'Enter 完成分组 · Tab 返回已有分组 · Esc 取消'
-              : '↑/↓ 移动 · Space 选择 · Tab 切换输入 · Enter 完成分组 · → 确认 · Esc 取消'}
+              ? t('import.groupInputFooter')
+              : t('import.groupListFooter')}
           </Text>
         </box>
       ) : (
         <box flexDirection="column">
           <Text color={colors.body}>
-            将导入 {items.length} 个技能；分组：
-            {selectedTags.size ? [...selectedTags].join(', ') : '无'}
+            {t('import.willImport', { count: items.length })}
+            {selectedTags.size ? [...selectedTags].join(', ') : t('common.none')}
           </Text>
           <box flexDirection="column" marginTop={1}>
             {visibleItems.map((item) => (
@@ -184,10 +185,10 @@ export function ImportReview<T extends Skill>({
               </Text>
             ))}
             {items.length > visibleItems.length && (
-              <Text color={colors.muted}>… 还有 {items.length - visibleItems.length} 个</Text>
+              <Text color={colors.muted}>{t('import.moreItems', { count: items.length - visibleItems.length })}</Text>
             )}
           </box>
-          <Text color={colors.muted}>Enter 确认导入 · ← 返回分组 · n 取消 · Esc 取消</Text>
+          <Text color={colors.muted}>{t('import.confirmFooter')}</Text>
         </box>
       )}
     </box>

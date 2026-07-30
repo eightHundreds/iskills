@@ -12,6 +12,7 @@ export default defineConfig({
     projects: [
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'parallel',
           include: [
             'test/agents.test.ts',
@@ -25,6 +26,8 @@ export default defineConfig({
             'test/footer-resolve.test.ts',
             'test/opentui-runtime.test.ts',
             'test/bin-runtime.test.ts',
+            'test/i18n.test.ts',
+            'test/user-config.test.ts',
           ],
           maxWorkers: 3,
           sequence: { groupOrder: 0 },
@@ -33,6 +36,7 @@ export default defineConfig({
       },
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'git',
           include: ['test/git.test.ts'],
           fileParallelism: false,
@@ -43,6 +47,7 @@ export default defineConfig({
       },
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'git-sync',
           include: ['test/git-sync.test.ts'],
           fileParallelism: false,
@@ -52,6 +57,7 @@ export default defineConfig({
       },
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'git-write',
           include: ['test/git-write.test.ts'],
           fileParallelism: false,
@@ -61,6 +67,7 @@ export default defineConfig({
       },
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'git-async',
           include: ['test/git-async.test.ts'],
           fileParallelism: false,
@@ -70,6 +77,7 @@ export default defineConfig({
       },
       {
         test: {
+          setupFiles: ['test/setup-i18n.ts'],
           name: 'tty',
           // PTY sessions are process/CPU heavy; serialize to avoid CI flakes
           // (OpenTUI paints + multi-session key timing races).

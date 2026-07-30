@@ -1,10 +1,23 @@
-export const skillFieldLabels = {
-  collectionStatus: '收藏状态',
-  description: '描述',
-  location: '位置',
-  note: '备注',
-  path: '路径',
-  relatedLocations: '关联位置',
-  source: '来源',
-  tags: '标签',
-} as const;
+import { t } from '../i18n/index.js';
+
+export function skillFieldLabels(): {
+  collectionStatus: string;
+  description: string;
+  location: string;
+  note: string;
+  path: string;
+  relatedLocations: string;
+  source: string;
+  tags: string;
+} {
+  return {
+    collectionStatus: t('label.collectionStatus'),
+    description: t('label.description'),
+    location: t('label.location'),
+    note: t('label.note'),
+    path: t('label.path'),
+    relatedLocations: t('label.relatedLocations'),
+    source: t('label.source'),
+    tags: t('label.tags'),
+  };
+}

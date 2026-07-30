@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
-  NO_PRESENT_AGENTS_ERROR,
+  noPresentAgentsError,
   PROJECT_SKILL_DIRS,
   agentGlobalPath,
   agentProjectPath,
@@ -46,6 +46,7 @@ import type {
   SkillLink,
   SkillMetadata,
 } from '../domain/types.js';
+import { t } from '../i18n/index.js';
 
 type PresentModule = typeof import('../ui/prompts/present.js');
 
@@ -59,7 +60,7 @@ function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string
   );
   const ref = gitContext.source.ref ? `#${gitContext.source.ref}` : '';
   const status = skill.collectionStatus
-    ? ` · ${collectionMatchLabels[skill.collectionStatus]}`
+    ? ` · ${collectionMatchLabels()[skill.collectionStatus]}`
     : '';
   return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}${status}`;
 }
@@ -114,7 +115,7 @@ async function importLocalSkill(
   await validateSkillTree(source);
   if (await pathPresent(target)) {
     if (!allowReplace) {
-      throw new Error(`收藏夹已存在同名技能：${skill.name}，请确认后使用 --replace`);
+      throw new Error(t('cmd.sameNameExistsReplace', { name: skill.name }));
     }
     await ensureCollection();
     const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
@@ -185,7 +186,7 @@ async function importRemoteSkill(
     const current = await readMetadata(skill.name);
     if (sameGitIdentity(current, metadata)) return false;
     if (!allowReplace) {
-      throw new Error(`收藏夹已存在同名技能：${skill.name}，请确认后使用 --replace`);
+      throw new Error(t('cmd.sameNameExistsReplace', { name: skill.name }));
     }
     await ensureCollection();
     const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
@@ -229,8 +230,8 @@ export async function importRemoteSkillToCollection(
     const found = (await discoverSkills(gitContext.repository)).filter(
       (skill) => skill.name.toLowerCase() === skillName.toLowerCase()
     );
-    if (!found.length) throw new Error(`来源仓库中不存在技能：${skillName}`);
-    if (found.length > 1) throw new Error(`来源仓库中存在多个同名技能：${skillName}`);
+    if (!found.length) throw new Error(t('cmd.skillMissingInSource', { name: skillName }));
+    if (found.length > 1) throw new Error(t('cmd.skillDuplicateInSource', { name: skillName }));
     const skill = found[0]!;
     const incoming = gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
@@ -242,7 +243,7 @@ export async function importRemoteSkillToCollection(
       }
       if (!options.replace) {
         if (!options.confirmReplace) {
-          throw new Error(`收藏夹已存在异源同名技能：${skill.name}；请使用 --replace`);
+          throw new Error(t('cmd.conflictingSourceExists', { name: skill.name }));
         }
         if (!(await options.confirmReplace(current, incoming))) {
           return { name: skill.name, status: 'cancelled' };
@@ -279,13 +280,13 @@ export async function importSkillsToCollection(
   }
   if (conflicts.length && !allowReplace) {
     if (!process.stdin.isTTY || options.yes) {
-      throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
+      throw new Error(t('cmd.conflictsExistReplace', { names: conflicts.join(', ') }));
     }
     allowReplace = options.confirmReplace
       ? await options.confirmReplace(conflicts)
       : await (await import('../ui/overlay/static.js')).Modal.confirm({
-        title: '确认',
-        message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+        title: t('common.confirm'),
+        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
       });
     if (!allowReplace) {
       selected = selected.filter((skill) => !conflicts.includes(skill.name));
@@ -298,7 +299,7 @@ export async function importSkillsToCollection(
   }
   await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
   if (!options.quiet) {
-    console.log(`已导入 ${count} 个技能。`);
+    console.log(t('cmd.importedCount', { count }));
   }
   return { count };
 }
@@ -350,8 +351,8 @@ export async function commandImport(argv: string[]): Promise<void> {
       yes: { type: 'boolean', short: 'y' },
     },
   });
-  if (values.global && positionals.length) throw new Error('不能同时指定来源和 -g');
-  if (positionals.length > 1) throw new Error('一次只能指定一个导入根目录');
+  if (values.global && positionals.length) throw new Error(t('cmd.cannotSourceAndGlobal'));
+  if (positionals.length > 1) throw new Error(t('cmd.oneImportRootOnly'));
 
   const input = positionals[0];
   const localInput = input ? resolve(input) : undefined;
@@ -375,7 +376,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       );
     } else if (values.global) {
       if (!(values.agent?.length) && !(await listPresentAgents()).length) {
-        throw new Error(NO_PRESENT_AGENTS_ERROR);
+        throw new Error(noPresentAgentsError());
       }
       const groups = await globalSkillGroups(values.agent);
       globalGroups = groups
@@ -388,26 +389,26 @@ export async function commandImport(argv: string[]): Promise<void> {
     } else {
       skills = (await discoverSkills(localInput || resolve('.'))).filter(isCollected);
     }
-    if (!skills.length) throw new Error('没有找到 SKILL.md');
+    if (!skills.length) throw new Error(t('cmd.noSkillMd'));
 
     let selected = skills;
     if (!values.all && (skills.length > 1 || !input)) {
-      if (!process.stdin.isTTY) throw new Error('请使用 --all 或交互选择要导入的技能');
-      const groups = globalGroups ?? [{ agent: gitContext ? 'Git' : '本地', skills }];
+      if (!process.stdin.isTTY) throw new Error(t('cmd.useAllOrInteractive'));
+      const groups = globalGroups ?? [{ agent: gitContext ? t('common.git') : t('common.local'), skills }];
       selected = await (await present()).promptSkillGroups(
         groups,
         globalGroups
-          ? '扫描全局 Skill 目录'
+          ? t('cmd.scanGlobalSkills')
           : !input
-            ? '选择当前仓库技能'
-            : '发现以下技能'
+            ? t('cmd.selectRepoSkills')
+            : t('cmd.foundSkills')
       );
     }
     if (!selected.length) return;
 
     let importTags: string[] = [];
     if (!values.yes) {
-      if (!process.stdin.isTTY) throw new Error('请使用 --yes 确认导入');
+      if (!process.stdin.isTTY) throw new Error(t('cmd.useYesToConfirmImport'));
       const existingTags = [...new Set((await listCollection().catch(() => []))
         .flatMap((skill) => skill.tags))]
         .sort((a, b) => a.localeCompare(b));
@@ -444,11 +445,11 @@ export async function commandImport(argv: string[]): Promise<void> {
     }
     if (conflicts.length && !allowReplace) {
       if (!process.stdin.isTTY) {
-        throw new Error(`收藏夹已存在：${conflicts.join(', ')}；确认后使用 --replace`);
+        throw new Error(t('cmd.conflictsExistReplace', { names: conflicts.join(', ') }));
       }
       allowReplace = await (await import('../ui/overlay/static.js')).Modal.confirm({
-        title: '确认',
-        message: `替换同名收藏 ${conflicts.join(', ')} 吗？`,
+        title: t('common.confirm'),
+        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
       });
       if (!allowReplace) selected = selected.filter((skill) => !conflicts.includes(skill.name));
     }
@@ -457,7 +458,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       if (await importRemoteSkill(skill, gitContext, allowReplace, importTags)) count++;
     }
     await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
-    console.log(`已导入 ${count} 个技能。`);
+    console.log(t('cmd.importedCount', { count }));
   } finally {
     if (gitContext) await rm(gitContext.temporary, { recursive: true, force: true });
   }
@@ -480,14 +481,14 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
   if (values.global) {
     let names = requestedAgents;
     if (!names.length) {
-      if (!process.stdin.isTTY) throw new Error('添加到全局目录时请指定 --agent');
+      if (!process.stdin.isTTY) throw new Error(t('cmd.globalNeedsAgent'));
       const presentNames = await listPresentAgents();
-      if (!presentNames.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
+      if (!presentNames.length) throw new Error(noPresentAgentsError());
       names = await (await present()).promptChoicesMany(
         presentNames.map((name) => ({ label: name, value: name })),
-        '选择全局 Agent 目录：'
+        t('cmd.selectGlobalAgent')
       );
-      if (!names.length) throw new Error(NO_PRESENT_AGENTS_ERROR);
+      if (!names.length) throw new Error(noPresentAgentsError());
     }
     return [...new Set(names.map((name) => agentGlobalPath(name)))];
   }
@@ -504,7 +505,7 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
   if (!process.stdin.isTTY) return [resolve('.agents/skills')];
   return (await present()).promptChoicesMany(
     unique.map((path) => ({ label: relative(process.cwd(), path), value: path })),
-    '检测到多个 Agent 目录：'
+    t('cmd.multipleAgentDirs')
   );
 }
 
@@ -517,32 +518,32 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
     });
     const found = new Set(selected.map((skill) => skill.name));
     const missing = names.filter((name) => !found.has(name));
-    if (missing.length) throw new Error(`收藏夹中不存在：${missing.join(', ')}`);
+    if (missing.length) throw new Error(t('cmd.missingInCollection', { names: missing.join(', ') }));
     return selected;
   }
-  if (!process.stdin.isTTY) throw new Error('请指定技能名称');
+  if (!process.stdin.isTTY) throw new Error(t('cmd.specifySkillNames'));
   if (!skills.length) {
     let source: string | undefined;
     const ui = await present();
     source = await ui.promptChoice(
       [
-        { label: '扫描当前目录', value: 'current' },
-        { label: '扫描常见全局 Agent 目录', value: 'global' },
-        { label: '输入本地路径或 Git 来源', value: 'custom' },
+        { label: t('cmd.scanCurrentDir'), value: 'current' },
+        { label: t('cmd.scanGlobalAgents'), value: 'global' },
+        { label: t('cmd.enterPathOrGit'), value: 'custom' },
       ],
-      '收藏夹还是空的，先从哪里导入技能？'
+      t('cmd.emptyCollectionImportWhere')
     );
-    if (source === 'custom') source = await ui.promptText('路径或 Git 来源：');
+    if (source === 'custom') source = await ui.promptText(t('cmd.pathOrGitPrompt'));
     if (!source) return [];
     await commandImport(source === 'global' ? ['-g'] : source === 'current' ? [] : [source]);
     return listCollection();
   }
   const ui = await present();
-  const query = await ui.promptText('搜索收藏夹：');
+  const query = await ui.promptText(t('cmd.searchCollection'));
   if (query === undefined) return [];
   return ui.promptSkills(
     skills.filter((skill) => matchesSkill(skill, query)),
-    '选择技能：'
+    t('cmd.selectSkills')
   );
 }
 
@@ -562,7 +563,7 @@ export async function addSkillsToProject(
     for (const skill of skills) {
       const target = join(targetRoot, skill.name);
       if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
-        throw new Error(`目标会指向技能自身：${target}`);
+        throw new Error(t('cmd.targetPointsSelf', { target }));
       }
       if (await pathPresent(target)) {
         if (await isExactSymlink(target, skill.path)) continue;
@@ -571,13 +572,13 @@ export async function addSkillsToProject(
           replace = values.confirmReplace
             ? await values.confirmReplace(target)
             : await (await import('../ui/overlay/static.js')).Modal.confirm({
-              title: '确认',
-              message: `目标已存在，替换 ${target} 吗？`,
+              title: t('common.confirm'),
+              message: t('cmd.replaceTargetConfirm', { target }),
             });
         }
         if (!replace) {
           if (process.stdin.isTTY && !values.yes) continue;
-          throw new Error(`目标已存在：${target}，请确认后使用 --replace`);
+          throw new Error(t('cmd.targetExistsReplace', { target }));
         }
         await rm(target, { recursive: true });
       }
@@ -594,7 +595,11 @@ export async function addSkillsToProject(
   await registerCollectionLinks(usageLinks);
   if (!values.quiet) {
     console.log(
-      `已添加 ${addedSkills.size} 个技能到 ${addedTargets.size} 个目录${values.copy ? '（复制）' : ''}。`
+      t('cmd.addedSkillsToDirs', {
+        skills: addedSkills.size,
+        dirs: addedTargets.size,
+        copy: values.copy ? t('cmd.addedCopySuffix') : '',
+      })
     );
   }
   return { count: addedSkills.size, targetCount: addedTargets.size };

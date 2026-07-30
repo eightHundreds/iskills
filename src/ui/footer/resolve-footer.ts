@@ -11,6 +11,7 @@ import type {
   FooterView,
   FooterWorkingState,
 } from './types.js';
+import { t } from '../../i18n/index.js';
 
 export function formatFooterItem(item: FooterItem): string {
   return item.key ? `${item.key} ${item.label}` : item.label;
@@ -24,99 +25,103 @@ export function confirmFooterItems(defaultValue: boolean): FooterItem[] {
   // Match overlay/dialogs: y confirm, n cancel, Enter → defaultValue, Esc cancel.
   if (defaultValue) {
     return [
-      { key: 'Enter', label: '确认' },
-      { key: 'n', label: '取消' },
-      { key: 'Esc', label: '取消' },
+      { key: 'Enter', label: t('common.confirm') },
+      { key: 'n', label: t('common.cancel') },
+      { key: 'Esc', label: t('common.cancel') },
     ];
   }
   return [
-    { key: 'y', label: '确认' },
-    { key: 'Enter', label: '取消' },
-    { key: 'Esc', label: '取消' },
+    { key: 'y', label: t('common.confirm') },
+    { key: 'Enter', label: t('common.cancel') },
+    { key: 'Esc', label: t('common.cancel') },
   ];
 }
 
 export function infoFooterItems(): FooterItem[] {
-  return [{ key: 'Esc', label: '关闭' }];
+  return [{ key: 'Esc', label: t('common.close') }];
 }
 
 function helpQuit(): FooterItem[] {
   return [
-    { key: '?', label: '帮助' },
-    { key: 'q', label: '退出' },
+    { key: '?', label: t('common.help') },
+    { key: 'q', label: t('common.quit') },
   ];
 }
 
 /** Browse filter is always available from the browser key handler. */
 function filterHelp(): FooterItem[] {
-  return [{ key: '/', label: '筛选' }];
+  return [{ key: '/', label: t('common.filter') }];
 }
 
 function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.focus === 'tabs') {
     return [
-      { key: '←→', label: '切换' },
-      { key: '↓', label: '进入' },
+      { key: '←→', label: t('common.switch') },
+      { key: '↓', label: t('common.enter') },
       ...filterHelp(),
       ...helpQuit(),
     ];
   }
   if (browse.focus === 'agents') {
     return [
-      { key: '←→', label: '切换' },
-      { key: '↑', label: '返回' },
-      { key: '↓', label: '进入' },
+      { key: '←→', label: t('common.switch') },
+      { key: '↑', label: t('common.back') },
+      { key: '↓', label: t('common.enter') },
       ...filterHelp(),
       ...helpQuit(),
     ];
   }
   if (browse.focus === 'tags') {
     return [
-      { key: '↑↓', label: '移动' },
-      { key: '→', label: '列表' },
-      { key: 'Space', label: '选中' },
+      { key: '↑↓', label: t('common.move') },
+      { key: '→', label: t('common.list') },
+      { key: 'Space', label: t('common.select') },
       ...filterHelp(),
       ...helpQuit(),
     ];
   }
   if (browse.focus === 'detail') {
-    const items: FooterItem[] = [{ key: '↑↓', label: '移动' }];
-    if (browse.canEditDetailField) items.push({ key: 'Enter', label: '编辑' });
-    items.push({ key: '←', label: '列表' }, ...filterHelp(), ...helpQuit());
+    const items: FooterItem[] = [{ key: '↑↓', label: t('common.move') }];
+    if (browse.canEditDetailField) items.push({ key: 'Enter', label: t('common.edit') });
+    items.push({ key: '←', label: t('common.list') }, ...filterHelp(), ...helpQuit());
     return items;
   }
 
   // List: lead with selection so next-step is obvious on first glance.
-  const items: FooterItem[] = [{ key: 'Space', label: '选中' }];
-  if (browse.canDelete) items.push({ key: 'd', label: '删除' });
-  if (browse.enterAction === 'add') items.push({ key: 'Enter', label: '添加' });
-  else if (browse.enterAction === 'detail') items.push({ key: 'Enter', label: '详情' });
-  else if (browse.enterAction === 'view') items.push({ key: 'Enter', label: '查看' });
-  if (browse.canFocusDetail) items.push({ key: '→', label: '详情' });
-  if (browse.canImport) items.push({ key: 'i', label: '收藏' });
-  if (browse.canMaterialize) items.push({ key: 'm', label: '更多' });
-  if (browse.canTag) items.push({ key: 't', label: '标签' });
+  const items: FooterItem[] = [{ key: 'Space', label: t('common.select') }];
+  if (browse.canDelete) items.push({ key: 'd', label: t('common.delete') });
+  if (browse.enterAction === 'add') items.push({ key: 'Enter', label: t('common.add') });
+  else if (browse.enterAction === 'detail') items.push({ key: 'Enter', label: t('common.detail') });
+  else if (browse.enterAction === 'view') items.push({ key: 'Enter', label: t('common.view') });
+  if (browse.canFocusDetail) items.push({ key: '→', label: t('common.detail') });
+  if (browse.canImport) items.push({ key: 'i', label: t('common.collect') });
+  if (browse.canMaterialize) items.push({ key: 'm', label: t('common.more') });
+  if (browse.canTag) items.push({ key: 't', label: t('common.tags') });
   if (browse.updateCount > 0) {
     items.push({
       key: 'u',
       label: browse.updateIsSelection && browse.updateCount > 0
-        ? `更新(${browse.updateCount})`
-        : '更新',
+        ? t('footer.updateWithCount', { count: browse.updateCount })
+        : t('common.update'),
     });
   }
   if (browse.selectionCount > 0) {
-    items.push({ label: `已选 ${browse.selectionCount}` });
+    items.push({ label: t('footer.selectedCount', { count: browse.selectionCount }) });
   }
   items.push(...filterHelp(), ...helpQuit());
   return items;
 }
 
+function workingActionLabel(action: FooterWorkingState['action']): string {
+  return action === 'materialize' ? t('common.materialize') : t('common.update');
+}
+
 function workingStatus(working: FooterWorkingState): string {
   const progress =
-    working.total > 1 || working.action === '转换'
-      ? ` ${working.current}/${working.total}`
+    working.total > 1 || working.action === 'materialize'
+      ? t('footer.workingProgress', { current: working.current, total: working.total })
       : '';
-  return `正在${working.action}${progress}`;
+  return t('footer.working', { action: workingActionLabel(working.action), progress });
 }
 
 function rightStatus(input: FooterResolveInput): { text: string; kind: FooterStatusKind } | undefined {
@@ -128,10 +133,10 @@ function rightStatus(input: FooterResolveInput): { text: string; kind: FooterSta
   }
   if (input.updateCheck) {
     if (input.updateCheck.failed > 0) {
-      return { text: `${input.updateCheck.failed} 个检查失败`, kind: 'error' };
+      return { text: t('footer.checkFailed', { count: input.updateCheck.failed }), kind: 'error' };
     }
     if (input.updateCheck.checking) {
-      return { text: '检查更新中', kind: 'normal' };
+      return { text: t('footer.checkingUpdates'), kind: 'normal' };
     }
   }
   return undefined;
@@ -165,7 +170,7 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
   }
 
   if (input.filterOpen) {
-    return { mode: 'input', label: '筛选: ', value: input.filterDraft };
+    return { mode: 'input', label: t('common.filterLabel'), value: input.filterDraft };
   }
 
   if (input.suppressed) {

@@ -11,6 +11,7 @@ import {
   type Option,
 } from './options.js';
 import { isReturn } from './text.js';
+import { t } from '../../i18n/index.js';
 
 function OptionMultiSelect({
   options,
@@ -135,7 +136,7 @@ export function MultiSelect<T>({
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
         {...(onCancel ? { onCancel } : {})}
       />
-      <Text color={chrome.muted}>Space/空格 勾选 · Enter 确认 · Esc 取消</Text>
+      <Text color={chrome.muted}>{t('ui.multiSelectFooter')}</Text>
     </box>
   );
 }

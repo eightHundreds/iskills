@@ -38,8 +38,8 @@ import {
   browseDetailRows,
   collectionCategoryLines,
   collectionListColumnLines,
-  DETAIL_LABEL_WIDTH,
   detailEditableFields,
+  detailLabelWidth,
   flatRows,
   focusAfterDownFromAgents,
   focusAfterDownFromTabs,
@@ -62,6 +62,7 @@ import {
   visibleAgentGroups,
 } from './format.js';
 import type { DetailFieldId } from './types.js';
+import { t } from '../../i18n/index.js';
 import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { FramedPanel } from '../components/framed-panel.js';
 import {
@@ -87,8 +88,8 @@ function MoreActionsPanel({
 }): ReactNode {
   return (
     <FramedPanel
-      title=" 更多操作 "
-      content={[...moreActionModalContent(scope), 'Enter 执行 · Esc 返回']}
+      title={t('browser.moreActionsTitle')}
+      content={[...moreActionModalContent(scope), t('browser.moreActionsFooter')]}
       width={64}
       muteLastContent
       onEscape={onCancel}
@@ -215,11 +216,11 @@ function SkillPane({
         )}
         {showReferences && skill.isReference ? (
           <>
-            <Text color={termcnColors.muted}>引用 · </Text>
+            <Text color={termcnColors.muted}>{t('browser.referencePrefix')}</Text>
             <Text bold={current}>{skill.name}</Text>
           </>
         ) : showSource && !skill.fromCollection ? (
-          `本地 · ${skill.name}`
+          t('browser.localSkill', { name: skill.name })
         ) : (
           <Text bold={current}>{skill.name}</Text>
         )}
@@ -269,7 +270,7 @@ function SkillPane({
       {rows.length ? (
         visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
-        <Text color={termcnColors.muted}>没有匹配的技能</Text>
+        <Text color={termcnColors.muted}>{t('browser.noMatchingSkills')}</Text>
       )}
       {showPagination && rows.length > height && (
         <Text color={termcnColors.muted}>
@@ -385,7 +386,7 @@ function DetailColumnRow({
         {padColumns(
           sliceColumns(
             row.label !== undefined
-              ? `${padColumns(row.label, DETAIL_LABEL_WIDTH)}${row.text}`
+              ? `${padColumns(row.label, detailLabelWidth())}${row.text}`
               : row.text,
             0,
             width
@@ -396,10 +397,10 @@ function DetailColumnRow({
     );
   }
   if (row.label !== undefined) {
-    const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
+    const valueWidth = Math.max(1, width - detailLabelWidth());
     return (
       <Text wrap="truncate-end">
-        <Text color={termcnColors.muted}>{padColumns(row.label, DETAIL_LABEL_WIDTH)}</Text>
+        <Text color={termcnColors.muted}>{padColumns(row.label, detailLabelWidth())}</Text>
         <Text
           {...(row.muted ? { color: termcnColors.muted } : {})}
           {...(row.bold ? { bold: true } : {})}
@@ -562,8 +563,8 @@ function MasterDetailBody({
               ) : (
                 <Text
                   wrap="truncate-end"
-                  color={index === 0 && peekLines[index] !== '选择技能查看' ? termcnColors.primary : termcnColors.muted}
-                  bold={index === 0 && peekLines[index] !== '选择技能查看'}
+                  color={index === 0 && peekLines[index] !== t('browser.selectSkillToView') ? termcnColors.primary : termcnColors.muted}
+                  bold={index === 0 && peekLines[index] !== t('browser.selectSkillToView')}
                 >
                   {padColumns(sliceColumns(peekLines[index] ?? '', 0, peekWidth), peekWidth)}
                 </Text>
@@ -862,9 +863,9 @@ export function Browser({
       if (input === '?') {
         void modal.open({
           footerItems: [
-            { key: '↑↓', label: '移动' },
-            { key: 'e', label: '展开' },
-            { key: 'Esc', label: '关闭' },
+            { key: '↑↓', label: t('common.move') },
+            { key: 'e', label: t('common.expand') },
+            { key: 'Esc', label: t('common.close') },
           ],
           content: (close) => (
             <ShortcutHelpPanel onClose={() => close(undefined)} maxBodyRows={14} />
@@ -1019,13 +1020,13 @@ export function Browser({
       if (input === 'm' && canOpenActions) {
         const skills = actionSkills;
         const scope = selectedProject.length
-          ? `已选择 ${skills.length} 个技能`
-          : `技能：${skills[0]?.name ?? ''}`;
+          ? t('browser.selectedSkills', { count: skills.length })
+          : t('browser.skillLine', { names: skills[0]?.name ?? '' });
         void modal
           .open<boolean>({
             footerItems: [
-              { key: 'Enter', label: '确认' },
-              { key: 'Esc', label: '取消' },
+              { key: 'Enter', label: t('common.confirm') },
+              { key: 'Esc', label: t('common.cancel') },
             ],
             content: (close) => (
               <MoreActionsPanel
@@ -1077,13 +1078,13 @@ export function Browser({
         const skills = removableCollection as CollectedSkill[];
         void modal
           .confirm({
-            title: '删除收藏',
+            title: t('browser.removeCollectionTitle'),
             message:
               skills.length === 1
-                ? `从收藏夹移除 ${skills[0]?.name ?? ''} 吗？`
-                : `从收藏夹移除 ${skills.length} 个技能吗？`,
+                ? t('browser.removeCollectionOne', { name: skills[0]?.name ?? '' })
+                : t('browser.removeCollectionMany', { count: skills.length }),
             ...(skills.length > 1
-              ? { details: [`技能：${skills.map((skill) => skill.name).join(', ')}`] }
+              ? { details: [t('browser.skillLine', { names: skills.map((skill) => skill.name).join(', ') })] }
               : {}),
           })
           .then((ok) => {
@@ -1095,13 +1096,13 @@ export function Browser({
         const skills = removableLocations;
         void modal
           .confirm({
-            title: '删除技能',
+            title: t('browser.removeLocationsTitle'),
             message:
               skills.length === 1
-                ? `删除 ${skills[0]?.name ?? ''} 的当前位置吗？`
-                : `删除所选 ${skills.length} 个技能位置吗？`,
+                ? t('browser.removeLocationOne', { name: skills[0]?.name ?? '' })
+                : t('browser.removeLocationsMany', { count: skills.length }),
             details: [
-              '将永久删除以下位置；收藏夹内容（如有）保留。',
+              t('browser.removeLocationsHint'),
               ...skills.map((skill) => skill.path),
             ],
           })
@@ -1278,7 +1279,7 @@ export function Browser({
           <Text color={termcnColors.border} wrap="truncate-end">
             {masterDetailSeparator(tagWidth, listWidth, peekWidth, 'top', true)}
           </Text>
-          {headerLine('标签', '技能', '详情')}
+          {headerLine(t('common.tags'), t('common.skill'), t('common.detail'))}
           {masterDetailBlankRow(tagWidth, listWidth, peekWidth)}
           <MasterDetailBody
             tagLines={tagLines}
@@ -1383,7 +1384,7 @@ export function Browser({
   const tabs = [
     {
       key: 'project',
-      label: `当前项目 ${project.length}`,
+      label: t('browser.tabProject', { count: project.length }),
       content: (
         <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
@@ -1405,7 +1406,7 @@ export function Browser({
     },
     {
       key: 'global',
-      label: `全局 ${globalGroups.reduce((count, group) => count + group.skills.length, 0)}`,
+      label: t('browser.tabGlobal', { count: globalGroups.reduce((count, group) => count + group.skills.length, 0) }),
       content: (
         <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           <AgentTabs
@@ -1426,7 +1427,7 @@ export function Browser({
     },
     {
       key: 'collection',
-      label: `收藏夹 ${collection.length}`,
+      label: t('browser.tabCollection', { count: collection.length }),
       content: (
         <box flexDirection="column" minHeight={frame.frameHeight - 1}>
           {renderBrowsePane(listRows, browseViewportHeight(false), {
@@ -1444,7 +1445,7 @@ export function Browser({
   if (choosingGroup) {
     return (
       <Select
-        label="跳转到分组："
+        label={t('browser.jumpToGroup')}
         numbered
         options={groups.map((group) => ({
           label: `${group.name} (${group.skills.length})`,

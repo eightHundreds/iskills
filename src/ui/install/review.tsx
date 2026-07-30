@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { Tabs, termcnColors, type Tab } from '../components/termcn.js';
 import type { InstallReviewResult, InstallReviewTarget } from './types.js';
+import { t } from '../../i18n/index.js';
 
 function isReturn(input: string, keyReturn: boolean): boolean {
   return keyReturn || input.includes('\r') || input.includes('\n');
@@ -122,7 +123,7 @@ export function InstallReview({
   const tabs: Tab[] = [
     {
       key: 'destination',
-      label: '安装位置',
+      label: t('install.location'),
       content: (
         <box flexDirection="column">
           {(['project', 'global'] as const).map((option) => {
@@ -133,32 +134,32 @@ export function InstallReview({
                 color={selected ? colors.primary : colors.body}
                 bold={selected}
               >
-                {selected ? '●' : '○'} {option === 'project' ? '当前项目' : '全局'}
+                {selected ? '●' : '○'} {option === 'project' ? t('common.project') : t('common.global')}
               </Text>
             );
           })}
-          <Text color={colors.muted}>↑/↓ 选择 · Enter 下一步 · Esc 取消</Text>
+          <Text color={colors.muted}>{t('install.locationStepFooter')}</Text>
         </box>
       ),
     },
     {
       key: 'mode',
-      label: '添加方式',
+      label: t('install.method'),
       content: (
         <box flexDirection="column">
           <Text color={!copy ? colors.primary : colors.body} bold={!copy}>
-            {copy ? '○' : '●'} 软链（推荐）
+            {copy ? '○' : '●'} {t('install.symlinkRecommended')}
           </Text>
           <Text color={copy ? colors.primary : colors.body} bold={copy}>
-            {copy ? '●' : '○'} 复制
+            {copy ? '●' : '○'} {t('common.copy')}
           </Text>
-          <Text color={colors.muted}>↑/↓ 选择 · ← 返回 · Enter 下一步 · Esc 取消</Text>
+          <Text color={colors.muted}>{t('install.methodStepFooter')}</Text>
         </box>
       ),
     },
     {
       key: 'targets',
-      label: '目标目录',
+      label: t('install.targetDirs'),
       content: (
         <box flexDirection="column">
           {availableTargets.map((target, index) => {
@@ -175,27 +176,27 @@ export function InstallReview({
             );
           })}
           <Text color={colors.muted}>
-            ↑/↓ 移动 · Space 选择 · ← 返回 · {activeAgents.size ? 'Enter 下一步' : '至少选择一个目录'} · Esc 取消
+            {t('install.targetsFooter', { next: activeAgents.size ? t('install.nextStep') : t('install.selectAtLeastOne') })}
           </Text>
         </box>
       ),
     },
     {
       key: 'confirm',
-      label: '确认',
+      label: t('common.confirm'),
       content: (
         <box flexDirection="column">
           <Text color={colors.body}>
-            技能：{skills.map((skill) => skill.name).join(', ')}
+            {t('install.skillLine', { names: skills.map((skill) => skill.name).join(', ') })}
           </Text>
           <Text color={colors.body}>
-            安装位置：{destination === 'project' ? '当前项目' : '全局'}
+            {t('install.locationLine', { value: destination === 'project' ? t('common.project') : t('common.global') })}
           </Text>
-          <Text color={colors.body}>添加方式：{copy ? '复制' : '软链'}</Text>
+          <Text color={colors.body}>{t('install.methodLine', { value: copy ? t('common.copy') : t('common.symlink') })}</Text>
           <Text color={colors.body}>
-            目标目录：{selectedTargetLabels.join(', ')}
+            {t('install.targetsLine', { value: selectedTargetLabels.join(', ') })}
           </Text>
-          <Text color={colors.muted}>Enter 确认安装 · ← 返回 · n 取消 · Esc 取消</Text>
+          <Text color={colors.muted}>{t('install.confirmFooter')}</Text>
         </box>
       ),
     },
@@ -204,7 +205,7 @@ export function InstallReview({
   return (
     <box flexDirection="column">
       <Text bold color={colors.body}>
-        安装技能
+        {t('install.title')}
       </Text>
       <Tabs
         tabs={tabs}

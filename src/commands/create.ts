@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { createCollectionSkill } from '../domain/collection-write.js';
 import { errorMessage } from '../domain/core.js';
+import { t } from '../i18n/index.js';
 import { openPath } from '../util/open-path.js';
 
 export async function commandCreate(argv: string[]): Promise<void> {
@@ -10,24 +11,24 @@ export async function commandCreate(argv: string[]): Promise<void> {
     strict: true,
     options: {},
   });
-  if (positionals.length > 1) throw new Error('一次只能指定一个技能名称');
+  if (positionals.length > 1) throw new Error(t('cmd.oneSkillNameOnly'));
 
   let name = positionals[0]?.trim();
   if (!name) {
-    if (!process.stdin.isTTY) throw new Error('请指定技能名称');
+    if (!process.stdin.isTTY) throw new Error(t('cmd.specifySkillNames'));
     const { promptText } = await import('../ui/prompts/present.js');
-    const entered = await promptText('技能名称：');
+    const entered = await promptText(t('cmd.skillNamePrompt'));
     if (entered === undefined) return;
     name = entered.trim();
-    if (!name) throw new Error('请指定技能名称');
+    if (!name) throw new Error(t('cmd.specifySkillNames'));
   }
 
   const path = await createCollectionSkill(name);
-  console.log(`已创建技能：${name}`);
+  console.log(t('cmd.createdSkill', { name }));
   console.log(path);
   try {
     await openPath(path);
   } catch (error) {
-    console.error(`警告：无法打开目录：${errorMessage(error)}`);
+    console.error(t('cmd.warnOpenPathFailed', { error: errorMessage(error) }));
   }
 }

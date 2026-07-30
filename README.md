@@ -30,7 +30,7 @@ Data integrity comes first: writes are transactional where it matters; conflicts
 - A TTY for the interactive UI (`stdin` and `stdout`)
 - **Git** optional — enable only if you want collection versioning / remote sync
 
-> **UI language:** TUI and CLI help are currently Chinese.
+> **UI language:** Defaults to the system locale — Chinese (`zh*`) for Chinese UI, English otherwise. Override with `iskills config` (Chinese / English / follow system).
 
 ## Install
 
@@ -77,6 +77,9 @@ iskills add my-skill --copy
 # Optional: turn the collection into a Git repo (and set origin)
 iskills init
 iskills init --remote git@github.com:you/my-skills.git
+
+# Configure UI language (follow system / Chinese / English)
+iskills config
 ```
 
 In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) lives on the keyboard-driven browser. With a remote configured, press **`s`** on the Collection tab to sync.
@@ -91,6 +94,7 @@ In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) liv
 | `iskills import [source]` | Import a local path or Git URL |
 | `iskills add [skill…]` | Install from the collection into a project or global agent dir |
 | `iskills init` | Initialize Git for the collection (optional remote) |
+| `iskills config` | Configure UI preferences (language) |
 
 Common flags (see `iskills help <command>` for the full set):
 

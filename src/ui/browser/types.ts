@@ -67,7 +67,7 @@ export interface BrowserViewInput {
   checkUpdates: BrowserUpdateChecker;
   updatingSkillName?: string | undefined;
   updatingProgress?: { current: number; total: number } | undefined;
-  workingAction?: '更新' | '转换';
+  workingAction?: 'update' | 'materialize';
 }
 
 export type BrowserAppPhase = 'browse' | 'detail';
@@ -90,7 +90,7 @@ export interface WorkingProgressSnapshot {
   skillName: string;
   current: number;
   total: number;
-  workingAction: '更新' | '转换';
+  workingAction: 'update' | 'materialize';
 }
 
 export interface DetailViewContext {
@@ -125,7 +125,7 @@ export interface BrowserActionHost {
       skillName: string;
       current: number;
       total: number;
-      workingAction: '更新' | '转换';
+      workingAction: 'update' | 'materialize';
     } | null
   ) => void;
   setStatus: (text: string, transient: boolean, kind?: 'normal' | 'error') => void;

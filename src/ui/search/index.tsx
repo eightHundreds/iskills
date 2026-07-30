@@ -12,6 +12,7 @@ import { collectionMatchMarkers } from '../collection-match.js';
 import { Layer } from '../overlay/static.js';
 // Ensure CLI bootstrap is registered when search runs without a mounted tree.
 import '../shell/run.js';
+import { t } from '../../i18n/index.js';
 
 function formatInstalls(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -100,7 +101,7 @@ function SearchSkills({
   return (
     <box flexDirection="column">
       <TextInput
-        label="搜索技能"
+        label={t('search.title')}
         initialValue={initialQuery}
         onChange={(value) => {
           requestId.current++;
@@ -115,13 +116,13 @@ function SearchSkills({
       />
       <box flexDirection="column" marginTop={1}>
         {query.trim().length < 2 ? (
-          <Text color={chrome.muted}>输入至少 2 个字符开始搜索</Text>
+          <Text color={chrome.muted}>{t('search.minChars')}</Text>
         ) : error ? (
           <Text color={termcnColors.error}>{error}</Text>
         ) : !results.length && loading ? (
-          <Text color={chrome.muted}>正在搜索…</Text>
+          <Text color={chrome.muted}>{t('search.searching')}</Text>
         ) : !results.length ? (
-          <Text color={chrome.muted}>没有找到技能</Text>
+          <Text color={chrome.muted}>{t('search.noResults')}</Text>
         ) : (
           visible.map((skill, index) => {
             const active = offset + index === cursor;
@@ -143,10 +144,10 @@ function SearchSkills({
       </box>
       <Text color={chrome.muted}>
         {error
-          ? 'Enter 重试 · Esc 取消'
+          ? t('search.retryFooter')
           : loading || !results.length
-            ? 'Esc 取消'
-            : '↑/↓ 选择 · Enter 收藏 · Esc 取消'}
+            ? t('search.cancelFooter')
+            : t('search.listFooter')}
       </Text>
     </box>
   );

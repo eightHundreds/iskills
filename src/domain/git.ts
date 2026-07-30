@@ -35,6 +35,7 @@ import type {
   SourceConflict,
   UpdateStatus,
 } from './types.js';
+import { t } from '../i18n/index.js';
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -120,12 +121,12 @@ export async function initCollectionGit(): Promise<boolean> {
     return true;
   } catch (error) {
     if (created) await rm(gitDir, { recursive: true, force: true });
-    throw new Error(`无法初始化收藏夹 Git：${errorMessage(error)}`);
+    throw new Error(t('git.initFailed', { error: errorMessage(error) }));
   }
 }
 
 export async function configureCollectionRemote(remote: string): Promise<void> {
-  if (!remote.trim()) throw new Error('远程仓库地址不能为空');
+  if (!remote.trim()) throw new Error(t('git.remoteEmpty'));
   const { root } = await ensureCollection();
   const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
   git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', remote]);
@@ -177,7 +178,7 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
     };
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
-    throw new Error(`无法克隆 Git 来源：${errorMessage(error)}`);
+    throw new Error(t('git.cloneFailed', { error: errorMessage(error) }));
   }
 }
 
@@ -296,7 +297,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
       } catch {}
       if (!inProgress && clean && remoteMerged) {
         await rm(collectionPaths().collectionConflict, { force: true });
-        console.error('收藏夹 Git 冲突已解决。');
+        console.error(t('git.conflictResolved'));
         finalized = true;
       } else {
         remaining.push(conflict);
@@ -326,7 +327,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
     await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source);
     await rm(conflict.path, { recursive: true, force: true });
     if (conflict.baseline) await rm(conflict.baseline, { recursive: true, force: true });
-    console.error(`已应用手动解决的更新：${conflict.skill}`);
+    console.error(t('git.appliedManualUpdate', { skill: conflict.skill }));
     finalized = true;
   }
   if (remaining.length !== state.conflicts.length) {
@@ -381,7 +382,7 @@ export async function backgroundCollectionSync(): Promise<void> {
       });
     } catch {
       await markCollectionConflict(
-        '收藏夹与 origin 存在冲突，请在主 TUI 中同步后手动解决',
+        t('git.conflictWithOrigin'),
         remoteHead
       );
       return;
@@ -403,7 +404,7 @@ export async function backgroundCollectionSync(): Promise<void> {
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
     git(['-C', paths.root, 'push', '--quiet', 'origin', branch]);
   } catch (error) {
-    await markCollectionConflict(`收藏夹后台同步失败：${errorMessage(error)}`);
+    await markCollectionConflict(t('git.backgroundSyncFailed', { error: errorMessage(error) }));
   } finally {
     if (worktree && worktreeRoot) {
       try {
@@ -455,12 +456,12 @@ export async function updateGitSkill(
         await writeMetadata(metadata);
         return 'pinned';
       }
-      throw new Error(`来源分支不存在：${gitSource.ref}`);
+      throw new Error(t('git.branchMissing', { ref: gitSource.ref }));
     }
     const latestCommit = git(['-C', repository, 'rev-parse', latestRef]);
     if (latestCommit === gitSource.commit) return 'unchanged';
     if (gitSource.commit && !gitObjectExists(repository, gitSource.commit)) {
-      throw new Error(`来源历史中找不到上次同步 Commit：${gitSource.commit}`);
+      throw new Error(t('git.commitMissing', { commit: gitSource.commit }));
     }
 
     const newPath = gitSource.commit
@@ -475,7 +476,7 @@ export async function updateGitSkill(
       if (!allowDelete) {
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
         if (!options.confirmDelete) {
-          throw new Error(`上游已删除 ${skill.name}；调用方必须确认或显式允许移除`);
+          throw new Error(t('git.upstreamDeletedNeedsConfirm', { name: skill.name }));
         }
         const confirmed = await options.confirmDelete(links);
         if (!confirmed) return 'delete-skipped';
@@ -498,7 +499,7 @@ export async function updateGitSkill(
     } else {
       baseline = baselinePath(skill.name);
       if (!(await exists(join(baseline, 'SKILL.md')))) {
-        throw new Error('缺少首次更新所需的导入基线，请重新导入或重新绑定来源');
+        throw new Error(t('git.missingBaseline'));
       }
       const remoteTree = join(temporary, 'remote');
       git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
@@ -537,7 +538,7 @@ export async function updateGitSkill(
 
 export async function syncCollection(background: boolean): Promise<void> {
   const { root } = collectionPaths();
-  if (!(await exists(join(root, '.git')))) throw new Error('收藏夹不是 Git 仓库');
+  if (!(await exists(join(root, '.git')))) throw new Error(t('git.notARepo'));
   if (background) return backgroundCollectionSync();
   try {
     let hasUpstream = true;
@@ -558,7 +559,7 @@ export async function syncCollection(background: boolean): Promise<void> {
     await writeState(state);
     await rm(collectionPaths().collectionConflict, { force: true });
   } catch (error) {
-    await markCollectionConflict('收藏夹 Git 同步冲突，请使用 Git 手动解决');
-    throw new Error(`收藏夹 Git 同步失败：${errorMessage(error)}`);
+    await markCollectionConflict(t('git.syncConflictManual'));
+    throw new Error(t('git.syncFailed', { error: errorMessage(error) }));
   }
 }

@@ -33,6 +33,7 @@ import {
   writeState,
 } from './core.js';
 import type { CollectionState, GitSource, Skill, SkillLink, SkillMetadata } from './types.js';
+import { t } from '../i18n/index.js';
 
 export interface ReplacementInput {
   name: string;
@@ -47,7 +48,7 @@ export async function createCollectionSkill(name: string): Promise<string> {
   const paths = await ensureCollection();
   const target = join(paths.skills, skillName);
   if (await pathPresent(target)) {
-    throw new Error(`收藏夹已存在同名技能：${skillName}`);
+    throw new Error(t('domain.skillExistsInCollection', { name: skillName }));
   }
   const metadata = metadataPath(skillName);
   let created = false;
@@ -57,7 +58,7 @@ export async function createCollectionSkill(name: string): Promise<string> {
       await mkdir(target);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`收藏夹已存在同名技能：${skillName}`);
+        throw new Error(t('domain.skillExistsInCollection', { name: skillName }));
       }
       throw error;
     }
@@ -106,7 +107,7 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
 
   if (origin && !(await isExactSymlink(origin.path, target))) {
     await rm(transaction, { recursive: true, force: true });
-    throw new Error(`原始位置已不是指向收藏夹的软链，已中止：${origin.path}`);
+    throw new Error(t('domain.originNotCollectionLink', { path: origin.path }));
   }
 
   try {
@@ -174,7 +175,7 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
       }
     } catch (rollbackError) {
       throw new Error(
-        `导入失败：${errorMessage(error)}；回滚失败：${errorMessage(rollbackError)}`
+        t('domain.importFailedRollback', { error: errorMessage(error), rollback: errorMessage(rollbackError) })
       );
     }
     await rm(transaction, { recursive: true, force: true }).catch(() => {});
@@ -184,12 +185,12 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
   for (const conflict of state.conflicts) {
     if (conflict.type === 'source' && conflict.skill === input.name) {
       await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
-        console.error(`警告：旧冲突目录清理失败：${errorMessage(error)}`);
+        console.error(t('domain.warnConflictCleanup', { error: errorMessage(error) }));
       });
     }
   }
   await rm(transaction, { recursive: true, force: true }).catch((error) => {
-    console.error(`警告：替换备份清理失败：${errorMessage(error)}`);
+    console.error(t('domain.warnReplaceBackupCleanup', { error: errorMessage(error) }));
   });
 }
 
@@ -210,10 +211,10 @@ export async function removeCollectionUsage(name: string, from?: string): Promis
       link.kind !== 'origin' &&
       (resolve(link.path) === scope || resolve(link.path).startsWith(`${scope}${sep}`))
   );
-  if (!candidates.length) throw new Error(`当前范围没有使用技能：${name}`);
+  if (!candidates.length) throw new Error(t('domain.noUsageInScope', { name }));
   for (const link of candidates) {
     if (!(await isExactSymlink(link.path, collectionTarget))) {
-      throw new Error(`使用位置已不是预期软链，未删除：${link.path}`);
+      throw new Error(t('domain.usageNotExpectedLink', { path: link.path }));
     }
   }
   for (const link of candidates) await rm(link.path);
@@ -232,13 +233,13 @@ export async function removeFromCollection(
 ): Promise<void> {
   const paths = collectionPaths();
   const skillPath = join(paths.skills, assertSkillName(name));
-  if (!(await exists(skillPath))) throw new Error(`收藏夹中不存在：${name}`);
+  if (!(await exists(skillPath))) throw new Error(t('domain.notInCollection', { name }));
   const state = await readState();
   const links = state.links.filter((link) => link.skill === name);
   const origin = links.find((link) => link.kind === 'origin');
 
   if (origin && !(await isExactSymlink(origin.path, skillPath))) {
-    throw new Error(`原始位置已不是指向收藏夹的软链，已中止：${origin.path}`);
+    throw new Error(t('domain.originNotCollectionLink', { path: origin.path }));
   }
   for (const link of links.filter((item) => item.kind === 'usage')) {
     if (await isExactSymlink(link.path, skillPath)) await rm(link.path);
@@ -248,7 +249,7 @@ export async function removeFromCollection(
     await rm(origin.path);
     await moveDirectory(skillPath, origin.path);
   } else {
-    if (!confirmed) throw new Error('删除收藏需要确认');
+    if (!confirmed) throw new Error(t('domain.removeNeedsConfirm'));
     await rm(skillPath, { recursive: true });
   }
   await rm(metadataPath(name), { force: true });
@@ -266,7 +267,7 @@ export async function removeFromCollection(
   await commitCollection(`remove ${name}`);
   if (!quiet) {
     console.log(
-      origin ? `已从收藏夹移除 ${name}，并还回 ${origin.path}。` : `已从收藏夹移除 ${name}。`
+      origin ? t('domain.removedWithRestore', { name, path: origin.path }) : t('domain.removed', { name })
     );
   }
 }
@@ -278,7 +279,7 @@ async function validateMaterializableSkillTree(
 ): Promise<void> {
   const currentReal = await realpath(current);
   if (ancestors.has(currentReal)) {
-    throw new Error(`技能包含循环软链：${current}`);
+    throw new Error(t('domain.cyclicSymlink', { path: current }));
   }
   const nextAncestors = new Set(ancestors).add(currentReal);
   for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -288,10 +289,10 @@ async function validateMaterializableSkillTree(
       try {
         target = await realpath(path);
       } catch {
-        throw new Error(`技能包含无法解析的软链：${path}`);
+        throw new Error(t('domain.unresolvableSymlink', { path }));
       }
       if (target !== root && !target.startsWith(`${root}${sep}`)) {
-        throw new Error(`技能包含指向目录外的软链：${path}`);
+        throw new Error(t('domain.symlinkOutside', { path }));
       }
       if ((await lstat(target)).isDirectory()) {
         await validateMaterializableSkillTree(root, target, nextAncestors);
@@ -306,7 +307,7 @@ async function assertMaterializedTree(current: string): Promise<void> {
   for (const entry of await readdir(current, { withFileTypes: true })) {
     const path = join(current, entry.name);
     if (entry.isSymbolicLink()) {
-      throw new Error(`副本仍包含软链：${path}`);
+      throw new Error(t('domain.copyStillHasSymlink', { path }));
     }
     if (entry.isDirectory()) await assertMaterializedTree(path);
   }
@@ -314,7 +315,7 @@ async function assertMaterializedTree(current: string): Promise<void> {
 
 async function validateSkillLocations(
   skills: Skill[],
-  operation: '删除' | '转换'
+  operation: 'delete' | 'materialize'
 ): Promise<Map<string, Skill>> {
   const collectionRoot = resolve(collectionPaths().root);
   const unique = new Map<string, Skill>();
@@ -322,17 +323,17 @@ async function validateSkillLocations(
 
   for (const [path, skill] of unique) {
     if (path === collectionRoot || path.startsWith(`${collectionRoot}${sep}`)) {
-      throw new Error(`不能通过位置${operation}收藏夹内容：${path}`);
+      throw new Error(t('domain.cannotOpCollectionByPath', { operation: t(operation === 'delete' ? 'domain.opDelete' : 'domain.opMaterialize'), path }));
     }
-    if (!(await pathPresent(path))) throw new Error(`技能位置已不存在：${path}`);
+    if (!(await pathPresent(path))) throw new Error(t('domain.locationGone', { path }));
     let current: Skill;
     try {
       current = await readSkill(path);
     } catch {
-      throw new Error(`技能位置已发生变化${operation === '删除' ? '，未删除' : ''}：${path}`);
+      throw new Error(operation === 'delete' ? t('domain.locationChangedNotDeleted', { path }) : t('domain.locationChanged', { path }));
     }
     if (current.name !== skill.name) {
-      throw new Error(`技能位置已发生变化${operation === '删除' ? '，未删除' : ''}：${path}`);
+      throw new Error(operation === 'delete' ? t('domain.locationChangedNotDeleted', { path }) : t('domain.locationChanged', { path }));
     }
   }
   return unique;
@@ -340,7 +341,7 @@ async function validateSkillLocations(
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
-  const error = new Error('操作已中断');
+  const error = new Error(t('common.interrupted'));
   error.name = 'AbortError';
   throw error;
 }
@@ -365,21 +366,21 @@ export async function materializeSkillReferences(
   options: MaterializeSkillReferencesOptions = {}
 ): Promise<number> {
   if (!skills.length) return 0;
-  const unique = await validateSkillLocations(skills, '转换');
+  const unique = await validateSkillLocations(skills, 'materialize');
   const preflight: Array<{ skill: Skill; path: string; source: string }> = [];
   for (const [path, skill] of unique) {
     throwIfAborted(options.signal);
     if (!(await lstat(path)).isSymbolicLink()) {
-      throw new Error(`技能位置不是引用：${path}`);
+      throw new Error(t('domain.notAReference', { path }));
     }
     let source: string;
     try {
       source = await realpath(path);
     } catch {
-      throw new Error(`技能引用无法解析：${path}`);
+      throw new Error(t('domain.referenceUnresolvable', { path }));
     }
     if (!(await lstat(source)).isDirectory()) {
-      throw new Error(`技能引用目标不是目录：${path}`);
+      throw new Error(t('domain.referenceNotDir', { path }));
     }
     await validateMaterializableSkillTree(source);
     preflight.push({ skill, path, source });
@@ -413,7 +414,7 @@ export async function materializeSkillReferences(
       await assertMaterializedTree(staged);
       const copied = await readSkill(staged);
       if (copied.name !== input.skill.name) {
-        throw new Error(`复制结果中的技能名称已发生变化：${input.path}`);
+        throw new Error(t('domain.copyNameChanged', { path: input.path }));
       }
     }
 
@@ -446,7 +447,11 @@ export async function materializeSkillReferences(
             await rename(item.backup, item.path);
           } catch (rollbackError) {
             throw new Error(
-              `转换失败：${errorMessage(error)}；回滚失败：${item.path}: ${errorMessage(rollbackError)}`
+              t('domain.materializeFailedRollbackItem', {
+                error: errorMessage(error),
+                path: item.path,
+                rollback: errorMessage(rollbackError),
+              })
             );
           }
           throw error;
@@ -474,12 +479,15 @@ export async function materializeSkillReferences(
         try {
           await writeState(state);
         } catch (rollbackError) {
-          rollbackErrors.push(`状态：${errorMessage(rollbackError)}`);
+          rollbackErrors.push(t('domain.stateRollback', { error: errorMessage(rollbackError) }));
         }
       }
       if (rollbackErrors.length) {
         throw new Error(
-          `转换失败：${errorMessage(error)}；回滚失败：${rollbackErrors.join('；')}`
+          t('domain.materializeFailedRollback', {
+            error: errorMessage(error),
+            rollback: rollbackErrors.join(t('common.itemJoin')),
+          })
         );
       }
       throw error;
@@ -488,7 +496,7 @@ export async function materializeSkillReferences(
     for (const item of prepared) {
       if (committed || !(await pathPresent(item.backup))) {
         await rm(item.workspace, { recursive: true, force: true }).catch((error) => {
-          console.error(`警告：转换临时目录清理失败：${errorMessage(error)}`);
+          console.error(t('domain.warnMaterializeTempCleanup', { error: errorMessage(error) }));
         });
       }
     }
@@ -498,13 +506,13 @@ export async function materializeSkillReferences(
 
 export async function removeSkillLocations(skills: Skill[]): Promise<number> {
   const paths = collectionPaths();
-  const unique = await validateSkillLocations(skills, '删除');
+  const unique = await validateSkillLocations(skills, 'delete');
 
   for (const [path, skill] of unique) {
     if (skill.fromCollection) {
       const target = join(paths.skills, assertSkillName(skill.name));
       if (!(await isExactSymlink(path, target))) {
-        throw new Error(`收藏夹链接已发生变化，未删除：${path}`);
+        throw new Error(t('domain.collectionLinkChanged', { path }));
       }
     }
   }
@@ -532,7 +540,7 @@ export async function installMergedCollectionSkill(
   await copyDirectoryContents(workspace, staged);
   if (!(await exists(join(staged, 'SKILL.md')))) {
     await rm(staged, { recursive: true, force: true });
-    throw new Error(`合并结果不是有效技能：${name}`);
+    throw new Error(t('domain.mergeNotValidSkill', { name }));
   }
   await rm(target, { recursive: true });
   await rename(staged, target);

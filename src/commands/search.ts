@@ -15,6 +15,7 @@ import type {
 } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search/index.js';
 import { importRemoteSkillToCollection } from './library.js';
+import { t } from '../i18n/index.js';
 
 const GITHUB_SOURCE =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
@@ -51,9 +52,9 @@ function collectionMatch(
 }
 
 function printImportResult(result: Awaited<ReturnType<typeof importRemoteSkillToCollection>>): void {
-  if (result.status === 'imported') console.log(`已收藏 ${result.name}。`);
+  if (result.status === 'imported') console.log(t('cmd.collected', { name: result.name }));
   if (result.status === 'unchanged') {
-    console.log(`${result.name} 已收藏自同一来源；可在主 TUI 中更新。`);
+    console.log(t('cmd.collectedSameSource', { name: result.name }));
   }
 }
 
@@ -67,9 +68,9 @@ async function searchSkills(
   const response = await fetch(`${base}/api/search?${params}`, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
   });
-  if (!response.ok) throw new Error(`搜索失败（HTTP ${response.status}）`);
+  if (!response.ok) throw new Error(t('cmd.searchHttpFailed', { status: response.status }));
   const payload = await response.json() as { skills?: unknown };
-  if (!Array.isArray(payload.skills)) throw new Error('搜索服务返回了无效数据');
+  if (!Array.isArray(payload.skills)) throw new Error(t('cmd.searchInvalidPayload'));
 
   return payload.skills.flatMap((value): RemoteSkill[] => {
     if (!value || typeof value !== 'object') return [];
@@ -109,7 +110,7 @@ export async function commandSearch(argv: string[]): Promise<void> {
     allowPositionals: true,
   });
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('独立搜索 TUI 需要 stdin 和 stdout TTY；当前终端不支持。');
+    throw new Error(t('cli.searchTtyRequired'));
   }
   const collection = await listCollection();
   const selected = await searchRemoteSkill({
@@ -119,20 +120,24 @@ export async function commandSearch(argv: string[]): Promise<void> {
   });
   if (!selected) return;
   while (true) {
-    console.error('正在校验并收藏…');
+    console.error(t('cmd.validatingCollect'));
     try {
       const result = await importRemoteSkillToCollection(selected.source, selected.name, {
         replace: values.replace ?? false,
         confirmReplace: (current, incoming) => Modal.confirm({
-          title: '确认',
-          message: `替换 ${selected.name}：${formatIdentity(current)} → ${formatIdentity(incoming)}？`,
+          title: t('common.confirm'),
+          message: t('cmd.replaceIdentityConfirm', {
+            name: selected.name,
+            from: formatIdentity(current),
+            to: formatIdentity(incoming),
+          }),
         }),
       });
       printImportResult(result);
       return;
     } catch (error) {
-      console.error(`收藏失败：${errorMessage(error)}`);
-      if (!(await Modal.confirm({ title: '确认', message: '重试收藏吗？' }))) {
+      console.error(t('cmd.collectFailed', { error: errorMessage(error) }));
+      if (!(await Modal.confirm({ title: t('common.confirm'), message: t('cmd.retryCollect') }))) {
         process.exitCode = 1;
         return;
       }

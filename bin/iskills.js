@@ -64,7 +64,12 @@ if (shouldReexecToBun()) {
       },
     });
     if (result.error) {
-      console.error(`错误：无法启动 Bun 运行时：${result.error.message}`);
+      const { t } = await import('../dist/src/i18n/index.js');
+      console.error(
+        t('cli.errorPrefix', {
+          message: t('cli.bunStartFailed', { message: result.error.message }),
+        })
+      );
       process.exitCode = 1;
     } else {
       process.exit(result.status ?? 1);
@@ -77,6 +82,7 @@ if (shouldReexecToBun()) {
 await import('./opentui-register.mjs');
 
 const { main } = await import('../dist/src/cli.js');
+const { t } = await import('../dist/src/i18n/index.js');
 const { InterruptError } = await import('../dist/src/ui/shell/terminal.js');
 
 main().catch((error) => {
@@ -87,6 +93,7 @@ main().catch((error) => {
     process.exitCode = 130;
     return;
   }
-  console.error(`错误：${error.message}`);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(t('cli.errorPrefix', { message }));
   process.exitCode = 1;
 });

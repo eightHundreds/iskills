@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
 import { TextInput } from './text-input.js';
 import { isReturn } from './text.js';
+import { t } from '../../i18n/index.js';
 
 export function TagEditor({
   tags,
@@ -58,10 +59,10 @@ export function TagEditor({
   return (
     <box flexDirection="column">
       <Text bold color={chrome.body}>
-        已选 {selected.size}
+        {t('ui.selectedCount', { count: selected.size })}
       </Text>
       <Text bold color={chrome.body}>
-        已有标签
+        {t('ui.existingTags')}
       </Text>
       <box border
         flexDirection="column"
@@ -87,18 +88,18 @@ export function TagEditor({
           );
         }) : (
           <Text color={chrome.muted} backgroundColor={chrome.surface}>
-            暂无已有标签
+            {t('ui.noExistingTags')}
           </Text>
         )}
       </box>
       <TextInput
-        label="新增标签（逗号分隔）"
+        label={t('comp.newTagsComma')}
         isActive={focus === 'input'}
         onSubmit={save}
         {...(onCancel ? { onCancel } : {})}
       />
       <Text color={chrome.muted}>
-        ↑/↓ 移动 · Space 选择 · Tab 切换区域 · Enter 保存 · Esc 取消
+        {t('ui.tagEditorFooter')}
       </Text>
     </box>
   );

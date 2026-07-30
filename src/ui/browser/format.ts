@@ -6,6 +6,7 @@ import type { BrowserFocus, BrowserTab, DetailFieldId, SkillGroup } from './type
 import { matchesSkill } from '../../domain/skill-query.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
+import { t } from '../../i18n/index.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
 
 
@@ -58,10 +59,12 @@ export function nextAgent(
 export type SkillRow =
   | { type: 'group'; name: string; skills: Skill[] }
   | { type: 'skill'; group: string; skill: Skill };
-export const UNTAGGED_LABEL = '未标签';
+export function untaggedLabel(): string {
+  return t('common.untagged');
+}
 
 export function skillGroups(skill: Skill): string[] {
-  return [...new Set(skill.tags?.length ? skill.tags : [UNTAGGED_LABEL])];
+  return [...new Set(skill.tags?.length ? skill.tags : [untaggedLabel()])];
 }
 
 export function groupedRows(skills: Skill[], query: string): SkillRow[] {
@@ -80,9 +83,9 @@ export function groupedRows(skills: Skill[], query: string): SkillRow[] {
   }
   const sorted = [...groups].sort(([left], [right]) => {
     if (left === right) return 0;
-    return left === UNTAGGED_LABEL ? 1 : right === UNTAGGED_LABEL ? -1 : left.localeCompare(right);
+    return left === untaggedLabel() ? 1 : right === untaggedLabel() ? -1 : left.localeCompare(right);
   });
-  if (sorted.length === 1 && sorted[0]?.[0] === UNTAGGED_LABEL) {
+  if (sorted.length === 1 && sorted[0]?.[0] === untaggedLabel()) {
     return sorted[0][1].map((skill) => ({ type: 'skill', group: '', skill }));
   }
   const rows: SkillRow[] = [];
@@ -103,10 +106,10 @@ export const TAG_FILTER_ALL = '__all__';
 
 export function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
   if (tag === TAG_FILTER_ALL) return skills;
-  if (tag === UNTAGGED_LABEL) {
+  if (tag === untaggedLabel()) {
     return skills.filter((skill) => {
       const groups = skillGroups(skill);
-      return groups.length === 1 && groups[0] === UNTAGGED_LABEL;
+      return groups.length === 1 && groups[0] === untaggedLabel();
     });
   }
   return skills.filter((skill) => skillGroups(skill).includes(tag));
@@ -117,7 +120,7 @@ export function tagFilterOptions(
   groups: Extract<SkillRow, { type: 'group' }>[]
 ): { key: string; label: string; skills: Skill[] }[] {
   return [
-    { key: TAG_FILTER_ALL, label: '全部', skills },
+    { key: TAG_FILTER_ALL, label: t('common.all'), skills },
     ...groups.map((group) => ({
       key: group.name,
       label: group.name,
@@ -168,23 +171,23 @@ export function detailContentLines(
   frameWidth: number
 ): DetailContentLine[] {
   const width = Math.max(1, frameWidth - 4);
-  const lines = detailFieldLines(skillFieldLabels.description, skill.description || '无描述', width, true);
-  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels.location, skill.path, width)];
+  const lines = detailFieldLines(skillFieldLabels().description, skill.description || t('common.noDescription'), width, true);
+  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels().location, skill.path, width)];
 
   lines.push(
-    ...detailFieldLines(skillFieldLabels.tags, metadata.tags.length ? metadata.tags.join(', ') : '无', width),
-    ...detailFieldLines(skillFieldLabels.note, metadata.note || '无', width),
-    ...detailFieldLines(skillFieldLabels.source, source, width)
+    ...detailFieldLines(skillFieldLabels().tags, metadata.tags.length ? metadata.tags.join(', ') : t('common.none'), width),
+    ...detailFieldLines(skillFieldLabels().note, metadata.note || t('common.none'), width),
+    ...detailFieldLines(skillFieldLabels().source, source, width)
   );
   if (metadata.source.path) {
-    lines.push(...detailFieldLines(skillFieldLabels.path, metadata.source.path, width));
+    lines.push(...detailFieldLines(skillFieldLabels().path, metadata.source.path, width));
   }
-  lines.push({ label: skillFieldLabels.relatedLocations, value: '' });
-  if (!links.length) return [...lines, { value: '  无', muted: true }];
+  lines.push({ label: skillFieldLabels().relatedLocations, value: '' });
+  if (!links.length) return [...lines, { value: t('common.noneIndented'), muted: true }];
   return [
     ...lines,
     ...links.flatMap((link) => detailFieldLines(
-      link.kind === 'origin' ? '  原始' : link.kind === 'usage' ? '  使用' : '  依赖',
+      link.kind === 'origin' ? t('common.originIndented') : link.kind === 'usage' ? t('common.usageIndented') : t('common.dependentIndented'),
       link.path,
       width,
       true
@@ -213,48 +216,48 @@ export function shortcutHelpSections(): ShortcutHelpSection[] {
   return [
     {
       id: 'nav',
-      title: '导航',
+      title: t('browser.helpNav'),
       items: [
-        { label: '移动焦点或列表项', keys: '↑/↓' },
-        { label: '切换当前层级 Tab', keys: '←/→' },
-        { label: '窄屏打开详情（三栏右栏即预览，不进全屏）', keys: '→' },
-        { label: '筛选技能', keys: '/' },
-        { label: '跳转分组（有分组时）', keys: 'g' },
+        { label: t('browser.helpNavMove'), keys: '↑/↓' },
+        { label: t('browser.helpNavTab'), keys: '←/→' },
+        { label: t('browser.helpNavDetail'), keys: '→' },
+        { label: t('browser.helpNavFilter'), keys: '/' },
+        { label: t('browser.helpNavGroup'), keys: 'g' },
       ],
     },
     {
       id: 'select',
-      title: '选择',
+      title: t('browser.helpSelect'),
       items: [
-        { label: '切换选中（标签列：该标签下全部）', keys: 'Space' },
-        { label: '添加已选；窄屏打开详情（三栏右栏即预览）', keys: 'Enter' },
+        { label: t('browser.helpSelectToggle'), keys: 'Space' },
+        { label: t('browser.helpSelectEnter'), keys: 'Enter' },
       ],
     },
     {
       id: 'collect',
-      title: '收藏与安装',
+      title: t('browser.helpCollect'),
       items: [
-        { label: '加入收藏夹（项目 / 全局已选本地技能）', keys: 'i' },
+        { label: t('browser.helpCollectImport'), keys: 'i' },
       ],
     },
     {
       id: 'maintain',
-      title: '维护',
+      title: t('browser.helpMaintain'),
       items: [
-        { label: '批量加标签（收藏夹已选）', keys: 't' },
-        { label: '更新：已选可更新者，否则当前项', keys: 'u' },
-        { label: '更多操作 · 引用转副本（项目软链）', keys: 'm' },
-        { label: '同步收藏夹 Git（可同步时）', keys: 's' },
-        { label: '删除已选；无已选则删除当前项', keys: 'd' },
+        { label: t('browser.helpMaintainTag'), keys: 't' },
+        { label: t('browser.helpMaintainUpdate'), keys: 'u' },
+        { label: t('browser.helpMaintainMore'), keys: 'm' },
+        { label: t('browser.helpMaintainSync'), keys: 's' },
+        { label: t('browser.helpMaintainDelete'), keys: 'd' },
       ],
     },
     {
       id: 'global',
-      title: '全局',
+      title: t('browser.helpGlobal'),
       items: [
-        { label: '打开本帮助', keys: '?' },
-        { label: '退出浏览器', keys: 'q' },
-        { label: '取消最内层上下文', keys: 'Esc' },
+        { label: t('browser.helpGlobalHelp'), keys: '?' },
+        { label: t('browser.helpGlobalQuit'), keys: 'q' },
+        { label: t('browser.helpGlobalEsc'), keys: 'Esc' },
       ],
     },
   ];
@@ -273,7 +276,7 @@ export function shortcutModalContent(): string[] {
 }
 
 export function moreActionModalContent(scope: string): string[] {
-  return [scope, '', '› 将引用转为副本'];
+  return [scope, '', t('browser.materializeAction')];
 }
 export function tagSidebarLine(
   current: boolean,
@@ -303,11 +306,11 @@ export function categorySidebarLine(
 
 export function collectionSourceLabel(skill: CollectedSkill): string {
   const source = skill.source;
-  if (!source) return '未知';
-  if (source.type === 'git' && source.url) return 'Git';
-  if (source.type === 'local' || source.path) return '本地';
-  if (source.type === 'unknown' && source.path) return '本地';
-  if (source.type === 'unknown') return '本地';
+  if (!source) return t('common.unknown');
+  if (source.type === 'git' && source.url) return t('common.git');
+  if (source.type === 'local' || source.path) return t('common.local');
+  if (source.type === 'unknown' && source.path) return t('common.local');
+  if (source.type === 'unknown') return t('common.local');
   return source.type;
 }
 
@@ -428,7 +431,7 @@ export function collectionListColumnLines(
   const activeLineIndexes = new Set<number>();
   const selectedLineIndexes = new Set<number>();
   if (rows.length === 0) {
-    const lines = [padColumns('没有匹配的技能', listWidth)];
+    const lines = [padColumns(t('browser.noMatchingSkills'), listWidth)];
     while (lines.length < viewportHeight) lines.push('');
     return {
       lines: lines.slice(0, viewportHeight),
@@ -538,7 +541,22 @@ export interface CollectionDetailRow {
   field?: DetailFieldId;
 }
 
-export const DETAIL_LABEL_WIDTH = 6;
+/**
+ * Fixed label column width for the master-detail peek pane.
+ * Must fit the longest field label in the active locale (en: "Description")
+ * plus a gap so label and value do not run together.
+ */
+export function detailLabelWidth(): number {
+  const labels = [
+    t('common.source'),
+    t('common.version'),
+    t('common.tags'),
+    t('common.note'),
+    t('common.location'),
+    t('common.description'),
+  ];
+  return Math.max(6, ...labels.map((label) => textWidth(label))) + 1;
+}
 
 /** Label + value rows for the master-detail peek column (label column is fixed-width). */
 export function peekFieldRows(
@@ -548,8 +566,8 @@ export function peekFieldRows(
   maxLines: number,
   options: { mutedValue?: boolean; field?: DetailFieldId } = {}
 ): CollectionDetailRow[] {
-  const valueWidth = Math.max(1, width - DETAIL_LABEL_WIDTH);
-  const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
+  const valueWidth = Math.max(1, width - detailLabelWidth());
+  const lines = wrapColumns(value || t('common.none'), valueWidth).slice(0, maxLines);
   return lines.map((line, index) => ({
     text: line,
     label: index === 0 ? label : '',
@@ -568,9 +586,9 @@ export function browseDetailRows(
   updatingFrame = '⠋'
 ): CollectionDetailRow[] {
   if (!skill) {
-    return [{ text: '选择技能查看', muted: true }];
+    return [{ text: t('browser.selectSkillToView'), muted: true }];
   }
-  const title = skill.isReference ? `引用 · ${skill.name}` : skill.name;
+  const title = skill.isReference ? t('browser.referenceName', { name: skill.name }) : skill.name;
   const rows: CollectionDetailRow[] = [
     {
       text: `${title}${
@@ -590,16 +608,16 @@ export function browseDetailRows(
     const triggerTags = collected.tags?.length
       ? collected.tags.map((tag) => `[${tag}]`).join(' ')
       : '--';
-    const note = collected.note?.trim() || '无';
+    const note = collected.note?.trim() || t('common.none');
     // Compact metadata block: no interstitial blanks so fields share one visual group.
     rows.push(
-      ...peekFieldRows('来源', collectionSourceLabel(collected), width, 1),
-      ...peekFieldRows('版本', version, width, 1),
-      ...peekFieldRows('标签', triggerTags, width, 2, { field: 'tags' }),
-      ...peekFieldRows('备注', note, width, 2, { field: 'note' })
+      ...peekFieldRows(t('common.source'), collectionSourceLabel(collected), width, 1),
+      ...peekFieldRows(t('common.version'), version, width, 1),
+      ...peekFieldRows(t('common.tags'), triggerTags, width, 2, { field: 'tags' }),
+      ...peekFieldRows(t('common.note'), note, width, 2, { field: 'note' })
     );
   } else {
-    rows.push(...peekFieldRows('位置', skill.path, width, 2));
+    rows.push(...peekFieldRows(t('common.location'), skill.path, width, 2));
   }
   // One blank before description; description is secondary and length-variable.
   // 不要用空行撑到视口底，否则看起来像「贴底」。
@@ -607,7 +625,7 @@ export function browseDetailRows(
   return [
     ...rows,
     { text: '' },
-    ...peekFieldRows('描述', skill.description || '无描述', width, descriptionBudget, {
+    ...peekFieldRows(t('common.description'), skill.description || t('common.noDescription'), width, descriptionBudget, {
       mutedValue: true,
     }),
   ].slice(0, viewportHeight);
@@ -621,30 +639,30 @@ export function masterPeekColumnLines(
 ): string[] {
   if (!skill) {
     return Array.from({ length: viewportHeight }, (_, index) =>
-      index === 0 ? '选择技能查看' : ''
+      index === 0 ? t('browser.selectSkillToView') : ''
     );
   }
   const tags = collection
     ? (skill as CollectedSkill).tags?.length
       ? (skill as CollectedSkill).tags!.join(', ')
-      : '无'
-    : skillGroups(skill).join(', ') || '无';
-  const note = collection ? (skill as CollectedSkill).note?.trim() || '无' : '';
+      : t('common.none')
+    : skillGroups(skill).join(', ') || t('common.none');
+  const note = collection ? (skill as CollectedSkill).note?.trim() || t('common.none') : '';
   const source = collection && (skill as CollectedSkill).source
     ? (skill as CollectedSkill).source!.url ?? (skill as CollectedSkill).source!.type
     : '';
   const descriptionBudget = Math.max(3, viewportHeight - (collection ? 8 : 6));
   const fields = [
     skill.name,
-    ...peekFieldLines('描述', skill.description || '无描述', width, descriptionBudget),
-    ...peekFieldLines('标签', tags, width, 1),
+    ...peekFieldLines(t('common.description'), skill.description || t('common.noDescription'), width, descriptionBudget),
+    ...peekFieldLines(t('common.tags'), tags, width, 1),
     ...(collection ? [
-      ...peekFieldLines('备注', note, width, 1),
-      ...peekFieldLines('来源', source || '无', width, 1),
+      ...peekFieldLines(t('common.note'), note, width, 1),
+      ...peekFieldLines(t('common.source'), source || t('common.none'), width, 1),
     ] : [
-      ...peekFieldLines('位置', skill.path, width, 2),
+      ...peekFieldLines(t('common.location'), skill.path, width, 2),
     ]),
-    collection ? 'Space 选中' : 'Enter 查看 · Space 选中',
+    collection ? t('browser.spaceSelect') : t('browser.enterViewSpaceSelect'),
   ];
   while (fields.length < viewportHeight) fields.push('');
   return fields.slice(0, viewportHeight);
@@ -655,9 +673,9 @@ export function peekFieldLines(
   width: number,
   maxLines: number
 ): string[] {
-  const labelWidth = 6;
+  const labelWidth = detailLabelWidth();
   const valueWidth = Math.max(1, width - labelWidth);
-  const lines = wrapColumns(value || '无', valueWidth).slice(0, maxLines);
+  const lines = wrapColumns(value || t('common.none'), valueWidth).slice(0, maxLines);
   return lines.map((line, index) =>
     index === 0
       ? `${padColumns(`${label}`, labelWidth)}${line}`
