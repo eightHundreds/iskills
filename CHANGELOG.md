@@ -6,6 +6,21 @@
 
 ## [未发布]
 
+## [0.2.42] - 2026-07-30
+
+### 新增
+
+- TUI 从 Ink 迁移到 OpenTUI（Bun 原生 FFI），支持主题感知 Modal/面板与终端 light/dark。
+- `create` 命令：在收藏夹新建技能并打开目录。
+- 扩展 agent 安装/扫描目标：`zcode`、`trae`、`qoder`、`grok`；按 agent 根目录判定是否已安装。
+- 列表/agent 鼠标交互、列内滚轮滚动、主题化 panel 与本地 braille spinner。
+
+### 变更
+
+- 去掉 Box 适配层与 Ink 命名 API，直接使用 OpenTUI `box`。
+- 项目安装默认勾选：仅当当前项目已有对应 skills 目录时预选，避免首次把新 agent 全选。
+- README 改为英文主文档，并附带 `README.zh-CN.md`。
+
 ## [0.2.41] - 2026-07-27
 
 ### 变更
