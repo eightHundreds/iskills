@@ -1,11 +1,9 @@
 name: Sync public
 
-# Push a filtered tree from iskills-private → eightHundreds/iskills.
-# Private-only paths (never appear on public):
-#   - test/
-#   - docs/
-#   - AGENTS.md
-#   - CONTEXT.md
+# Replay private main (first-parent) onto eightHundreds/iskills:
+#   - drop private-only paths: test/, docs/, AGENTS.md, CONTEXT.md
+#   - keep other files, commit message, author, committer, and timestamps
+#   - skip commits that only touch private-only paths
 #
 # Auth (either secret works):
 #   - PUBLIC_REPO_SSH_KEY: write deploy key private key for eightHundreds/iskills
@@ -15,9 +13,16 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Rewrite full public history from private main'
+        required: false
+        default: false
+        type: boolean
 
+# contents:write — push refs/sync/last-private on this repo after a successful export
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: sync-public
@@ -32,6 +37,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch sync bookmark ref
+        run: git fetch origin '+refs/sync/*:refs/sync/*' || true
+
       - name: Require sync credentials
         env:
           PUBLIC_REPO_SSH_KEY: ${{ secrets.PUBLIC_REPO_SSH_KEY }}
@@ -42,69 +50,18 @@ jobs:
             exit 1
           fi
 
-      - name: Build filtered tree and push to public
+      - name: Replay filtered history to public
         env:
           PUBLIC_REPO_SSH_KEY: ${{ secrets.PUBLIC_REPO_SSH_KEY }}
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
-          PRIVATE_SHA=$(git rev-parse HEAD)
-          REF_NAME="${GITHUB_REF_NAME}"
-          IS_TAG=false
-          case "${GITHUB_REF}" in
-            refs/tags/*) IS_TAG=true ;;
-          esac
-
-          SRC="${GITHUB_WORKSPACE}"
-          FILTERED=$(mktemp -d)
-          PUBLIC=$(mktemp -d)
-
-          rsync -a \
-            --exclude '.git/' \
-            --exclude 'node_modules/' \
-            --exclude 'dist/' \
-            --exclude 'tmp/' \
-            --exclude '.DS_Store' \
-            --exclude '.scratch/' \
-            "${SRC}/" "${FILTERED}/"
-
-          rm -rf \
-            "${FILTERED}/test" \
-            "${FILTERED}/docs" \
-            "${FILTERED}/AGENTS.md" \
-            "${FILTERED}/CONTEXT.md"
-
-          if [ -n "${PUBLIC_REPO_SSH_KEY:-}" ]; then
-            mkdir -p ~/.ssh
-            printf '%s\n' "$PUBLIC_REPO_SSH_KEY" > ~/.ssh/id_ed25519
-            chmod 600 ~/.ssh/id_ed25519
-            ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
-            CLONE_URL="git@github.com:eightHundreds/iskills.git"
-          else
-            CLONE_URL="https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/eightHundreds/iskills.git"
+          chmod +x scripts/sync-to-public.sh
+          extra=()
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] && [ '${{ inputs.force_rebuild }}' = 'true' ]; then
+            extra+=(--force-rebuild)
           fi
-
-          git clone --depth 1 "${CLONE_URL}" "${PUBLIC}"
-
-          cd "${PUBLIC}"
-          git config user.name 'iskills-sync[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          rsync -a "${FILTERED}/" .
-
-          git add -A
-          if git diff --cached --quiet; then
-            echo 'No file changes vs public main'
-          else
-            git commit -m "sync: from private ${PRIVATE_SHA:0:7}"
-          fi
-
-          git push origin HEAD:main
-
-          if [ "${IS_TAG}" = true ]; then
-            git tag -f "${REF_NAME}"
-            git push origin "refs/tags/${REF_NAME}" --force
-            echo "Pushed tag ${REF_NAME} → public (triggers Release on iskills)"
-          fi
+          # First successful export (no refs/sync/last-private) also does a full rebuild.
+          ./scripts/sync-to-public.sh "${extra[@]+"${extra[@]}"}"
