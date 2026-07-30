@@ -2,16 +2,16 @@
  * Live visual self-test inside a real terminal (Ghostty):
  * mounts browser UI; after first paint injects `?` so the help modal opens.
  *
- *   cd repo && bun ./scripts/selftest-help-modal-live.tsx
+ *   cd repo && bun ./scripts/selftest/selftest-help-modal-live.tsx
  *   # or
- *   open -na Ghostty.app --args -e /bin/bash -lc 'cd REPO && bun ./scripts/selftest-help-modal-live.tsx'
+ *   open -na Ghostty.app --args -e /bin/bash -lc 'cd REPO && bun ./scripts/selftest/selftest-help-modal-live.tsx'
  */
 import { useEffect, type ReactNode } from 'react';
 import {
   BrowserHarness,
   collectedFixture,
-} from '../test/browser-harness.js';
-import { runApp } from '../src/ui/shell/run.js';
+} from '../../test/browser-harness.js';
+import { runApp } from '../../src/ui/shell/run.js';
 
 function LiveHelpBrowser(): ReactNode {
   useEffect(() => {

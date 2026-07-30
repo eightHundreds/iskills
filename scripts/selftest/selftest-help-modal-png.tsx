@@ -3,7 +3,7 @@
  * Opens help overlay, renders span capture to PNG.
  * Expects theme-aware solid panel (light or dark), not purple scrim.
  *
- * Run: bun ./scripts/selftest-help-modal-png.tsx
+ * Run: bun ./scripts/selftest/selftest-help-modal-png.tsx
  */
 import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
@@ -14,12 +14,12 @@ import { testRender } from '@opentui/react/test-utils';
 import {
   modalChromeByMode,
   termcnColors,
-} from '../src/ui/components/colors.js';
-import { ExitProvider } from '../src/ui/tui/hooks.js';
+} from '../../src/ui/components/colors.js';
+import { ExitProvider } from '../../src/ui/tui/hooks.js';
 import {
   BrowserHarness,
   collectedFixture,
-} from '../test/browser-harness.js';
+} from '../../test/browser-harness.js';
 
 const OUT_DIR = path.resolve('.tmp-selftest');
 const CELL_W = 9;

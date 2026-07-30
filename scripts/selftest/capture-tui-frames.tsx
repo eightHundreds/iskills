@@ -1,16 +1,16 @@
 /**
  * Dev-only: capture OpenTUI frames for browser surfaces and print issues.
- * Run: bun ./scripts/capture-tui-frames.tsx
+ * Run: bun ./scripts/selftest/capture-tui-frames.tsx
  */
 import { testRender } from '@opentui/react/test-utils';
 import { act, type ReactNode } from 'react';
 import { writeFileSync } from 'node:fs';
-import { ExitProvider } from '../src/ui/tui/hooks.js';
+import { ExitProvider } from '../../src/ui/tui/hooks.js';
 import {
   BrowserHarness,
   collectedFixture,
   skillFixture,
-} from '../test/browser-harness.js';
+} from '../../test/browser-harness.js';
 
 const SCRATCH =
   process.env.SCRATCH ||

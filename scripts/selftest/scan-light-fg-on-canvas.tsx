@@ -2,21 +2,21 @@
  * Scan for unreadable light-on-light (or forced light body) on main canvas.
  * Light fg on dark selection/modal panel is OK.
  *
- * Run: bun ./scripts/scan-light-fg-on-canvas.tsx
+ * Run: bun ./scripts/selftest/scan-light-fg-on-canvas.tsx
  */
 import { testRender } from '@opentui/react/test-utils';
 import { act, type ReactNode } from 'react';
-import { ExitProvider } from '../src/ui/tui/hooks.js';
+import { ExitProvider } from '../../src/ui/tui/hooks.js';
 import {
   BrowserHarness,
   collectedFixture,
   skillFixture,
-} from '../test/browser-harness.js';
-import { SkillMultiSelect } from '../src/ui/import/skill-select.js';
-import { MultiSelect } from '../src/ui/components/multi-select.js';
-import { Select } from '../src/ui/components/select.js';
-import { InstallReview } from '../src/ui/install/index.js';
-import { termcnColors } from '../src/ui/components/colors.js';
+} from '../../test/browser-harness.js';
+import { SkillMultiSelect } from '../../src/ui/import/skill-select.js';
+import { MultiSelect } from '../../src/ui/components/multi-select.js';
+import { Select } from '../../src/ui/components/select.js';
+import { InstallReview } from '../../src/ui/install/index.js';
+import { termcnColors } from '../../src/ui/components/colors.js';
 
 function channels(c: { buffer?: ArrayLike<number> }): [number, number, number] {
   const b = c?.buffer;

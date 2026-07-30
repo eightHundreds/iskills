@@ -1,6 +1,6 @@
 /**
  * Self-test theme-aware surfaces across command UIs.
- * Run: bun ./scripts/selftest-theme-surfaces.tsx
+ * Run: bun ./scripts/selftest/selftest-theme-surfaces.tsx
  *
  * Checks:
  * - Help modal has themed solid panel (light or dark surface)
@@ -11,18 +11,18 @@
  */
 import { testRender } from '@opentui/react/test-utils';
 import { act, type ReactNode } from 'react';
-import { ExitProvider } from '../src/ui/tui/hooks.js';
-import { BrowserHarness, collectedFixture } from '../test/browser-harness.js';
-import { ModalPanel } from '../src/ui/components/modal-panel.js';
-import { TextInput } from '../src/ui/components/text-input.js';
-import { Select } from '../src/ui/components/select.js';
-import { FramedPanel } from '../src/ui/components/framed-panel.js';
-import { AppShell } from '../src/ui/shell/app-shell.js';
+import { ExitProvider } from '../../src/ui/tui/hooks.js';
+import { BrowserHarness, collectedFixture } from '../../test/browser-harness.js';
+import { ModalPanel } from '../../src/ui/components/modal-panel.js';
+import { TextInput } from '../../src/ui/components/text-input.js';
+import { Select } from '../../src/ui/components/select.js';
+import { FramedPanel } from '../../src/ui/components/framed-panel.js';
+import { AppShell } from '../../src/ui/shell/app-shell.js';
 import {
   modalChromeByMode,
   termcnColors,
-} from '../src/ui/components/colors.js';
-import { hexClose, spanBgHex, spanFgHex } from '../test/tui-harness.js';
+} from '../../src/ui/components/colors.js';
+import { hexClose, spanBgHex, spanFgHex } from '../../test/tui-harness.js';
 
 function channels(c: { buffer?: ArrayLike<number> }): [number, number, number] {
   const b = c?.buffer;
