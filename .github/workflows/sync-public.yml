@@ -1,0 +1,103 @@
+name: Sync public
+
+# Push a filtered tree from iskills-private → eightHundreds/iskills.
+# Private-only paths (never appear on public):
+#   - test/
+#   - docs/
+#   - AGENTS.md
+#   - CONTEXT.md
+#
+# Requires secret PUBLIC_REPO_TOKEN: classic PAT (repo) or fine-grained
+# token with Contents: Read and write on eightHundreds/iskills.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-public
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'eightHundreds/iskills-private'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require PUBLIC_REPO_TOKEN
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          if [ -z "${PUBLIC_REPO_TOKEN:-}" ]; then
+            echo '::error::Missing secret PUBLIC_REPO_TOKEN (write access to eightHundreds/iskills)'
+            exit 1
+          fi
+
+      - name: Build filtered tree and push to public
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PRIVATE_SHA=$(git rev-parse HEAD)
+          REF_NAME="${GITHUB_REF_NAME}"
+          IS_TAG=false
+          case "${GITHUB_REF}" in
+            refs/tags/*) IS_TAG=true ;;
+          esac
+
+          SRC="${GITHUB_WORKSPACE}"
+          FILTERED=$(mktemp -d)
+          PUBLIC=$(mktemp -d)
+
+          # Allowlist-style: copy all tracked-ish workspace files, then drop private paths.
+          # Exclude build artifacts and VCS; private paths removed after rsync.
+          rsync -a \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'tmp/' \
+            --exclude '.DS_Store' \
+            --exclude '.scratch/' \
+            "${SRC}/" "${FILTERED}/"
+
+          rm -rf \
+            "${FILTERED}/test" \
+            "${FILTERED}/docs" \
+            "${FILTERED}/AGENTS.md" \
+            "${FILTERED}/CONTEXT.md"
+
+          git clone --depth 1 \
+            "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/eightHundreds/iskills.git" \
+            "${PUBLIC}"
+
+          cd "${PUBLIC}"
+          git config user.name 'iskills-sync[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Replace worktree (keep .git only).
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          rsync -a "${FILTERED}/" .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No file changes vs public main'
+          else
+            git commit -m "sync: from private ${PRIVATE_SHA:0:7}"
+          fi
+
+          git push origin HEAD:main
+
+          if [ "${IS_TAG}" = true ]; then
+            # Point public tag at the filtered commit (rewrites prior same-name tag if any).
+            git tag -f "${REF_NAME}"
+            git push origin "refs/tags/${REF_NAME}" --force
+            echo "Pushed tag ${REF_NAME} → public (triggers Release on iskills)"
+          fi
