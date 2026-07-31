@@ -172,7 +172,17 @@ export function detailContentLines(
 ): DetailContentLine[] {
   const width = Math.max(1, frameWidth - 4);
   const lines = detailFieldLines(skillFieldLabels().description, skill.description || t('common.noDescription'), width, true);
-  if (!collection) return [...lines, ...detailFieldLines(skillFieldLabels().location, skill.path, width)];
+  if (!collection) {
+    return [
+      ...lines,
+      ...detailFieldLines(skillFieldLabels().location, skill.path, width),
+      ...detailFieldLines(
+        skillFieldLabels().collectionStatus,
+        skill.fromCollection ? t('browser.inCollection') : t('browser.notInCollection'),
+        width
+      ),
+    ];
+  }
 
   lines.push(
     ...detailFieldLines(skillFieldLabels().tags, metadata.tags.length ? metadata.tags.join(', ') : t('common.none'), width),
@@ -449,6 +459,7 @@ export function detailLabelWidth(): number {
     t('common.tags'),
     t('common.note'),
     t('common.location'),
+    t('common.collectionStatus'),
     t('common.description'),
   ];
   return Math.max(6, ...labels.map((label) => textWidth(label))) + 1;
@@ -513,7 +524,16 @@ export function browseDetailRows(
       ...peekFieldRows(t('common.note'), note, width, 2, { field: 'note' })
     );
   } else {
-    rows.push(...peekFieldRows(t('common.location'), skill.path, width, 2));
+    // Project / global: location + whether this path is already in the collection (realpath).
+    rows.push(
+      ...peekFieldRows(t('common.location'), skill.path, width, 2),
+      ...peekFieldRows(
+        t('common.collectionStatus'),
+        skill.fromCollection ? t('browser.inCollection') : t('browser.notInCollection'),
+        width,
+        1
+      )
+    );
   }
   // One blank before description; description is secondary and length-variable.
   // 不要用空行撑到视口底，否则看起来像「贴底」。

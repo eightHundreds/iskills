@@ -23,8 +23,6 @@ import {
   writeMetadata,
 } from '../domain/core.js';
 import {
-  adoptCollectionSkillsMissingMetadata,
-  listCollectionSkillsMissingMetadata,
   materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
@@ -81,21 +79,13 @@ async function bindMetadataSource(
 }
 
 export async function loadBrowserData(): Promise<BrowserDataSnapshot> {
-  const [projectGroups, collection, globalGroups, skillsMissingMetadata] = await Promise.all([
+  const [projectGroups, collection, globalGroups] = await Promise.all([
     listProjectGroups(),
     listCollection(),
     listGlobalGroups(),
-    listCollectionSkillsMissingMetadata(),
   ]);
   const canSync = await exists(join(collectionPaths().root, '.git'));
-  return { projectGroups, collection, globalGroups, canSync, skillsMissingMetadata };
-}
-
-/** One-shot adopt for skills that landed under skills/ without metadata. */
-export async function adoptMissingCollectionMetadata(
-  names?: string[]
-): Promise<string[]> {
-  return adoptCollectionSkillsMissingMetadata(names);
+  return { projectGroups, collection, globalGroups, canSync };
 }
 
 async function installTargetsAndDefaults(): Promise<{

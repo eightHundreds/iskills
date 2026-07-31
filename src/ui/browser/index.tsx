@@ -4,9 +4,8 @@
  */
 import { Text, useApp } from '../tui/index.js';
 import { Provider, useAtom, useAtomValue, useStore } from 'jotai';
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import {
-  adoptMissingCollectionMetadata,
   handleBrowserResult,
   handleDetailAction,
   loadBrowserData,
@@ -16,7 +15,6 @@ import { checkGitSkillUpdates } from '../../domain/git.js';
 import { InterruptError } from '../shell/terminal.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
-import { Modal } from '../overlay/static.js';
 import { BrowserShellFooter } from './footer.js';
 import {
   activeAbortAtom,
@@ -35,7 +33,7 @@ import {
 } from './store.js';
 import { Browser } from './browser.js';
 import { Detail, type DetailAction } from './detail.js';
-import { formatAppError, t } from '../../i18n/index.js';
+import { t } from '../../i18n/index.js';
 import type {
   BrowserActionHost,
   BrowserAppLifecycle,
@@ -122,7 +120,6 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const [detail, setDetail] = useAtom(detailContextAtom);
   const [working, setWorking] = useAtom(workingProgressAtom);
   const navigation = useAtomValue(browserNavigationAtom);
-  const adoptPromptedRef = useRef(false);
 
   const reloadData = useCallback(async () => {
     const snapshot = await loadBrowserData();
@@ -134,38 +131,6 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     if (data) return;
     void reloadData();
   }, [data, reloadData]);
-
-  // Tier-2 adopt: one session prompt when skills/ has trees without metadata files.
-  useEffect(() => {
-    if (!data || adoptPromptedRef.current) return;
-    const missing = data.skillsMissingMetadata;
-    if (!missing.length) {
-      adoptPromptedRef.current = true;
-      return;
-    }
-    adoptPromptedRef.current = true;
-    void (async () => {
-      const ok = await Modal.confirm({
-        title: t('browser.adoptMissingTitle'),
-        message: t('browser.adoptMissingMessage', { count: missing.length }),
-        details: missing,
-        defaultValue: true,
-      });
-      if (!ok) return;
-      try {
-        const adopted = await adoptMissingCollectionMetadata(missing);
-        await reloadData();
-        setBrowserStatus(
-          store,
-          t('browser.adoptedCount', { count: adopted.length }),
-          true,
-          'normal'
-        );
-      } catch (error) {
-        setBrowserStatus(store, formatAppError(error), false, 'error');
-      }
-    })();
-  }, [data, reloadData, store]);
 
   const actionHost = useMemo((): BrowserActionHost => ({
     lifecycle,

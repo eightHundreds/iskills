@@ -77,8 +77,6 @@ export interface BrowserDataSnapshot {
   collection: CollectedSkill[];
   globalGroups: SkillGroup[];
   canSync: boolean;
-  /** Skill names with a tree under skills/ but no metadata/*.json (adoptable). */
-  skillsMissingMetadata: string[];
 }
 
 export interface BrowserStatusSnapshot {

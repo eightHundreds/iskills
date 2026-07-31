@@ -1109,7 +1109,22 @@ export function Browser({
       }
       const selectedLocal = tab === 'project' ? selectedProjectLocal : selectedGlobalLocal;
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
-        return finish({ type: 'import', skills: selectedLocal });
+        const skills = selectedLocal;
+        void modal
+          .confirm({
+            title: t('browser.importCollectionTitle'),
+            message:
+              skills.length === 1
+                ? t('browser.importCollectionOne', { name: skills[0]?.name ?? '' })
+                : t('browser.importCollectionMany', { count: skills.length }),
+            ...(skills.length > 1
+              ? { details: [t('browser.skillLine', { names: skills.map((skill) => skill.name).join(', ') })] }
+              : {}),
+          })
+          .then((ok) => {
+            if (ok) finish({ type: 'import', skills });
+          });
+        return;
       }
       if (key.leftArrow && useMasterDetail) return setFocus('tags');
       if (key.upArrow) {
