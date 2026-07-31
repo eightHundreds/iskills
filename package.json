@@ -8,6 +8,7 @@
   },
   "homepage": "https://github.com/eightHundreds/iskills#readme",
   "bugs": "https://github.com/eightHundreds/iskills/issues",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
@@ -20,22 +21,20 @@
   "files": [
     "bin",
     "dist/src",
+    "LICENSE",
     "README.md",
-    "README.zh-CN.md",
-    "THIRD_PARTY_NOTICES.md"
+    "README.zh-CN.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "pnpm run -s clean && tsc",
+    "build": "pnpm run -s clean && tsc -p tsconfig.build.json",
     "start": "pnpm run -s build && node ./bin/iskills.js",
     "test": "pnpm run -s build && node scripts/test-dev.mjs",
-    "test:dev": "pnpm run -s build && node scripts/test-dev.mjs",
     "test:fast": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project parallel",
-    "test:git": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project git",
+    "test:git": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project git --project git-sync --project git-write --project git-async",
     "test:tty": "pnpm run -s build && bun ./node_modules/vitest/vitest.mjs run --project tty",
     "type-check": "tsc --noEmit",
-    "prepack": "pnpm run build",
-    "postinstall": "node ./bin/patch-react-reconciler.mjs || true"
+    "prepack": "pnpm run build"
   },
   "engines": {
     "node": ">=24"
@@ -47,8 +46,7 @@
     "json5": "^2.2.3",
     "react": "^19.2.0",
     "react-reconciler": "^0.33.0",
-    "string-width": "^8.2.2",
-    "terminal-link": "^5.0.0"
+    "string-width": "^8.2.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -56,27 +54,6 @@
     "@xterm/headless": "^6.0.0",
     "typescript": "^7.0.0",
     "vitest": "^4.1.10"
-  },
-  "pnpm": {
-    "packageExtensions": {
-      "react-reconciler": {
-        "exports": {
-          ".": {
-            "require": "./index.js",
-            "default": "./index.js"
-          },
-          "./constants": {
-            "require": "./constants.js",
-            "default": "./constants.js"
-          },
-          "./constants.js": "./constants.js",
-          "./reflection": {
-            "require": "./reflection.js",
-            "default": "./reflection.js"
-          },
-          "./package.json": "./package.json"
-        }
-      }
-    }
   }
 }
+

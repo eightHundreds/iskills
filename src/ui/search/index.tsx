@@ -142,13 +142,6 @@ function SearchSkills({
           })
         )}
       </box>
-      <Text color={chrome.muted}>
-        {error
-          ? t('search.retryFooter')
-          : loading || !results.length
-            ? t('search.cancelFooter')
-            : t('search.listFooter')}
-      </Text>
     </box>
   );
 }
@@ -157,6 +150,11 @@ export function searchRemoteSkill(
   input: SearchViewInput
 ): Promise<RemoteSkill | undefined> {
   return Layer.open<RemoteSkill | undefined>({
+    footerItems: [
+      { key: '↑↓', label: t('common.move') },
+      { key: 'Enter', label: t('common.collect') },
+      { key: 'Esc', label: t('common.cancel') },
+    ],
     content: (finish) => (
       <SearchSkills
         {...input}

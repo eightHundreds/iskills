@@ -13,7 +13,7 @@ import { OverlayOnlyFooter } from './footer.js';
  * Composes {@link OverlayHost} for Layer / Modal slots — does not own overlay logic.
  *
  * Does **not** call `exit` or throw InterruptError.
- * Hosts (`runScreen` / browser entry) decide how to settle or tear down.
+ * Hosts (browser entry / overlay bootstrap) decide how to settle or tear down.
  *
  * - Ctrl+C → `onCtrlC` only
  * - Esc → `onCancel` when `cancelOnEscape` and overlay is not busy

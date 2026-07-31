@@ -43,6 +43,10 @@ export interface FooterBrowseCapabilities {
   canFocusDetail?: boolean;
   /** Detail column has an editable field under the cursor (Enter 编辑). */
   canEditDetailField?: boolean;
+  /** List: `g` jump to tag when groups exist. */
+  canJumpTag?: boolean;
+  /** List: `s` sync collection git when available. */
+  canSync?: boolean;
 }
 
 export interface FooterWorkingState {

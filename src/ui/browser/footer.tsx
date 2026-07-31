@@ -1,23 +1,16 @@
 import { useStdout } from '../tui/index.js';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
-import { useEffect, useMemo, type ReactNode } from 'react';
-import type { CollectedSkill, Skill } from '../../domain/types.js';
+import { useEffect, type ReactNode } from 'react';
 import { PointerSurface } from '../components/mouse/index.js';
 import { TextInput } from '../components/text-input.js';
 import { resolveFooter } from '../footer/resolve-footer.js';
-import type {
-  FooterBrowseCapabilities,
-  FooterEnterAction,
-  FooterResolveInput,
-} from '../footer/types.js';
+import type { FooterResolveInput } from '../footer/types.js';
 import { useOverlayFooterItems } from '../overlay/host.js';
 import { FooterPaint } from '../shell/footer.js';
-import {
-  flatRows,
-  groupedRows,
-  visibleAgentGroups,
-} from './format.js';
+import { computeBrowseCapabilities } from './browse-capabilities.js';
 import { masterDetailLayout } from './layout.js';
+import { t } from '../../i18n/index.js';
+import type { FooterItem } from '../footer/types.js';
 import {
   browserDataAtom,
   browserFilterAtom,
@@ -26,28 +19,13 @@ import {
   browserPhaseAtom,
   browserSelectionAtom,
   browserStatusAtom,
+  browserTagFilterAtom,
   browserUpdateCheckAtom,
   clearTransientStatus,
+  detailContextAtom,
   workingProgressAtom,
   type BrowserAppStore,
 } from './store.js';
-import type { BrowserDataSnapshot, BrowserFocus, BrowserTab } from './types.js';
-
-function enterActionFor(
-  tab: BrowserTab,
-  selectionCount: number,
-  currentIsSkill: boolean,
-  canViewWithRightArrow: boolean,
-  masterDetail: boolean
-): FooterEnterAction {
-  if (tab === 'collection' && selectionCount > 0) return 'add';
-  if (!currentIsSkill) return null;
-  // 3-column layout already peeks detail in the right pane — omit Enter 详情/查看.
-  if (masterDetail) return null;
-  if (tab === 'collection') return 'detail';
-  if (canViewWithRightArrow) return null;
-  return 'view';
-}
 
 /**
  * Browser session footer: overlay + browse/filter/working from jotai.
@@ -66,6 +44,8 @@ export function BrowserShellFooter(): ReactNode {
   const phase = useAtomValue(browserPhaseAtom);
   const filter = useAtomValue(browserFilterAtom);
   const groupJump = useAtomValue(browserGroupJumpAtom);
+  const detail = useAtomValue(detailContextAtom);
+  const tagFilter = useAtomValue(browserTagFilterAtom);
   const updateCheck = useAtomValue(browserUpdateCheckAtom);
   const setFilter = useSetAtom(browserFilterAtom);
   const setNavigation = useSetAtom(browserNavigationAtom);
@@ -99,6 +79,34 @@ export function BrowserShellFooter(): ReactNode {
     return null;
   }
 
+  // Single shell footer (option A): detail / group-jump own shell keys — never body strip only.
+  if (!overlayItems && phase === 'detail' && detail) {
+    const items: FooterItem[] = [];
+    if (detail.collection) {
+      items.push(
+        { key: 'n', label: t('common.note') },
+        { key: 't', label: t('common.tags') },
+        { key: 's', label: t('common.source') },
+      );
+    }
+    items.push({ key: 'Esc', label: t('common.back') });
+    return <FooterPaint view={{ mode: 'keys', items }} />;
+  }
+  if (!overlayItems && groupJump) {
+    return (
+      <FooterPaint
+        view={{
+          mode: 'keys',
+          items: [
+            { key: '↑↓', label: t('common.move') },
+            { key: 'Enter', label: t('common.confirm') },
+            { key: 'Esc', label: t('common.cancel') },
+          ],
+        }}
+      />
+    );
+  }
+
   const masterDetail = masterDetailLayout(stdout.columns, stdout.rows);
   const browse =
     phase === 'browse' && !groupJump && !filter.open && !working
@@ -107,13 +115,14 @@ export function BrowserShellFooter(): ReactNode {
           selected,
           data,
           updateCheck,
-          masterDetail
+          masterDetail,
+          tagFilter
         )
       : null;
 
   const input: FooterResolveInput = {
     overlayItems,
-    suppressed: phase === 'detail' || groupJump,
+    suppressed: false,
     filterOpen: filter.open && phase === 'browse' && !overlayItems,
     filterDraft: filter.draft,
     working:
@@ -186,138 +195,4 @@ export function BrowserShellFooter(): ReactNode {
   }
 
   return <FooterPaint view={view} />;
-}
-
-function computeBrowseCapabilities(
-  navigation: {
-    tab: BrowserTab;
-    focus: BrowserFocus;
-    query: string;
-    cursor: number;
-    agent: string;
-  },
-  selected: Set<string>,
-  data: BrowserDataSnapshot,
-  updateCheck: { checking: boolean; updates: Set<string>; failed: number },
-  masterDetail: boolean
-): FooterBrowseCapabilities {
-  const tab = navigation.tab;
-  const focus = navigation.focus;
-  const query = navigation.query;
-  const selectionCount = selected.size;
-
-  const visibleProject = visibleAgentGroups(data.projectGroups);
-  const visibleGlobal = visibleAgentGroups(data.globalGroups);
-  const projectGroup =
-    visibleProject.find((g) => g.agent === navigation.agent) ?? visibleProject[0];
-  const globalGroup =
-    visibleGlobal.find((g) => g.agent === navigation.agent) ?? visibleGlobal[0];
-
-  const projectRows = groupedRows(projectGroup?.skills ?? [], query);
-  const collectionRows = groupedRows(data.collection, query);
-  const globalRows = flatRows(globalGroup?.skills ?? [], query);
-  // Master-detail skill column is flat (no group headers), matching Browser listRows.
-  const tabSkills =
-    tab === 'collection'
-      ? data.collection
-      : tab === 'project'
-        ? projectGroup?.skills ?? []
-        : globalGroup?.skills ?? [];
-  const rows = masterDetail
-    ? flatRows(tabSkills, query)
-    : tab === 'project'
-      ? projectRows
-      : tab === 'global'
-        ? globalRows
-        : collectionRows;
-  const currentRow = rows[navigation.cursor];
-  const currentSkill =
-    currentRow?.type === 'skill' ? currentRow.skill : undefined;
-
-  const selectedCollection = data.collection.filter((skill: CollectedSkill) =>
-    selected.has(skill.path)
-  );
-  const projectSkills = data.projectGroups.flatMap((group) => group.skills);
-  const selectedProject = projectSkills.filter((skill: Skill) => selected.has(skill.path));
-  const selectedGlobal = data.globalGroups.flatMap((group) =>
-    group.skills.filter((skill: Skill) => selected.has(skill.path))
-  );
-  const selectedProjectLocal = selectedProject.filter((skill: Skill) => !skill.fromCollection);
-  const selectedGlobalLocal = selectedGlobal.filter((skill: Skill) => !skill.fromCollection);
-
-  const actionSkills: Skill[] =
-    tab === 'project'
-      ? selectedProject.length
-        ? selectedProject
-        : currentSkill
-          ? [currentSkill]
-          : []
-      : [];
-  const canMaterialize =
-    focus === 'list' &&
-    actionSkills.length > 0 &&
-    actionSkills.every((skill) => skill.isReference);
-
-  const canDelete =
-    focus === 'list' &&
-    (selectedCollection.length > 0 ||
-      selectedProject.length > 0 ||
-      selectedGlobal.length > 0 ||
-      Boolean(currentSkill));
-
-  const canViewWithRightArrow =
-    Boolean(currentSkill) &&
-    (tab === 'collection' || Boolean(currentSkill?.fromCollection));
-
-  const enterAction =
-    focus === 'list'
-      ? enterActionFor(
-          tab,
-          tab === 'collection' ? selectedCollection.length : 0,
-          Boolean(currentSkill),
-          canViewWithRightArrow,
-          masterDetail
-        )
-      : null;
-
-  const selectedUpdates = selectedCollection.filter((s) =>
-    updateCheck.updates.has(s.name)
-  );
-  let updateCount = 0;
-  let updateIsSelection = false;
-  if (tab === 'collection' && focus === 'list') {
-    if (selectedCollection.length && selectedUpdates.length) {
-      updateCount = selectedUpdates.length;
-      updateIsSelection = true;
-    } else if (
-      !selectedCollection.length &&
-      currentSkill &&
-      updateCheck.updates.has(currentSkill.name)
-    ) {
-      updateCount = 1;
-      updateIsSelection = false;
-    }
-  }
-
-  const canFocusDetail =
-    focus === 'list' && masterDetail && currentRow?.type === 'skill';
-  // Collection only: tags + note are editable from the right column.
-  const canEditDetailField = focus === 'detail' && tab === 'collection' && Boolean(currentSkill);
-
-  return {
-    focus: focus as FooterBrowseCapabilities['focus'],
-    canDelete,
-    enterAction,
-    canTag: tab === 'collection' && selectedCollection.length > 0 && focus === 'list',
-    canImport:
-      focus === 'list' &&
-      ((tab === 'project' && selectedProjectLocal.length > 0) ||
-        (tab === 'global' && selectedGlobalLocal.length > 0)),
-    canMaterialize,
-    updateCount,
-    updateIsSelection,
-    selectionCount: focus === 'list' ? selectionCount : 0,
-    canFocusDetail,
-    canEditDetailField,
-  };
 }

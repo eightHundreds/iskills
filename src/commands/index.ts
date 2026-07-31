@@ -1,6 +1,7 @@
 import { t } from '../i18n/index.js';
 import { parseArgs } from 'node:util';
 import { agentIds } from '../domain/core.js';
+import { DomainError } from '../domain/errors.js';
 import {
   configureCollectionRemote,
   initCollectionGit,
@@ -71,6 +72,6 @@ export function printHelp(command?: string): void {
     console.log(help());
     return;
   }
-  if (command) throw new Error(t('cli.unknownCommand', { command }));
+  if (command) throw new DomainError('cli.unknownCommand', { command });
   console.log(t('help.root'));
 }

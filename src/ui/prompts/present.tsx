@@ -18,6 +18,65 @@ import { InstallReview } from '../install/index.js';
 import type { InstallReviewResult, InstallReviewTarget } from '../install/types.js';
 import { Layer, Modal } from '../overlay/static.js';
 import type { Choice, CollectedSkill, Skill } from '../../domain/types.js';
+import type { FooterItem } from '../footer/types.js';
+import { t } from '../../i18n/index.js';
+
+function selectFooterItems(): FooterItem[] {
+  return [
+    { key: '↑↓', label: t('common.move') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
+
+function multiSelectFooterItems(): FooterItem[] {
+  return [
+    { key: 'Space', label: t('common.select') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
+
+function tagEditorFooterItems(): FooterItem[] {
+  return [
+    { key: '↑↓', label: t('common.move') },
+    { key: 'Space', label: t('common.select') },
+    { key: 'Tab', label: t('common.switch') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
+
+function skillSelectFooterItems(): FooterItem[] {
+  return [
+    { key: '↑↓', label: t('common.move') },
+    { key: 'Space', label: t('common.select') },
+    { key: '→', label: t('common.detail') },
+    { key: 'a', label: t('common.all') },
+    { key: '←→', label: t('common.switch') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
+
+function importReviewFooterItems(): FooterItem[] {
+  return [
+    { key: 'Space', label: t('common.select') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: '←→', label: t('common.switch') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
+
+function installReviewFooterItems(): FooterItem[] {
+  return [
+    { key: '↑↓', label: t('common.move') },
+    { key: 'Space', label: t('common.select') },
+    { key: 'Enter', label: t('common.confirm') },
+    { key: '←', label: t('common.back') },
+    { key: 'Esc', label: t('common.cancel') },
+  ];
+}
 
 /** Single-line text — absolute modal with theme-aware solid panel. */
 export function promptText(
@@ -27,6 +86,10 @@ export function promptText(
   title?: string
 ): Promise<string | undefined> {
   return Modal.open<string | undefined>({
+    footerItems: [
+      { key: 'Enter', label: t('common.confirm') },
+      { key: 'Esc', label: t('common.cancel') },
+    ],
     content: (close) => (
       <ModalPanel {...(title !== undefined ? { title: ` ${title} ` } : {})}>
         <TextInput
@@ -48,6 +111,7 @@ export function promptTags(
   title: string
 ): Promise<string[] | undefined> {
   return Modal.open<string[] | undefined>({
+    footerItems: tagEditorFooterItems(),
     content: (close) => (
       <ModalPanel title={` ${title} `}>
         <TagEditor
@@ -69,6 +133,7 @@ export function promptChoice<T extends string>(
   numbered = false
 ): Promise<T | undefined> {
   return Layer.open<T | undefined>({
+    footerItems: selectFooterItems(),
     content: (close) => (
       <Select<T>
         key={title}
@@ -90,6 +155,7 @@ export function promptChoicesMany<T extends string>(
 ): Promise<T[]> {
   return Layer.open<T[]>({
     destroyValue: [],
+    footerItems: multiSelectFooterItems(),
     content: (close) => (
       <MultiSelect<T>
         key={title}
@@ -110,6 +176,7 @@ export function promptSkills<T extends Skill>(
 ): Promise<T[]> {
   return Layer.open<T[]>({
     destroyValue: [],
+    footerItems: multiSelectFooterItems(),
     content: (close) => (
       <MultiSelect<T>
         key={title}
@@ -133,6 +200,7 @@ export function promptSkillGroups<T extends Skill>(
 ): Promise<T[]> {
   return Layer.open<T[]>({
     destroyValue: [],
+    footerItems: skillSelectFooterItems(),
     content: (close) => (
       <SkillMultiSelect<T>
         key={title}
@@ -156,6 +224,7 @@ export function promptInstallReview(
   defaultGlobalAgents: string[]
 ): Promise<InstallReviewResult | undefined> {
   return Layer.open<InstallReviewResult | undefined>({
+    footerItems: installReviewFooterItems(),
     content: (close) => (
       <InstallReview
         key={skills.map((skill) => skill.name).join('\0')}
@@ -175,6 +244,7 @@ export function promptImportReview<T extends Skill>(
   existingTags: string[]
 ): Promise<ImportReviewResult | undefined> {
   return Layer.open<ImportReviewResult | undefined>({
+    footerItems: importReviewFooterItems(),
     content: (close) => (
       <ImportReview<T>
         items={items}

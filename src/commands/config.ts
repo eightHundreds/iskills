@@ -1,5 +1,6 @@
+import { DomainError } from '../domain/errors.js';
 import { readUserConfig, writeUserConfig } from '../domain/user-config.js';
-import { applyLocalePreference, t } from '../i18n/index.js';
+import { applyLocalePreference } from '../i18n/index.js';
 import { presentSettings } from '../ui/config/index.js';
 
 /**
@@ -8,7 +9,7 @@ import { presentSettings } from '../ui/config/index.js';
  */
 export async function commandConfig(_argv: string[] = []): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(t('cli.configTtyRequired'));
+    throw new DomainError('cli.configTtyRequired');
   }
 
   const current = await readUserConfig();

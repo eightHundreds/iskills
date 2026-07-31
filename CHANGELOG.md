@@ -22,7 +22,7 @@
 
 ### 修复
 
-- Release 流水线安装 Bun，使 OpenTUI 原生 FFI / UI 帧测试可在发布 CI 中运行。
+- CI 测试流水线安装 Bun，使 OpenTUI 原生 FFI / UI 帧测试可在完整测试中运行。标签发布 job 仍为 type-check + build + pack + publish（整套 UI 测试在推送前完成，不在 publish job 内重跑）。
 - PTY 交互测试按可见屏幕网格匹配文案（兼容 OpenTUI 逐字 CUP 重绘与中文宽字符）。
 - TTY 套件串行执行并放宽 wait 沉降时间，降低 CI 上 OpenTUI 多会话竞态。
 

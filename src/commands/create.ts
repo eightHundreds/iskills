@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 import { createCollectionSkill } from '../domain/collection-write.js';
-import { errorMessage } from '../domain/core.js';
+import { DomainError } from '../domain/errors.js';
+import { formatAppError } from '../i18n/index.js';
 import { t } from '../i18n/index.js';
 import { openPath } from '../util/open-path.js';
 
@@ -11,16 +12,16 @@ export async function commandCreate(argv: string[]): Promise<void> {
     strict: true,
     options: {},
   });
-  if (positionals.length > 1) throw new Error(t('cmd.oneSkillNameOnly'));
+  if (positionals.length > 1) throw new DomainError('cmd.oneSkillNameOnly');
 
   let name = positionals[0]?.trim();
   if (!name) {
-    if (!process.stdin.isTTY) throw new Error(t('cmd.specifySkillNames'));
+    if (!process.stdin.isTTY) throw new DomainError('cmd.specifySkillNames');
     const { promptText } = await import('../ui/prompts/present.js');
     const entered = await promptText(t('cmd.skillNamePrompt'));
     if (entered === undefined) return;
     name = entered.trim();
-    if (!name) throw new Error(t('cmd.specifySkillNames'));
+    if (!name) throw new DomainError('cmd.specifySkillNames');
   }
 
   const path = await createCollectionSkill(name);
@@ -29,6 +30,6 @@ export async function commandCreate(argv: string[]): Promise<void> {
   try {
     await openPath(path);
   } catch (error) {
-    console.error(t('cmd.warnOpenPathFailed', { error: errorMessage(error) }));
+    console.error(t('cmd.warnOpenPathFailed', { error: formatAppError(error) }));
   }
 }

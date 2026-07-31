@@ -33,13 +33,15 @@ import {
   writeState,
 } from './core.js';
 import type { CollectionState, GitSource, Skill, SkillLink, SkillMetadata } from './types.js';
-import { t } from '../i18n/index.js';
+import { DomainError, domainNotify } from './errors.js';
 
 export interface ReplacementInput {
   name: string;
   staged: string;
   metadata: SkillMetadata;
   local?: { source: string; selectedPath: string; selectedWasSymlink: boolean };
+  /** Defaults to `import ${name}`. */
+  commitMessage?: string;
 }
 
 /** Creates a minimal collected Skill born in the collection (not an import). */
@@ -48,7 +50,7 @@ export async function createCollectionSkill(name: string): Promise<string> {
   const paths = await ensureCollection();
   const target = join(paths.skills, skillName);
   if (await pathPresent(target)) {
-    throw new Error(t('domain.skillExistsInCollection', { name: skillName }));
+    throw new DomainError('domain.skillExistsInCollection', { name: skillName });
   }
   const metadata = metadataPath(skillName);
   let created = false;
@@ -58,7 +60,7 @@ export async function createCollectionSkill(name: string): Promise<string> {
       await mkdir(target);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(t('domain.skillExistsInCollection', { name: skillName }));
+        throw new DomainError('domain.skillExistsInCollection', { name: skillName });
       }
       throw error;
     }
@@ -107,7 +109,7 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
 
   if (origin && !(await isExactSymlink(origin.path, target))) {
     await rm(transaction, { recursive: true, force: true });
-    throw new Error(t('domain.originNotCollectionLink', { path: origin.path }));
+    throw new DomainError('domain.originNotCollectionLink', { path: origin.path });
   }
 
   try {
@@ -154,7 +156,7 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
       }
     }
     await writeState(nextState);
-    await commitCollection(`import ${input.name}`);
+    await commitCollection(input.commitMessage ?? `import ${input.name}`);
   } catch (error) {
     try {
       if (input.local && sourceMoved) {
@@ -174,9 +176,10 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
         await symlink(target, origin.path, 'dir');
       }
     } catch (rollbackError) {
-      throw new Error(
-        t('domain.importFailedRollback', { error: errorMessage(error), rollback: errorMessage(rollbackError) })
-      );
+      throw new DomainError('domain.importFailedRollback', {
+        error: errorMessage(error),
+        rollback: errorMessage(rollbackError),
+      });
     }
     await rm(transaction, { recursive: true, force: true }).catch(() => {});
     throw error;
@@ -185,12 +188,12 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
   for (const conflict of state.conflicts) {
     if (conflict.type === 'source' && conflict.skill === input.name) {
       await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
-        console.error(t('domain.warnConflictCleanup', { error: errorMessage(error) }));
+        domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
       });
     }
   }
   await rm(transaction, { recursive: true, force: true }).catch((error) => {
-    console.error(t('domain.warnReplaceBackupCleanup', { error: errorMessage(error) }));
+    domainNotify('domain.warnReplaceBackupCleanup', { error: errorMessage(error) });
   });
 }
 
@@ -211,10 +214,10 @@ export async function removeCollectionUsage(name: string, from?: string): Promis
       link.kind !== 'origin' &&
       (resolve(link.path) === scope || resolve(link.path).startsWith(`${scope}${sep}`))
   );
-  if (!candidates.length) throw new Error(t('domain.noUsageInScope', { name }));
+  if (!candidates.length) throw new DomainError('domain.noUsageInScope', { name });
   for (const link of candidates) {
     if (!(await isExactSymlink(link.path, collectionTarget))) {
-      throw new Error(t('domain.usageNotExpectedLink', { path: link.path }));
+      throw new DomainError('domain.usageNotExpectedLink', { path: link.path });
     }
   }
   for (const link of candidates) await rm(link.path);
@@ -233,13 +236,13 @@ export async function removeFromCollection(
 ): Promise<void> {
   const paths = collectionPaths();
   const skillPath = join(paths.skills, assertSkillName(name));
-  if (!(await exists(skillPath))) throw new Error(t('domain.notInCollection', { name }));
+  if (!(await exists(skillPath))) throw new DomainError('domain.notInCollection', { name });
   const state = await readState();
   const links = state.links.filter((link) => link.skill === name);
   const origin = links.find((link) => link.kind === 'origin');
 
   if (origin && !(await isExactSymlink(origin.path, skillPath))) {
-    throw new Error(t('domain.originNotCollectionLink', { path: origin.path }));
+    throw new DomainError('domain.originNotCollectionLink', { path: origin.path });
   }
   for (const link of links.filter((item) => item.kind === 'usage')) {
     if (await isExactSymlink(link.path, skillPath)) await rm(link.path);
@@ -249,7 +252,7 @@ export async function removeFromCollection(
     await rm(origin.path);
     await moveDirectory(skillPath, origin.path);
   } else {
-    if (!confirmed) throw new Error(t('domain.removeNeedsConfirm'));
+    if (!confirmed) throw new DomainError('domain.removeNeedsConfirm');
     await rm(skillPath, { recursive: true });
   }
   await rm(metadataPath(name), { force: true });
@@ -266,9 +269,7 @@ export async function removeFromCollection(
   await writeState(state);
   await commitCollection(`remove ${name}`);
   if (!quiet) {
-    console.log(
-      origin ? t('domain.removedWithRestore', { name, path: origin.path }) : t('domain.removed', { name })
-    );
+    domainNotify(origin ? 'domain.removedWithRestore' : 'domain.removed', origin ? { name, path: origin.path } : { name });
   }
 }
 
@@ -279,7 +280,7 @@ async function validateMaterializableSkillTree(
 ): Promise<void> {
   const currentReal = await realpath(current);
   if (ancestors.has(currentReal)) {
-    throw new Error(t('domain.cyclicSymlink', { path: current }));
+    throw new DomainError('domain.cyclicSymlink', { path: current });
   }
   const nextAncestors = new Set(ancestors).add(currentReal);
   for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -289,10 +290,10 @@ async function validateMaterializableSkillTree(
       try {
         target = await realpath(path);
       } catch {
-        throw new Error(t('domain.unresolvableSymlink', { path }));
+        throw new DomainError('domain.unresolvableSymlink', { path });
       }
       if (target !== root && !target.startsWith(`${root}${sep}`)) {
-        throw new Error(t('domain.symlinkOutside', { path }));
+        throw new DomainError('domain.symlinkOutside', { path });
       }
       if ((await lstat(target)).isDirectory()) {
         await validateMaterializableSkillTree(root, target, nextAncestors);
@@ -307,7 +308,7 @@ async function assertMaterializedTree(current: string): Promise<void> {
   for (const entry of await readdir(current, { withFileTypes: true })) {
     const path = join(current, entry.name);
     if (entry.isSymbolicLink()) {
-      throw new Error(t('domain.copyStillHasSymlink', { path }));
+      throw new DomainError('domain.copyStillHasSymlink', { path });
     }
     if (entry.isDirectory()) await assertMaterializedTree(path);
   }
@@ -323,17 +324,26 @@ async function validateSkillLocations(
 
   for (const [path, skill] of unique) {
     if (path === collectionRoot || path.startsWith(`${collectionRoot}${sep}`)) {
-      throw new Error(t('domain.cannotOpCollectionByPath', { operation: t(operation === 'delete' ? 'domain.opDelete' : 'domain.opMaterialize'), path }));
+      throw new DomainError('domain.cannotOpCollectionByPath', {
+        operation: operation === 'delete' ? 'domain.opDelete' : 'domain.opMaterialize',
+        path,
+      });
     }
-    if (!(await pathPresent(path))) throw new Error(t('domain.locationGone', { path }));
+    if (!(await pathPresent(path))) throw new DomainError('domain.locationGone', { path });
     let current: Skill;
     try {
       current = await readSkill(path);
     } catch {
-      throw new Error(operation === 'delete' ? t('domain.locationChangedNotDeleted', { path }) : t('domain.locationChanged', { path }));
+      throw new DomainError(
+        operation === 'delete' ? 'domain.locationChangedNotDeleted' : 'domain.locationChanged',
+        { path }
+      );
     }
     if (current.name !== skill.name) {
-      throw new Error(operation === 'delete' ? t('domain.locationChangedNotDeleted', { path }) : t('domain.locationChanged', { path }));
+      throw new DomainError(
+        operation === 'delete' ? 'domain.locationChangedNotDeleted' : 'domain.locationChanged',
+        { path }
+      );
     }
   }
   return unique;
@@ -341,7 +351,7 @@ async function validateSkillLocations(
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
-  const error = new Error(t('common.interrupted'));
+  const error = new DomainError('common.interrupted');
   error.name = 'AbortError';
   throw error;
 }
@@ -371,16 +381,16 @@ export async function materializeSkillReferences(
   for (const [path, skill] of unique) {
     throwIfAborted(options.signal);
     if (!(await lstat(path)).isSymbolicLink()) {
-      throw new Error(t('domain.notAReference', { path }));
+      throw new DomainError('domain.notAReference', { path });
     }
     let source: string;
     try {
       source = await realpath(path);
     } catch {
-      throw new Error(t('domain.referenceUnresolvable', { path }));
+      throw new DomainError('domain.referenceUnresolvable', { path });
     }
     if (!(await lstat(source)).isDirectory()) {
-      throw new Error(t('domain.referenceNotDir', { path }));
+      throw new DomainError('domain.referenceNotDir', { path });
     }
     await validateMaterializableSkillTree(source);
     preflight.push({ skill, path, source });
@@ -414,7 +424,7 @@ export async function materializeSkillReferences(
       await assertMaterializedTree(staged);
       const copied = await readSkill(staged);
       if (copied.name !== input.skill.name) {
-        throw new Error(t('domain.copyNameChanged', { path: input.path }));
+        throw new DomainError('domain.copyNameChanged', { path: input.path });
       }
     }
 
@@ -446,13 +456,12 @@ export async function materializeSkillReferences(
           try {
             await rename(item.backup, item.path);
           } catch (rollbackError) {
-            throw new Error(
-              t('domain.materializeFailedRollbackItem', {
-                error: errorMessage(error),
-                path: item.path,
-                rollback: errorMessage(rollbackError),
-              })
-            );
+            throw new DomainError('domain.materializeFailedRollbackItem', {
+              error: errorMessage(error),
+              path: item.path,
+              rollback: errorMessage(rollbackError),
+            });
+
           }
           throw error;
         }
@@ -479,16 +488,15 @@ export async function materializeSkillReferences(
         try {
           await writeState(state);
         } catch (rollbackError) {
-          rollbackErrors.push(t('domain.stateRollback', { error: errorMessage(rollbackError) }));
+          // Technical fragment only — outer DomainError is localized via formatAppError.
+          rollbackErrors.push(`state: ${errorMessage(rollbackError)}`);
         }
       }
       if (rollbackErrors.length) {
-        throw new Error(
-          t('domain.materializeFailedRollback', {
-            error: errorMessage(error),
-            rollback: rollbackErrors.join(t('common.itemJoin')),
-          })
-        );
+        throw new DomainError('domain.materializeFailedRollback', {
+          error: errorMessage(error),
+          rollback: rollbackErrors.join('; '),
+        });
       }
       throw error;
     }
@@ -496,7 +504,7 @@ export async function materializeSkillReferences(
     for (const item of prepared) {
       if (committed || !(await pathPresent(item.backup))) {
         await rm(item.workspace, { recursive: true, force: true }).catch((error) => {
-          console.error(t('domain.warnMaterializeTempCleanup', { error: errorMessage(error) }));
+          domainNotify('domain.warnMaterializeTempCleanup', { error: errorMessage(error) });
         });
       }
     }
@@ -512,7 +520,7 @@ export async function removeSkillLocations(skills: Skill[]): Promise<number> {
     if (skill.fromCollection) {
       const target = join(paths.skills, assertSkillName(skill.name));
       if (!(await isExactSymlink(path, target))) {
-        throw new Error(t('domain.collectionLinkChanged', { path }));
+        throw new DomainError('domain.collectionLinkChanged', { path });
       }
     }
   }
@@ -532,20 +540,30 @@ export async function installMergedCollectionSkill(
   source: GitSource
 ): Promise<void> {
   const paths = collectionPaths();
-  const target = join(paths.skills, assertSkillName(name));
-  const staged = join(paths.skills, `.${name}.update-${process.pid}`);
-  await rm(staged, { recursive: true, force: true });
-  await mkdir(staged, { recursive: true });
-  await validateSkillTree(workspace);
-  await copyDirectoryContents(workspace, staged);
-  if (!(await exists(join(staged, 'SKILL.md')))) {
-    await rm(staged, { recursive: true, force: true });
-    throw new Error(t('domain.mergeNotValidSkill', { name }));
+  const skillName = assertSkillName(name);
+  const target = join(paths.skills, skillName);
+  if (!(await pathPresent(target))) {
+    throw new DomainError('domain.mergeNotValidSkill', { name: skillName });
   }
-  await rm(target, { recursive: true });
-  await rename(staged, target);
-  const metadata = await readMetadata(name);
-  metadata.description = (await readSkill(target)).description;
-  metadata.source = source;
-  await writeMetadata(metadata);
+  await validateSkillTree(workspace);
+  const transaction = await mkdtemp(join(paths.local, `.merge-${skillName}-`));
+  const staged = join(transaction, 'tree');
+  try {
+    await mkdir(staged, { recursive: true });
+    await copyDirectoryContents(workspace, staged);
+    if (!(await exists(join(staged, 'SKILL.md')))) {
+      throw new DomainError('domain.mergeNotValidSkill', { name: skillName });
+    }
+    const metadata = await readMetadata(skillName);
+    metadata.description = (await readSkill(staged)).description;
+    metadata.source = source;
+    await replaceCollectionSkill({
+      name: skillName,
+      staged,
+      metadata,
+      commitMessage: `update ${skillName}`,
+    });
+  } finally {
+    await rm(transaction, { recursive: true, force: true }).catch(() => {});
+  }
 }

@@ -59,6 +59,8 @@ export const browserFilterAtom = atom<BrowserFilterState>({
   cursorBefore: 0,
 });
 export const browserGroupJumpAtom = atom(false);
+/** Tag sidebar filter key; must match Browser listRows (see TAG_FILTER_ALL). */
+export const browserTagFilterAtom = atom<string>('__all__');
 export const browserUpdateCheckAtom = atom<BrowserUpdateCheckState>({
   checking: false,
   updates: new Set<string>(),

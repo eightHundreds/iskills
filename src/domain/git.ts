@@ -35,7 +35,7 @@ import type {
   SourceConflict,
   UpdateStatus,
 } from './types.js';
-import { t } from '../i18n/index.js';
+import { DomainError, domainNotify } from './errors.js';
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -121,12 +121,12 @@ export async function initCollectionGit(): Promise<boolean> {
     return true;
   } catch (error) {
     if (created) await rm(gitDir, { recursive: true, force: true });
-    throw new Error(t('git.initFailed', { error: errorMessage(error) }));
+    throw new DomainError('git.initFailed', { error: errorMessage(error) });
   }
 }
 
 export async function configureCollectionRemote(remote: string): Promise<void> {
-  if (!remote.trim()) throw new Error(t('git.remoteEmpty'));
+  if (!remote.trim()) throw new DomainError('git.remoteEmpty');
   const { root } = await ensureCollection();
   const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
   git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', remote]);
@@ -178,7 +178,7 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
     };
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
-    throw new Error(t('git.cloneFailed', { error: errorMessage(error) }));
+    throw new DomainError('git.cloneFailed', { error: errorMessage(error) });
   }
 }
 
@@ -297,7 +297,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
       } catch {}
       if (!inProgress && clean && remoteMerged) {
         await rm(collectionPaths().collectionConflict, { force: true });
-        console.error(t('git.conflictResolved'));
+        domainNotify('git.conflictResolved');
         finalized = true;
       } else {
         remaining.push(conflict);
@@ -327,7 +327,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
     await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source);
     await rm(conflict.path, { recursive: true, force: true });
     if (conflict.baseline) await rm(conflict.baseline, { recursive: true, force: true });
-    console.error(t('git.appliedManualUpdate', { skill: conflict.skill }));
+    domainNotify('git.appliedManualUpdate', { skill: conflict.skill });
     finalized = true;
   }
   if (remaining.length !== state.conflicts.length) {
@@ -381,10 +381,7 @@ export async function backgroundCollectionSync(): Promise<void> {
         stdio: 'ignore',
       });
     } catch {
-      await markCollectionConflict(
-        t('git.conflictWithOrigin'),
-        remoteHead
-      );
+      await markCollectionConflict('git.conflictWithOrigin', remoteHead);
       return;
     }
 
@@ -404,7 +401,9 @@ export async function backgroundCollectionSync(): Promise<void> {
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
     git(['-C', paths.root, 'push', '--quiet', 'origin', branch]);
   } catch (error) {
-    await markCollectionConflict(t('git.backgroundSyncFailed', { error: errorMessage(error) }));
+    await markCollectionConflict(
+      `git.backgroundSyncFailed:${errorMessage(error)}`
+    );
   } finally {
     if (worktree && worktreeRoot) {
       try {
@@ -456,12 +455,12 @@ export async function updateGitSkill(
         await writeMetadata(metadata);
         return 'pinned';
       }
-      throw new Error(t('git.branchMissing', { ref: gitSource.ref }));
+      throw new DomainError('git.branchMissing', { ref: gitSource.ref });
     }
     const latestCommit = git(['-C', repository, 'rev-parse', latestRef]);
     if (latestCommit === gitSource.commit) return 'unchanged';
     if (gitSource.commit && !gitObjectExists(repository, gitSource.commit)) {
-      throw new Error(t('git.commitMissing', { commit: gitSource.commit }));
+      throw new DomainError('git.commitMissing', { commit: gitSource.commit });
     }
 
     const newPath = gitSource.commit
@@ -476,7 +475,7 @@ export async function updateGitSkill(
       if (!allowDelete) {
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
         if (!options.confirmDelete) {
-          throw new Error(t('git.upstreamDeletedNeedsConfirm', { name: skill.name }));
+          throw new DomainError('git.upstreamDeletedNeedsConfirm', { name: skill.name });
         }
         const confirmed = await options.confirmDelete(links);
         if (!confirmed) return 'delete-skipped';
@@ -499,7 +498,7 @@ export async function updateGitSkill(
     } else {
       baseline = baselinePath(skill.name);
       if (!(await exists(join(baseline, 'SKILL.md')))) {
-        throw new Error(t('git.missingBaseline'));
+        throw new DomainError('git.missingBaseline');
       }
       const remoteTree = join(temporary, 'remote');
       git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
@@ -538,7 +537,7 @@ export async function updateGitSkill(
 
 export async function syncCollection(background: boolean): Promise<void> {
   const { root } = collectionPaths();
-  if (!(await exists(join(root, '.git')))) throw new Error(t('git.notARepo'));
+  if (!(await exists(join(root, '.git')))) throw new DomainError('git.notARepo');
   if (background) return backgroundCollectionSync();
   try {
     let hasUpstream = true;
@@ -559,7 +558,7 @@ export async function syncCollection(background: boolean): Promise<void> {
     await writeState(state);
     await rm(collectionPaths().collectionConflict, { force: true });
   } catch (error) {
-    await markCollectionConflict(t('git.syncConflictManual'));
-    throw new Error(t('git.syncFailed', { error: errorMessage(error) }));
+    await markCollectionConflict('git.syncConflictManual');
+    throw new DomainError('git.syncFailed', { error: errorMessage(error) });
   }
 }

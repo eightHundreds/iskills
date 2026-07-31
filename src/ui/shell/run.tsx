@@ -20,7 +20,6 @@ export { closeTui } from './lifecycle.js';
  * OpenTUI is loaded lazily so non-interactive CLI paths never touch the native core.
  *
  * - `mountTui` / `closeTui` — process-level active instance
- * - `runScreen` — low-level one-shot Promise screen (prefer Modal/Layer + bootstrap)
  * - `startApp` / `runApp` — long-lived tree (`ui/browser`); remount via handle
  * - registers overlay bootstrap so static Modal/Layer work without a pre-mounted tree
  */
@@ -190,56 +189,6 @@ export function unmountTui(instance: TuiInstance): void {
   releaseTui(instance);
 }
 
-// ─── one-shot screen ────────────────────────────────────────────────────────
-
-/**
- * One-shot screen: mount → await finish/cancel/interrupt → unmount.
- *
- * - Esc → resolve `cancelledValue` when `cancelOnEscape`
- * - Ctrl+C → reject `InterruptError`
- * - `finish(value)` → resolve value
- */
-export async function runScreen<T>(
-  cancelledValue: T,
-  component: (finish: (value: T) => void) => ReactNode,
-  cancelOnEscape = true
-): Promise<T> {
-  const { AppShell, createElement } = await loadOpenTui();
-
-  return new Promise<T>((resolve, reject) => {
-    let finished = false;
-    let instance: TuiInstance | undefined;
-
-    const settle = (complete: () => void): void => {
-      if (finished) return;
-      finished = true;
-      if (instance) {
-        instance.settle();
-        instance.cleanup();
-      }
-      setTimeout(complete, 10);
-    };
-
-    const finish = (value: T): void => settle(() => resolve(value));
-
-    void mountTui(
-      createElement(AppShell, {
-        cancelOnEscape,
-        onCancel: () => finish(cancelledValue),
-        onCtrlC: () => settle(() => reject(new InterruptError())),
-        children: component(finish),
-      })
-    )
-      .then((mounted) => {
-        instance = mounted;
-        if (finished) {
-          mounted.cleanup();
-        }
-      })
-      .catch(reject);
-  });
-}
-
 // ─── long-lived app ─────────────────────────────────────────────────────────
 
 const CLEAR_SCREEN = '\u001B[2J\u001B[H';
@@ -317,14 +266,6 @@ export async function startApp(
       instance.unmount();
     },
   };
-}
-
-/** Rebuild a disposed app (e.g. after subprocess TTY handoff). */
-export async function restartApp(
-  node: ReactNode,
-  options: RunAppOptions = {}
-): Promise<RunAppHandle> {
-  return startApp(node, options);
 }
 
 // ─── overlay bootstrap (CLI confirm without a pre-mounted tree) ─────────────

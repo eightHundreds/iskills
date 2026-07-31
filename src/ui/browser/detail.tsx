@@ -6,7 +6,6 @@ import { useOverlayBusy } from '../overlay/host.js';
 import { termcnColors } from '../components/termcn.js';
 import { detailContentLines } from './format.js';
 import { detailFrameDimensions } from './layout.js';
-import { t } from '../../i18n/index.js';
 
 export type DetailAction = 'note' | 'tags' | 'source' | 'back';
 
@@ -85,9 +84,6 @@ export function Detail({
           </Text>
         ))}
       </box>
-      <Text color={termcnColors.muted}>
-        {`${maxOffset ? t('browser.detailFooterScroll') : ''}${collection ? t('browser.detailFooterCollection') : t('browser.detailFooterEsc')}`}
-      </Text>
     </box>
   );
 }

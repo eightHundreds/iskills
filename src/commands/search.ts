@@ -1,21 +1,19 @@
 import { parseArgs } from 'node:util';
 import {
   assertSkillName,
-  errorMessage,
+  classifyPreCloneCollectionMatch,
   listCollection,
-  normalizeGitRepositoryIdentity,
   sanitizeTerminal,
 } from '../domain/core.js';
 import { Modal } from '../ui/overlay/static.js';
 import type {
-  CollectedSkill,
-  CollectionMatch,
   RemoteSkill,
   SkillMetadata,
 } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search/index.js';
+import { DomainError } from '../domain/errors.js';
 import { importRemoteSkillToCollection } from './library.js';
-import { t } from '../i18n/index.js';
+import { formatAppError, t } from '../i18n/index.js';
 
 const GITHUB_SOURCE =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
@@ -25,30 +23,6 @@ function formatIdentity(skill: SkillMetadata): string {
   const base = source.url || source.id || source.type;
   const path = source.path && source.path !== '.' ? `/${source.path}` : '';
   return sanitizeTerminal(`${base.replace(/\/$/, '')}${path}`);
-}
-
-/**
- * The in-repository source path is only known after cloning, so a matching
- * repository cannot prove same origin yet; only a different repository is
- * conclusive before the clone.
- */
-function collectionMatch(
-  collection: CollectedSkill[],
-  skill: RemoteSkill
-): CollectionMatch | undefined {
-  const collected = collection.find(
-    (item) => item.name.toLowerCase() === skill.name.toLowerCase()
-  );
-  if (!collected) return undefined;
-  const collectedRepository = collected.source.type === 'git' && collected.source.url
-    ? normalizeGitRepositoryIdentity(collected.source.url)
-    : undefined;
-  const incomingRepository = normalizeGitRepositoryIdentity(
-    `https://github.com/${skill.source}`
-  );
-  return collectedRepository && collectedRepository !== incomingRepository
-    ? 'conflicting-source'
-    : 'unverified-source';
 }
 
 function printImportResult(result: Awaited<ReturnType<typeof importRemoteSkillToCollection>>): void {
@@ -68,9 +42,11 @@ async function searchSkills(
   const response = await fetch(`${base}/api/search?${params}`, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
   });
-  if (!response.ok) throw new Error(t('cmd.searchHttpFailed', { status: response.status }));
+  if (!response.ok) {
+    throw new DomainError('cmd.searchHttpFailed', { status: response.status });
+  }
   const payload = await response.json() as { skills?: unknown };
-  if (!Array.isArray(payload.skills)) throw new Error(t('cmd.searchInvalidPayload'));
+  if (!Array.isArray(payload.skills)) throw new DomainError('cmd.searchInvalidPayload');
 
   return payload.skills.flatMap((value): RemoteSkill[] => {
     if (!value || typeof value !== 'object') return [];
@@ -110,12 +86,17 @@ export async function commandSearch(argv: string[]): Promise<void> {
     allowPositionals: true,
   });
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(t('cli.searchTtyRequired'));
+    throw new DomainError('cli.searchTtyRequired');
   }
   const collection = await listCollection();
   const selected = await searchRemoteSkill({
     initialQuery: positionals.join(' ').trim(),
-    matchCollection: (skill) => collectionMatch(collection, skill),
+    matchCollection: (skill) =>
+      classifyPreCloneCollectionMatch(
+        collection,
+        skill.name,
+        `https://github.com/${skill.source}`
+      ),
     search: searchSkills,
   });
   if (!selected) return;
@@ -136,7 +117,7 @@ export async function commandSearch(argv: string[]): Promise<void> {
       printImportResult(result);
       return;
     } catch (error) {
-      console.error(t('cmd.collectFailed', { error: errorMessage(error) }));
+      console.error(t('cmd.collectFailed', { error: formatAppError(error) }));
       if (!(await Modal.confirm({ title: t('common.confirm'), message: t('cmd.retryCollect') }))) {
         process.exitCode = 1;
         return;

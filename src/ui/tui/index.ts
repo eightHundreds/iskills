@@ -3,7 +3,6 @@ export {
   ExitProvider,
   useApp,
   useStdout,
-  useStdin,
   useThemeMode,
   useModalChrome,
   type AppExit,

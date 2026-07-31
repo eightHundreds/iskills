@@ -7,6 +7,7 @@
  * 3. System locale from env / Intl
  */
 
+import { DomainError, setDomainNotify } from '../domain/errors.js';
 import type { LocalePreference } from '../domain/user-config.js';
 import { en } from './en.js';
 import { zh } from './zh.js';
@@ -135,6 +136,44 @@ export function t(key: MessageKey, vars?: MessageVars): string {
   const catalog = catalogs[locale];
   const template = catalog[key] ?? catalogs.en[key] ?? catalogs.zh[key] ?? key;
   return interpolate(template, vars);
+}
+
+/**
+ * User-facing error text. Domain failures carry stable `DomainError.code` keys;
+ * format them here so domain never imports the catalog.
+ */
+export function formatAppError(error: unknown): string {
+  if (error instanceof DomainError) {
+    const key = error.code as MessageKey;
+    if (key in zh || key in en) {
+      // Nested operation labels (e.g. domain.opDelete) may appear as params.
+      const params: MessageVars = { ...error.params };
+      for (const [name, value] of Object.entries(params)) {
+        if (typeof value === 'string' && (value in zh || value in en)) {
+          params[name] = t(value as MessageKey);
+        }
+      }
+      return t(key, params);
+    }
+    return error.code;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Wire domain non-fatal notices to stderr/stdout via the active catalog. */
+export function installDomainNotify(): void {
+  setDomainNotify((code, params) => {
+    const text = formatAppError(new DomainError(code, params ?? {}));
+    if (
+      code.startsWith('domain.warn') ||
+      code === 'domain.gitCommitFailed' ||
+      code.startsWith('git.')
+    ) {
+      console.error(text);
+      return;
+    }
+    console.log(text);
+  });
 }
 
 /** All keys present in both catalogs (runtime sanity for tests). */

@@ -3,12 +3,10 @@ import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { TextInput, termcnColors } from '../components/termcn.js';
+import { isReturn } from '../components/text.js';
 import type { ImportReviewItem, ImportReviewResult } from './types.js';
 import { t } from '../../i18n/index.js';
 
-function isReturn(input: string, keyReturn: boolean): boolean {
-  return keyReturn || input.includes('\r') || input.includes('\n');
-}
 
 export function ImportReview<T extends Skill>({
   label = t('import.confirmTitle'),
@@ -166,11 +164,6 @@ export function ImportReview<T extends Skill>({
             isActive={tagFocus === 'input'}
             onSubmit={addTags}
           />
-          <Text color={colors.muted}>
-            {tagFocus === 'input'
-              ? t('import.groupInputFooter')
-              : t('import.groupListFooter')}
-          </Text>
         </box>
       ) : (
         <box flexDirection="column">
@@ -188,7 +181,6 @@ export function ImportReview<T extends Skill>({
               <Text color={colors.muted}>{t('import.moreItems', { count: items.length - visibleItems.length })}</Text>
             )}
           </box>
-          <Text color={colors.muted}>{t('import.confirmFooter')}</Text>
         </box>
       )}
     </box>

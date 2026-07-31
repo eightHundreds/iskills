@@ -278,18 +278,6 @@ export function shortcutModalContent(): string[] {
 export function moreActionModalContent(scope: string): string[] {
   return [scope, '', t('browser.materializeAction')];
 }
-export function tagSidebarLine(
-  current: boolean,
-  marker: string,
-  label: string,
-  count: number,
-  width: number
-): string {
-  const prefix = `${current ? '›' : ' '} ${marker} ${label}`;
-  const countText = String(count);
-  const gap = Math.max(1, width - textWidth(prefix) - textWidth(countText));
-  return `${prefix}${' '.repeat(gap)}${countText}`;
-}
 
 export function categorySidebarLine(
   current: boolean,
@@ -335,54 +323,6 @@ export function collectionCategoryLines(
   const lines = visible.map((option, visibleIndex) => {
     const index = offset + visibleIndex;
     return categorySidebarLine(isActive && index === active, option.label, option.skills.length, width);
-  });
-  while (lines.length < viewportHeight) lines.push('');
-  return lines.slice(0, viewportHeight);
-}
-
-export function masterSkillNameLine(
-  row: Extract<SkillRow, { type: 'skill' }>,
-  index: number,
-  active: number,
-  isActive: boolean,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined,
-  showGroup: boolean,
-  /** Animated spinner glyph when `updatingSkillName` matches (e.g. "⠋"). */
-  updatingFrame = '⠋'
-): string {
-  const skill = row.skill;
-  const current = isActive && index === active;
-  const selectionMarker = selected.has(skill.path) ? '●' : '○';
-  const update = updatingSkillName === skill.name
-    ? ` ${updatingFrame}`
-    : updates.has(skill.name)
-      ? ' ↑'
-      : '';
-  const group = showGroup && row.group ? `${row.group} / ` : '';
-  return `${current ? '›' : ' '} ${selectionMarker} ${group}${skill.name}${update}`;
-}
-
-export function masterTagColumnLines(
-  options: { key: string; label: string; skills: Skill[] }[],
-  _activeTag: string,
-  cursor: number,
-  isActive: boolean,
-  selected: Set<string>,
-  width: number,
-  viewportHeight: number
-): string[] {
-  const active = Math.max(0, Math.min(cursor, options.length - 1));
-  const offset = Math.max(0, Math.min(active - Math.floor(viewportHeight / 2), options.length - viewportHeight));
-  const visible = options.slice(offset, offset + viewportHeight);
-  const lines = visible.map((option, visibleIndex) => {
-    const index = offset + visibleIndex;
-    const count = option.skills.filter((skill) => selected.has(skill.path)).length;
-    const marker =
-      count === 0 ? '○' : count === option.skills.length && option.skills.length ? '●' : '◐';
-    const current = isActive && index === active;
-    return tagSidebarLine(current, marker, option.label, option.skills.length, width);
   });
   while (lines.length < viewportHeight) lines.push('');
   return lines.slice(0, viewportHeight);
@@ -482,50 +422,6 @@ export function collectionListColumnLines(
     activeLineIndexes,
     selectedLineIndexes,
   };
-}
-
-export function masterListColumnLines(
-  rows: SkillRow[],
-  cursor: number,
-  isActive: boolean,
-  preferNote: boolean,
-  listWidth: number,
-  viewportHeight: number,
-  selected: Set<string>,
-  updates: Set<string>,
-  updatingSkillName: string | undefined,
-  showGroup: boolean,
-  updatingFrame = '⠋'
-): { lines: string[]; skillOffset: number } {
-  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
-  const active = Math.max(0, Math.min(cursor, rows.length - 1));
-  const skillOffset = Math.max(
-    0,
-    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, rows.length - skillViewport))
-  );
-  const visible = rows.slice(skillOffset, skillOffset + skillViewport);
-  const summaryWidth = Math.max(8, listWidth - 2);
-  const lines: string[] = [];
-  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
-    const row = visible[visibleIndex];
-    if (row?.type !== 'skill') continue;
-    const index = skillOffset + visibleIndex;
-    lines.push(masterSkillNameLine(
-      row,
-      index,
-      active,
-      isActive,
-      selected,
-      updates,
-      updatingSkillName,
-      showGroup,
-      updatingFrame
-    ));
-    const summary = listSkillSummary(row.skill, preferNote, summaryWidth);
-    lines.push(summary ? `  ${summary}` : '  ');
-  }
-  while (lines.length < viewportHeight) lines.push('');
-  return { lines: lines.slice(0, viewportHeight), skillOffset };
 }
 
 export interface CollectionDetailRow {
@@ -629,58 +525,6 @@ export function browseDetailRows(
       mutedValue: true,
     }),
   ].slice(0, viewportHeight);
-}
-
-export function masterPeekColumnLines(
-  skill: Skill | undefined,
-  collection: boolean,
-  width: number,
-  viewportHeight: number
-): string[] {
-  if (!skill) {
-    return Array.from({ length: viewportHeight }, (_, index) =>
-      index === 0 ? t('browser.selectSkillToView') : ''
-    );
-  }
-  const tags = collection
-    ? (skill as CollectedSkill).tags?.length
-      ? (skill as CollectedSkill).tags!.join(', ')
-      : t('common.none')
-    : skillGroups(skill).join(', ') || t('common.none');
-  const note = collection ? (skill as CollectedSkill).note?.trim() || t('common.none') : '';
-  const source = collection && (skill as CollectedSkill).source
-    ? (skill as CollectedSkill).source!.url ?? (skill as CollectedSkill).source!.type
-    : '';
-  const descriptionBudget = Math.max(3, viewportHeight - (collection ? 8 : 6));
-  const fields = [
-    skill.name,
-    ...peekFieldLines(t('common.description'), skill.description || t('common.noDescription'), width, descriptionBudget),
-    ...peekFieldLines(t('common.tags'), tags, width, 1),
-    ...(collection ? [
-      ...peekFieldLines(t('common.note'), note, width, 1),
-      ...peekFieldLines(t('common.source'), source || t('common.none'), width, 1),
-    ] : [
-      ...peekFieldLines(t('common.location'), skill.path, width, 2),
-    ]),
-    collection ? t('browser.spaceSelect') : t('browser.enterViewSpaceSelect'),
-  ];
-  while (fields.length < viewportHeight) fields.push('');
-  return fields.slice(0, viewportHeight);
-}
-export function peekFieldLines(
-  label: string,
-  value: string,
-  width: number,
-  maxLines: number
-): string[] {
-  const labelWidth = detailLabelWidth();
-  const valueWidth = Math.max(1, width - labelWidth);
-  const lines = wrapColumns(value || t('common.none'), valueWidth).slice(0, maxLines);
-  return lines.map((line, index) =>
-    index === 0
-      ? `${padColumns(`${label}`, labelWidth)}${line}`
-      : `${' '.repeat(labelWidth)}${line}`
-  );
 }
 
 export function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {

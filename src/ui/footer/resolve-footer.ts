@@ -97,6 +97,8 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.canImport) items.push({ key: 'i', label: t('common.collect') });
   if (browse.canMaterialize) items.push({ key: 'm', label: t('common.more') });
   if (browse.canTag) items.push({ key: 't', label: t('common.tags') });
+  if (browse.canJumpTag) items.push({ key: 'g', label: t('common.jumpTag') });
+  if (browse.canSync) items.push({ key: 's', label: t('common.sync') });
   if (browse.updateCount > 0) {
     items.push({
       key: 'u',

@@ -24,6 +24,7 @@ import {
   browserGroupJumpAtom,
   browserNavigationAtom,
   browserSelectionAtom,
+  browserTagFilterAtom,
   browserUpdateCheckAtom,
 } from './store.js';
 import {
@@ -33,6 +34,10 @@ import {
   masterDetailViewportHeight,
   masterDetailWidths,
 } from './layout.js';
+import {
+  browseSelectionSets,
+  projectActionSkills,
+} from './browse-capabilities.js';
 import {
   TAG_FILTER_ALL,
   browseDetailRows,
@@ -47,9 +52,6 @@ import {
   focusAfterUpFromTags,
   groupedRows,
   listSkillSummary,
-  masterListColumnLines,
-  masterPeekColumnLines,
-  masterTagColumnLines,
   moreActionModalContent,
   nextAgent,
   nextMainTab,
@@ -674,18 +676,14 @@ export function Browser({
   const [choosingGroup, setChoosingGroup] = useAtom(browserGroupJumpAtom);
   const [updateCheck, setUpdateCheck] = useAtom(browserUpdateCheckAtom);
   const searching = filter.open;
-  const selectedCollection = collection.filter((skill) => selected.has(skill.path));
+  const {
+    selectedCollection,
+    selectedProject,
+    selectedGlobal,
+    selectedProjectLocal,
+    selectedGlobalLocal,
+  } = browseSelectionSets(selected, { collection, projectGroups, globalGroups });
   const selectedUpdates = selectedCollection.filter((skill) => updateCheck.updates.has(skill.name));
-  const selectedProject = project.filter((skill) => selected.has(skill.path));
-  const selectedGlobal = globalGroups.flatMap((group) =>
-    group.skills.filter((skill) => selected.has(skill.path))
-  );
-  const selectedProjectLocal = project.filter(
-    (skill) => selected.has(skill.path) && !skill.fromCollection
-  );
-  const selectedGlobalLocal = globalGroups.flatMap((group) =>
-    group.skills.filter((skill) => selected.has(skill.path) && !skill.fromCollection)
-  );
   const { stdout } = useStdout();
   // Wide terminals keep the 3-column master-detail chrome even while filtering;
   // list rows still apply `query` inside the skill column.
@@ -712,7 +710,7 @@ export function Browser({
     () => tagFilterOptions(tabSkills, groups),
     [groups, tabSkills]
   );
-  const [tagFilter, setTagFilter] = useState(TAG_FILTER_ALL);
+  const [tagFilter, setTagFilter] = useAtom(browserTagFilterAtom);
   const [tagCursor, setTagCursor] = useState(0);
   const tagCursorRef = useRef(tagCursor);
   tagCursorRef.current = tagCursor;
@@ -730,13 +728,11 @@ export function Browser({
   );
   const listRows = useMasterDetail ? masterDetailRows : rows;
   const currentRow = listRows[cursor];
-  const actionSkills = tab === 'project'
-    ? selectedProject.length
-      ? selectedProject
-      : currentRow?.type === 'skill'
-        ? [currentRow.skill]
-        : []
-    : [];
+  const actionSkills = projectActionSkills(
+    tab,
+    selectedProject,
+    currentRow?.type === 'skill' ? currentRow.skill : undefined
+  );
   const canOpenActions =
     !updatingSkillName &&
     focus === 'list' &&

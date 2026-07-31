@@ -56,6 +56,14 @@ function windowReducer(state: WindowState, action: WindowAction): WindowState {
 }
 
 // A reducer keeps quick successive keypresses from reading a stale focus value.
+/** Toggle membership of `value` in a selection set (Space multi-select). */
+export function toggleSelection(previous: Set<string>, value: string): Set<string> {
+  const next = new Set(previous);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
 export function useScrollWindow(length: number, visibleCount: number): {
   count: number;
   focus: number;

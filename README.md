@@ -26,6 +26,7 @@ Data integrity comes first: writes are transactional where it matters; conflicts
 ## Requirements
 
 - **Node.js** 24+
+- **Bun** recommended for the full-screen TUI (OpenTUI native FFI). `iskills` re-execs under Bun when the current Node lacks `node:ffi`. Pure CLI paths (help, non-TTY flags) work on Node alone.
 - **macOS** or **Linux**
 - A TTY for the interactive UI (`stdin` and `stdout`)
 - **Git** optional — enable only if you want collection versioning / remote sync
@@ -35,9 +36,7 @@ Data integrity comes first: writes are transactional where it matters; conflicts
 ## Install
 
 ```bash
-npm install -g iskills
-# or
-pnpm add -g iskills
+bun install -g iskills
 ```
 
 Verify:
@@ -142,4 +141,4 @@ Tests and internal documentation live outside this public tree. **Issues are wel
 
 ## License
 
-See the repository root for license and third-party notices.
+[MIT](./LICENSE)

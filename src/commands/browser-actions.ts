@@ -7,14 +7,15 @@ import {
   collectionPaths,
   commitCollection,
   discoverSkills,
-  errorMessage,
   exists,
   getAgent,
   isGitSource,
   listCollection,
   noPresentAgentsError,
+  agentDisplayName,
   agentInstallTargets,
   listPresentAgents,
+  listGlobalGroups,
   listProjectGroups,
   parseGitSource,
   primaryPresentAgent,
@@ -26,6 +27,7 @@ import {
   removeFromCollection,
   removeSkillLocations,
 } from '../domain/collection-write.js';
+import { DomainError } from '../domain/errors.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
 import type { InstallReviewTarget } from '../ui/install/types.js';
@@ -46,10 +48,11 @@ import type {
 } from '../ui/browser/types.js';
 import {
   addSkillsToProject,
-  globalSkillGroups,
+  formatSkillIdentity,
   importSkillsToCollection,
 } from './library.js';
-import { t } from '../i18n/index.js';
+import { collectionMatchLabels } from '../ui/collection-match.js';
+import { formatAppError, t } from '../i18n/index.js';
 
 async function bindMetadataSource(
   skillName: string,
@@ -59,7 +62,7 @@ async function bindMetadataSource(
   sourcePath: string,
   refType?: GitSource['refType']
 ): Promise<void> {
-  if (!isGitSource(input)) throw new Error(t('cmd.invalidGitSource', { input }));
+  if (!isGitSource(input)) throw new DomainError('cmd.invalidGitSource', { input });
   const parsed = parseGitSource(input);
   const resolvedRef = ref || parsed.ref;
   const source: GitSource = {
@@ -79,7 +82,7 @@ export async function loadBrowserData(): Promise<BrowserDataSnapshot> {
   const [projectGroups, collection, globalGroups] = await Promise.all([
     listProjectGroups(),
     listCollection(),
-    globalSkillGroups(),
+    listGlobalGroups(),
   ]);
   const canSync = await exists(join(collectionPaths().root, '.git'));
   return { projectGroups, collection, globalGroups, canSync };
@@ -91,8 +94,10 @@ async function installTargetsAndDefaults(): Promise<{
   defaultGlobalAgents: string[];
 }> {
   const present = await listPresentAgents();
-  if (!present.length) throw new Error(noPresentAgentsError());
-  const targets = agentInstallTargets(present);
+  if (!present.length) throw noPresentAgentsError();
+  const targets = agentInstallTargets(present, undefined, (name) =>
+    name === 'agents' ? t('cmd.agentDisplayAgents') : agentDisplayName(name)
+  );
   // Available: tool root present. Project default: only if this project already has that skills dir
   // (e.g. ~/.zcode exists → zcode is listed, but not pre-checked until .zcode/skills exists).
   const defaultProjectAgents: string[] = [];
@@ -218,7 +223,7 @@ async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): 
       outcomes.push(`${skill.name}: ${updateStatus}`);
     } catch (error) {
       failed += 1;
-      outcomes.push(t('cmd.updateFailedLine', { name: skill.name, error: errorMessage(error) }));
+      outcomes.push(t('cmd.updateFailedLine', { name: skill.name, error: formatAppError(error) }));
     }
   }
   host.setWorkingProgress(null);
@@ -260,7 +265,7 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
     ({ targets, defaultProjectAgents, defaultGlobalAgents } =
       await installTargetsAndDefaults());
   } catch (error) {
-    host.setStatus(errorMessage(error), false, 'error');
+    host.setStatus(formatAppError(error), false, 'error');
     return;
   }
   const install = await promptInstallReview(
@@ -284,7 +289,7 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
     host.setStatus(t('cmd.addedCount', { count }), true, 'normal');
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }
 }
 
@@ -306,7 +311,7 @@ async function handleRemoveCollection(
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }
 }
 
@@ -324,7 +329,7 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }
 }
 
@@ -358,7 +363,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
     host.setWorkingProgress(null);
     if (error instanceof InterruptError) throw error;
     if (error instanceof Error && error.name === 'AbortError') throw new InterruptError();
-    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   } finally {
     host.setAbortController(null);
   }
@@ -368,14 +373,34 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
   try {
     const { count } = await importSkillsToCollection(skills, {
       quiet: true,
-      confirmReplace: (conflicts) => Modal.confirm({
-        title: t('cmd.replaceCollectionTitle'),
-        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
-      }),
+      confirmReplace: (candidates) => {
+        if (candidates.length === 1) {
+          const item = candidates[0]!;
+          return Modal.confirm({
+            title: t('cmd.replaceCollectionTitle'),
+            message: t('cmd.replaceIdentityConfirm', {
+              name: item.name,
+              from: formatSkillIdentity(item.current),
+              to: formatSkillIdentity(item.incoming),
+            }),
+            details: [collectionMatchLabels()[item.match]],
+          });
+        }
+        return Modal.confirm({
+          title: t('cmd.replaceCollectionTitle'),
+          message: t('cmd.replaceSameNameConfirm', {
+            names: candidates.map((c) => c.name).join(t('common.listSep')),
+          }),
+          details: candidates.map(
+            (c) =>
+              `${c.name}: ${formatSkillIdentity(c.current)} → ${formatSkillIdentity(c.incoming)} · ${collectionMatchLabels()[c.match]}`
+          ),
+        });
+      },
     });
     host.setStatus(t('cmd.importedShort', { count }), true, 'normal');
   } catch (error) {
-    host.setStatus(t('common.failed', { error: errorMessage(error) }), false, 'error');
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }
@@ -415,7 +440,9 @@ export async function handleDetailAction(
     );
     if (sourceValue === undefined) return;
     const sourceInput = sourceValue.trim();
-    if (!isGitSource(sourceInput)) throw new Error(t('cmd.invalidGitSource', { input: sourceInput }));
+    if (!isGitSource(sourceInput)) {
+      throw new DomainError('cmd.invalidGitSource', { input: sourceInput });
+    }
     const parsed = parseGitSource(sourceInput);
     const refValue = await promptText(
       t('cmd.refPrompt'),
@@ -438,7 +465,7 @@ export async function handleDetailAction(
         })
         .sort((left, right) => left.rank - right.rank || left.value.localeCompare(right.value))
         .map(({ label, value }) => ({ label, value }));
-      if (!options.length) throw new Error(t('cmd.noSkillMdInRepo'));
+      if (!options.length) throw new DomainError('cmd.noSkillMdInRepo');
       const sourcePath = await promptChoice(options, t('cmd.selectSkillInRepo'));
       if (sourcePath === undefined) return;
       await bindMetadataSource(

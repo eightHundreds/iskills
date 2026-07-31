@@ -7,11 +7,9 @@ import { collectionMatchLabels, collectionMatchMarkers } from '../collection-mat
 import { termcnColors } from '../components/termcn.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
+import { toggleSelection } from '../components/options.js';
+import { isReturn } from '../components/text.js';
 import { t } from '../../i18n/index.js';
-
-function isReturn(input: string, keyReturn: boolean): boolean {
-  return keyReturn || input.includes('\r') || input.includes('\n');
-}
 
 function skillNameColumnWidth(options: { skill: Skill }[], columns: number): number {
   const longestName = options.reduce(
@@ -36,16 +34,17 @@ function detailFieldLines(
   width: number,
   muted = false
 ): DetailPreviewLine[] {
-  // Match full-screen detail: label + gap (no locale-specific colon glyph).
   const labelText = `${label}  `;
   const indentation = ' '.repeat(textWidth(labelText));
   const valueWidth = Math.max(1, width - textWidth(labelText));
   return value
     .split(/\r?\n/)
     .flatMap((paragraph) => wrapColumns(paragraph || t('common.none'), valueWidth))
-    .map((line, index) => index === 0
-      ? { label: labelText, value: line, muted }
-      : { value: `${indentation}${line}`, muted });
+    .map((line, index) =>
+      index === 0
+        ? { label: labelText, value: line, muted }
+        : { value: `${indentation}${line}`, muted }
+    );
 }
 
 function detailPreviewLines(
@@ -134,9 +133,6 @@ function SkillDetailPreview<T extends Skill>({
       <Text color={colors.muted}>
         {maxOffset ? `${offset + 1}–${Math.min(offset + viewportHeight, lines.length)} / ${lines.length}` : ' '}
       </Text>
-      <Text color={colors.muted}>
-        {`${maxOffset ? t('import.detailFooterScroll') : ''}${t('import.detailFooter')}`}
-      </Text>
     </>
   );
 }
@@ -199,12 +195,7 @@ export function SkillMultiSelect<T extends Skill>({
   const toggleCurrent = () => {
     const option = options[clampedCursor];
     if (!option) return;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(option.skill.path)) next.delete(option.skill.path);
-      else next.add(option.skill.path);
-      return next;
-    });
+    setSelected((prev) => toggleSelection(prev, option.skill.path));
   };
 
   const toggleAllInTab = () => {
@@ -246,12 +237,7 @@ export function SkillMultiSelect<T extends Skill>({
           setCursor(index);
           const option = options[index];
           if (option) {
-            setSelected((prev) => {
-              const next = new Set(prev);
-              if (next.has(option.skill.path)) next.delete(option.skill.path);
-              else next.add(option.skill.path);
-              return next;
-            });
+            setSelected((prev) => toggleSelection(prev, option.skill.path));
           }
         }
         return;
@@ -424,13 +410,6 @@ export function SkillMultiSelect<T extends Skill>({
             {options.length > 0
               ? `${offset + 1}–${Math.min(offset + viewportHeight, options.length)} / ${options.length}`
               : `0 / 0`}
-          </Text>
-          <Text color={colors.muted}>
-            {singleAgent
-              ? t('import.skillListFooter')
-              : focus === 'tabs'
-                ? t('import.agentTabsFooter')
-                : t('import.skillListFooterAgent')}
           </Text>
         </>
       )}

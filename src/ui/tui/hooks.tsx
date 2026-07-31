@@ -1,5 +1,5 @@
 /**
- * Session hooks: useApp / useStdout / useStdin for product UI.
+ * Session hooks: useApp / useStdout for product UI.
  */
 import {
   createContext,
@@ -51,13 +51,6 @@ type StdoutLike = {
   write: (chunk: string) => boolean;
 };
 
-type StdinLike = {
-  on: (event: string, listener: (...args: unknown[]) => void) => void;
-  off: (event: string, listener: (...args: unknown[]) => void) => void;
-  setRawMode?: (enabled: boolean) => void;
-  isTTY?: boolean;
-};
-
 /** Terminal size + write sink (OpenTUI dimensions + process.stdout). */
 export function useStdout(): { stdout: StdoutLike } {
   const { width, height } = useTerminalDimensions();
@@ -76,17 +69,6 @@ export function useStdout(): { stdout: StdoutLike } {
     [size.height, size.width]
   );
   return { stdout };
-}
-
-/** Best-effort stdin access for legacy mouse providers (prefer OpenTUI mouse). */
-export function useStdin(): { stdin: StdinLike; setRawMode: (v: boolean) => void; isRawModeSupported: boolean } {
-  const renderer = useRenderer();
-  const stdin = (renderer as { stdin?: StdinLike }).stdin ?? (process.stdin as unknown as StdinLike);
-  return {
-    stdin,
-    setRawMode: () => undefined,
-    isRawModeSupported: Boolean(process.stdin.isTTY),
-  };
 }
 
 /**

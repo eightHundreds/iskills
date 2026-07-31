@@ -26,6 +26,8 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.collect': 'Collect',
   'common.more': 'More',
   'common.tags': 'Tags',
+  'common.jumpTag': 'Jump tag',
+  'common.sync': 'Sync',
   'common.update': 'Update',
   'common.materialize': 'Materialize',
   'common.expand': 'Expand',
@@ -37,7 +39,6 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.symlink': 'Symlink',
   'common.project': 'Project',
   'common.global': 'Global',
-  'common.collection': 'Collection',
   'common.origin': 'Origin',
   'common.usage': 'Usage',
   'common.dependent': 'Dependent',
@@ -45,8 +46,6 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.usageIndented': '  Usage',
   'common.dependentIndented': '  Dependent',
   'common.noDescription': 'No description',
-  'common.updating': 'Updating',
-  'common.updatingSuffix': ' updating',
   'common.interrupted': 'Operation interrupted',
   'common.failed': 'Failed: {error}',
   'common.version': 'Version',
@@ -55,20 +54,12 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.description': 'Description',
   'common.location': 'Location',
   'common.path': 'Path',
+  'common.collectionStatus': 'Collection status',
+  'common.relatedLocations': 'Related locations',
   'common.all': 'All',
   'common.untagged': 'Untagged',
   'common.listSep': ', ',
   'common.itemJoin': '; ',
-
-  // ── labels ──────────────────────────────────────────────────────────────
-  'label.collectionStatus': 'Collection status',
-  'label.description': 'Description',
-  'label.location': 'Location',
-  'label.note': 'Note',
-  'label.path': 'Path',
-  'label.relatedLocations': 'Related locations',
-  'label.source': 'Source',
-  'label.tags': 'Tags',
 
   // ── collection match ────────────────────────────────────────────────────
   'match.sameSource': 'Collected (same source)',
@@ -253,6 +244,8 @@ Options:
     'Multiple skills with the same name in source repository: {name}',
   'cmd.conflictingSourceExists':
     'Collection already has skill {name} from a different source; use --replace',
+  'cmd.unverifiedSourceExists':
+    'Collection already has skill {name} (source unverified); confirm and use --replace',
   'cmd.conflictsExistReplace':
     'Already in collection: {names}; confirm and use --replace',
   'cmd.replaceSameNameConfirm': 'Replace same-name collection entries {names}?',
@@ -312,7 +305,6 @@ Options:
   'cmd.materializedCount': 'Materialized {count}',
   'cmd.replaceCollectionTitle': 'Replace collection entry',
   'cmd.importedShort': 'Imported {count}',
-  'cmd.editNote': 'Edit note (Enter save, Esc cancel)',
   'cmd.editNoteTitle': 'Edit note',
   'cmd.editNoteLabel': 'Note (Enter save, Esc cancel)',
   'cmd.editTags': 'Edit tags',
@@ -358,7 +350,7 @@ Options:
   'browser.tabProject': 'Project {count}',
   'browser.tabGlobal': 'Global {count}',
   'browser.tabCollection': 'Collection {count}',
-  'browser.jumpToGroup': 'Jump to group:',
+  'browser.jumpToGroup': 'Jump to tag:',
   'browser.detailFooterScroll': '↑/↓ scroll · ',
   'browser.detailFooterCollection': 'n note · t tags · s source · Esc back',
   'browser.detailFooterEsc': 'Esc back',
@@ -379,7 +371,7 @@ Options:
   'browser.helpNavDetail':
     'Open detail on narrow screens (three-pane right column is preview)',
   'browser.helpNavFilter': 'Filter skills',
-  'browser.helpNavGroup': 'Jump to group (when grouped)',
+  'browser.helpNavGroup': 'Jump to tag (when tags exist)',
   'browser.helpSelect': 'Selection',
   'browser.helpSelectToggle':
     'Toggle selection (tag column: all under that tag)',
@@ -406,16 +398,15 @@ Options:
   'comp.scrollRange': '↑/↓/wheel scroll {from}–{to} / {total}',
   'comp.quickSelect': '1–{max} quick · ',
   'comp.newTagsComma': 'New tags (comma-separated)',
-  'comp.editTags': 'Edit tags',
 
   // ── import UI ───────────────────────────────────────────────────────────
   'import.confirmTitle': 'Confirm import',
-  'import.selectGroups': 'Select groups',
-  'import.newGroupsComma': 'New groups (comma-separated)',
+  'import.selectGroups': 'Select tags',
+  'import.newGroupsComma': 'New tags (comma-separated)',
   'import.groupInputFooter':
-    'Enter finish groups · Tab back to existing · Esc cancel',
+    'Enter finish tags · Tab back to existing · Esc cancel',
   'import.groupListFooter':
-    '↑/↓ move · Space select · Tab switch input · Enter finish groups · → confirm · Esc cancel',
+    '↑/↓ move · Space select · Tab switch input · Enter finish tags · → confirm · Esc cancel',
   'import.fromAgentPath': 'From {agent} · {path}',
   'import.detailFooterScroll': '↑/↓ scroll · ',
   'import.detailFooter': 'Esc back · Space select · Enter confirm import',
@@ -449,18 +440,17 @@ Options:
   'ui.loading': 'Loading…',
   'ui.multiSelectFooter': 'Space toggle · Enter confirm · Esc cancel',
   'ui.selectFooter': '↑/↓ select · Enter confirm · Esc cancel',
-  'ui.tagEditorHeader': '{title} · selected {count}',
   'ui.selectedCount': 'Selected {count}',
   'ui.existingTags': 'Existing tags',
   'ui.noExistingTags': 'No existing tags',
   'ui.tagEditorFooter':
     '↑/↓ move · Space select · Tab switch · Enter save · Esc cancel',
-  'import.selectedGroups': 'Selected groups: {tags}',
-  'import.noExistingGroups': 'No existing groups',
-  'import.willImport': 'Will import {count} skill(s); groups: ',
+  'import.selectedGroups': 'Selected tags: {tags}',
+  'import.noExistingGroups': 'No existing tags',
+  'import.willImport': 'Will import {count} skill(s); tags: ',
   'import.moreItems': '… and {count} more',
   'import.confirmFooter':
-    'Enter confirm import · ← back to groups · n cancel · Esc cancel',
+    'Enter confirm import · ← back to tags · n cancel · Esc cancel',
   'import.noSkillsForAgent': 'No importable skills for this agent',
   'install.locationStepFooter': '↑/↓ select · Enter next · Esc cancel',
   'install.symlinkRecommended': 'Symlink (recommended)',

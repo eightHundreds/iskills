@@ -30,13 +30,16 @@ import type {
   SkillMetadata,
   SkillSource,
 } from './types.js';
-import { t } from '../i18n/index.js';
+import { DomainError, domainNotify } from './errors.js';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
-/** Display names for install/review UI; ids remain CLI --agent values. */
+/**
+ * English product names for install/review UI (ids remain CLI --agent values).
+ * Localized `agents` label is applied at the presentation boundary via
+ * `agentInstallTargets(..., displayName)`.
+ */
 const AGENT_DISPLAY_NAMES: Record<string, string> = {
-  // `agents` is localized via t() in agentDisplayName.
   codex: 'Codex',
   claude: 'Claude Code',
   cursor: 'Cursor',
@@ -47,6 +50,9 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   qoder: 'Qoder',
   grok: 'Grok Build',
 };
+
+/** English fallback for the shared agents skills layout (override with i18n at UI). */
+const AGENTS_DISPLAY_FALLBACK = 'Standard Agent Skills';
 
 export const AGENTS: Record<string, AgentConfig> = {
   agents: { project: '.agents/skills', global: (home) => join(home, '.agents/skills') },
@@ -95,18 +101,19 @@ export function agentIds(): string[] {
 }
 
 /** When no tool root is present and the user did not pass `--agent`. */
-export function noPresentAgentsError(): string {
-  return t('cmd.noPresentAgents');
+export function noPresentAgentsError(): DomainError {
+  return new DomainError('cmd.noPresentAgents');
 }
 
 export function getAgent(name: string): AgentConfig {
   const agent = AGENTS[name];
-  if (!agent) throw new Error(t('cmd.unknownAgent', { name }));
+  if (!agent) throw new DomainError('cmd.unknownAgent', { name });
   return agent;
 }
 
-function agentDisplayName(name: string): string {
-  if (name === 'agents') return t('cmd.agentDisplayAgents');
+/** Display label for an agent id (English fallback; pass i18n for `agents` at UI). */
+export function agentDisplayName(name: string): string {
+  if (name === 'agents') return AGENTS_DISPLAY_FALLBACK;
   return AGENT_DISPLAY_NAMES[name] ?? name;
 }
 
@@ -137,7 +144,7 @@ export function agentGlobalPath(name: string, home = homedir()): string {
 export function agentProjectPath(name: string): string {
   const agent = getAgent(name);
   if (!agent.project) {
-    throw new Error(t('cmd.agentGlobalOnly', { name }));
+    throw new DomainError('cmd.agentGlobalOnly', { name });
   }
   return resolve(agent.project);
 }
@@ -166,12 +173,13 @@ function tildeHomePath(absolute: string, home: string): string {
  */
 export function agentInstallTargets(
   names: string[],
-  home = homedir()
+  home = homedir(),
+  displayName: (name: string) => string = agentDisplayName
 ): AgentInstallTarget[] {
   const seenProject = new Set<string>();
   return names.map((name) => {
     const agent = getAgent(name);
-    const label = agentDisplayName(name);
+    const label = displayName(name);
     const globalPath = tildeHomePath(agent.global(home), home);
     let projectLabel: string | undefined;
     if (agent.project && !seenProject.has(agent.project)) {
@@ -254,7 +262,7 @@ export function assertSkillName(name: string): string {
     name.includes('\\') ||
     /[\u0000-\u001f\u007f]/.test(name)
   ) {
-    throw new Error(t('domain.unsafeSkillName', { name }));
+    throw new DomainError('domain.unsafeSkillName', { name });
   }
   return name;
 }
@@ -262,7 +270,7 @@ export function assertSkillName(name: string): string {
 export function assertRelativePath(path: string): string {
   const normalized = (path || '.').replace(/\\/g, '/').replace(/^\.\//, '') || '.';
   if (normalized.startsWith('/') || normalized.split('/').includes('..')) {
-    throw new Error(t('domain.unsafeSourcePath', { path }));
+    throw new DomainError('domain.unsafeSourcePath', { path });
   }
   return normalized;
 }
@@ -313,6 +321,66 @@ export function classifyCollectionMatch(
   return comparable ? 'conflicting-source' : 'unverified-source';
 }
 
+/**
+ * Pre-clone match (e.g. skills.sh): repository identity is known, in-repo path is not.
+ * Never returns `same-source` — only a different repository is conclusive before clone.
+ */
+export function classifyPreCloneCollectionMatch(
+  collection: CollectedSkill[],
+  skillName: string,
+  repositoryUrlOrIdentity: string
+): CollectionMatch | undefined {
+  const collected = collection.find(
+    (item) => item.name.toLowerCase() === skillName.toLowerCase()
+  );
+  if (!collected) return undefined;
+  const collectedRepository =
+    collected.source.type === 'git' && collected.source.url
+      ? normalizeGitRepositoryIdentity(collected.source.url)
+      : undefined;
+  const incomingRepository = normalizeGitRepositoryIdentity(repositoryUrlOrIdentity);
+  return collectedRepository && collectedRepository !== incomingRepository
+    ? 'conflicting-source'
+    : 'unverified-source';
+}
+
+async function collectedByRealpath(): Promise<Map<string, CollectedSkill>> {
+  const map = new Map<string, CollectedSkill>();
+  for (const skill of await listCollection()) {
+    try {
+      map.set(await realpath(skill.path), skill);
+    } catch {
+      /* ignore unreadable collection paths */
+    }
+  }
+  return map;
+}
+
+/** Annotate discovered skills with collection membership via realpath. */
+export async function annotateSkillsAgainstCollection(
+  skills: Skill[],
+  collectedByPath?: Map<string, CollectedSkill>
+): Promise<Skill[]> {
+  const map = collectedByPath ?? (await collectedByRealpath());
+  return Promise.all(
+    skills.map(async (skill) => {
+      try {
+        const collected = map.get(await realpath(skill.path));
+        return collected
+          ? {
+              ...collected,
+              path: skill.path,
+              fromCollection: true,
+              isReference: Boolean(skill.isReference),
+            }
+          : { ...skill, fromCollection: false };
+      } catch {
+        return { ...skill, fromCollection: false };
+      }
+    })
+  );
+}
+
 function parseScalar(value: string): string {
   const trimmed = value.trim();
   if (
@@ -360,7 +428,7 @@ export async function validateSkillTree(root: string, current = root): Promise<v
     if (entry.isSymbolicLink()) {
       const target = resolve(dirname(path), await readlink(path));
       if (target !== rootPath && !target.startsWith(`${rootPath}${sep}`)) {
-        throw new Error(t('domain.symlinkEscapesTree', { path }));
+        throw new DomainError('domain.symlinkEscapesTree', { path });
       }
     } else if (entry.isDirectory() && entry.name !== '.git') {
       await validateSkillTree(root, path);
@@ -626,7 +694,7 @@ export async function commitCollection(message: string, strict = false): Promise
     }
   } catch (error) {
     if (strict) throw error;
-    console.error(t('domain.gitCommitFailed', { error: errorMessage(error) }));
+    domainNotify('domain.gitCommitFailed', { error: errorMessage(error) });
   }
 }
 
@@ -647,29 +715,11 @@ export async function listCollection(): Promise<CollectedSkill[]> {
 export async function listProjectGroups(cwd = process.cwd()): Promise<
   { agent: string; skills: Skill[] }[]
 > {
-  const collectedByPath = new Map<string, CollectedSkill>();
-  for (const skill of await listCollection()) {
-    try {
-      collectedByPath.set(await realpath(skill.path), skill);
-    } catch {}
-  }
+  const collectedByPath = await collectedByRealpath();
   return Promise.all(PROJECT_SKILL_DIRS.map(async (directory) => {
-    const skills = await Promise.all(
-      (await discoverSkills(join(cwd, directory), 0, 2)).map(async (skill) => {
-        try {
-          const collected = collectedByPath.get(await realpath(skill.path));
-          return collected
-            ? {
-                ...collected,
-                path: skill.path,
-                fromCollection: true,
-                isReference: Boolean(skill.isReference),
-              }
-            : { ...skill, fromCollection: false };
-        } catch {
-          return { ...skill, fromCollection: false };
-        }
-      })
+    const skills = await annotateSkillsAgainstCollection(
+      await discoverSkills(join(cwd, directory), 0, 2),
+      collectedByPath
     );
     return {
       agent: directory.split('/')[0]!.slice(1),
@@ -678,21 +728,27 @@ export async function listProjectGroups(cwd = process.cwd()): Promise<
   }));
 }
 
-export async function listProject(cwd = process.cwd()): Promise<Skill[]> {
-  const found: Skill[] = [];
-  const seen = new Set<string>();
-  for (const group of await listProjectGroups(cwd)) {
-    for (const skill of group.skills) {
-      let key = skill.path;
-      try {
-        key = await realpath(skill.path);
-      } catch {}
-      if (!seen.has(key)) {
-        seen.add(key);
-        found.push(skill);
-      }
-    }
+export async function listGlobalGroups(
+  names: string[] = [],
+  home = homedir()
+): Promise<{ agent: string; root: string; skills: Skill[] }[]> {
+  const collectedByPath = await collectedByRealpath();
+  const selected = names.length
+    ? names.map((name) => ({ name, agent: getAgent(name) }))
+    : (await listPresentAgents(home)).map((name) => ({ name, agent: getAgent(name) }));
+  const groups: { agent: string; root: string; skills: Skill[] }[] = [];
+  for (const { name, agent } of selected) {
+    const root = agent.global(home);
+    const skills = await annotateSkillsAgainstCollection(
+      await discoverSkills(root),
+      collectedByPath
+    );
+    groups.push({
+      agent: name,
+      root,
+      skills: skills.sort((a, b) => a.name.localeCompare(b.name)),
+    });
   }
-  return found.sort((a, b) => a.name.localeCompare(b.name));
+  return groups.sort((a, b) => a.agent.localeCompare(b.agent));
 }
 

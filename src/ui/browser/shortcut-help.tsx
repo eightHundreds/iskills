@@ -244,11 +244,6 @@ export function ShortcutHelpPanel({
       <Text color={termcnColors.primary} backgroundColor={panelBg}>
         {bottom}
       </Text>
-      <Text color={chrome.muted} backgroundColor={panelBg}>
-        {maxOffset > 0
-          ? t('browser.shortcutHelpFooterScroll', { range: `${start + 1}–${Math.min(start + maxBodyRows, rows.length)}/${rows.length}` })
-          : t('browser.shortcutHelpFooter')}
-      </Text>
     </box>
   );
 }

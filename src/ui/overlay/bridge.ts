@@ -11,7 +11,7 @@ export interface OverlayBootstrapSession {
   dispose: () => Promise<void>;
   /**
    * Rejects with InterruptError when the temporary shell receives Ctrl+C.
-   * Raced against `work` so CLI one-shots exit 130 like `runScreen`.
+   * Raced against `work` so CLI one-shots exit 130 on Ctrl+C.
    */
   interrupted: Promise<never>;
 }

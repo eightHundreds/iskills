@@ -1,5 +1,4 @@
 import { cp, lstat, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
@@ -15,12 +14,12 @@ import {
   commitCollection,
   discoverSkills,
   ensureCollection,
-  errorMessage,
   exists,
   getAgent,
   isExactSymlink,
   isGitSource,
   listCollection,
+  listGlobalGroups,
   listPresentAgents,
   metadataPath,
   moveDirectory,
@@ -36,17 +35,33 @@ import {
   registerCollectionLinks,
   replaceCollectionSkill,
 } from '../domain/collection-write.js';
+import { DomainError } from '../domain/errors.js';
 import { matchesSkill } from '../domain/skill-query.js';
 import { cloneGitSource } from '../domain/git.js';
 import { collectionMatchLabels } from '../ui/collection-match.js';
 import type {
   CollectedSkill,
+  CollectionMatch,
   GitImportContext,
   Skill,
   SkillLink,
   SkillMetadata,
 } from '../domain/types.js';
 import { t } from '../i18n/index.js';
+
+export function formatSkillIdentity(meta: SkillMetadata): string {
+  const source = meta.source;
+  const base = source.url || source.id || source.path || source.type;
+  const path = source.path && source.path !== '.' ? `/${source.path}` : '';
+  return sanitizeTerminal(`${String(base).replace(/\/$/, '')}${path}`);
+}
+
+export type ImportReplaceCandidate = {
+  name: string;
+  match: CollectionMatch;
+  current: SkillMetadata;
+  incoming: SkillMetadata;
+};
 
 type PresentModule = typeof import('../ui/prompts/present.js');
 
@@ -111,11 +126,32 @@ async function importLocalSkill(
   const target = join(paths.skills, assertSkillName(skill.name));
   if (source === target) return false;
 
-  const provenance = await provenanceFromKnownLocks(skill);
+  // Same provenance builder as classifyImportReplacements (locks, then local path).
+  const lockSource = await provenanceFromKnownLocks(skill);
+  const provenance: SkillMetadata['source'] = skill.source?.type
+    ? (skill.source as SkillMetadata['source'])
+    : lockSource.type
+      ? lockSource
+      : { type: 'local', path: skill.path };
   await validateSkillTree(source);
   if (await pathPresent(target)) {
+    const current = await readMetadata(skill.name);
+    const incoming: SkillMetadata = {
+      name: skill.name,
+      description: skill.description,
+      tags,
+      note: '',
+      source: provenance,
+    };
+    // Same-source is a no-op (annotated status or git identity).
+    if (
+      skill.collectionStatus === 'same-source' ||
+      classifyCollectionMatch(current, incoming) === 'same-source'
+    ) {
+      return false;
+    }
     if (!allowReplace) {
-      throw new Error(t('cmd.sameNameExistsReplace', { name: skill.name }));
+      throw new DomainError('cmd.sameNameExistsReplace', { name: skill.name });
     }
     await ensureCollection();
     const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
@@ -125,13 +161,7 @@ async function importLocalSkill(
       await replaceCollectionSkill({
         name: skill.name,
         staged,
-        metadata: {
-          name: skill.name,
-          description: skill.description,
-          tags,
-          note: '',
-          source: provenance,
-        },
+        metadata: incoming,
         local: {
           source,
           selectedPath,
@@ -186,7 +216,7 @@ async function importRemoteSkill(
     const current = await readMetadata(skill.name);
     if (sameGitIdentity(current, metadata)) return false;
     if (!allowReplace) {
-      throw new Error(t('cmd.sameNameExistsReplace', { name: skill.name }));
+      throw new DomainError('cmd.sameNameExistsReplace', { name: skill.name });
     }
     await ensureCollection();
     const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
@@ -230,20 +260,26 @@ export async function importRemoteSkillToCollection(
     const found = (await discoverSkills(gitContext.repository)).filter(
       (skill) => skill.name.toLowerCase() === skillName.toLowerCase()
     );
-    if (!found.length) throw new Error(t('cmd.skillMissingInSource', { name: skillName }));
-    if (found.length > 1) throw new Error(t('cmd.skillDuplicateInSource', { name: skillName }));
+    if (!found.length) throw new DomainError('cmd.skillMissingInSource', { name: skillName });
+    if (found.length > 1) throw new DomainError('cmd.skillDuplicateInSource', { name: skillName });
     const skill = found[0]!;
     const incoming = gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
     const replacing = await pathPresent(target);
     if (replacing) {
       const current = await readMetadata(skill.name);
-      if (sameGitIdentity(current, incoming)) {
+      const match = classifyCollectionMatch(current, incoming);
+      if (match === 'same-source') {
         return { name: skill.name, status: 'unchanged' };
       }
       if (!options.replace) {
         if (!options.confirmReplace) {
-          throw new Error(t('cmd.conflictingSourceExists', { name: skill.name }));
+          throw new DomainError(
+            match === 'unverified-source'
+              ? 'cmd.unverifiedSourceExists'
+              : 'cmd.conflictingSourceExists',
+            { name: skill.name }
+          );
         }
         if (!(await options.confirmReplace(current, incoming))) {
           return { name: skill.name, status: 'cancelled' };
@@ -263,7 +299,69 @@ interface ImportToCollectionOptions {
   yes?: boolean;
   quiet?: boolean;
   tags?: string[];
-  confirmReplace?: (conflicts: string[]) => Promise<boolean>;
+  /** Confirm only for conflicting / unverified same-name entries (not same-source). */
+  confirmReplace?: (candidates: ImportReplaceCandidate[]) => Promise<boolean>;
+}
+
+async function classifyImportReplacements(
+  skills: Skill[]
+): Promise<{ sameSource: string[]; candidates: ImportReplaceCandidate[] }> {
+  const paths = collectionPaths();
+  const sameSource: string[] = [];
+  const candidates: ImportReplaceCandidate[] = [];
+  for (const skill of skills) {
+    if (!(await pathPresent(join(paths.skills, skill.name)))) continue;
+    const current = await readMetadata(skill.name);
+    const lockSource = await provenanceFromKnownLocks(skill);
+    const provenance: SkillMetadata['source'] = skill.source?.type
+      ? (skill.source as SkillMetadata['source'])
+      : lockSource.type
+        ? lockSource
+        : { type: 'local', path: skill.path };
+    const incoming: SkillMetadata = {
+      name: skill.name,
+      description: skill.description,
+      tags: skill.tags ?? [],
+      note: skill.note ?? '',
+      source: provenance,
+    };
+    // Prefer pre-annotated git match when present; else full metadata classify.
+    const match =
+      skill.collectionStatus ??
+      classifyCollectionMatch(current, incoming);
+    if (match === 'same-source') {
+      sameSource.push(skill.name);
+      continue;
+    }
+    candidates.push({ name: skill.name, match, current, incoming });
+  }
+  return { sameSource, candidates };
+}
+
+function defaultReplaceConfirmMessage(candidates: ImportReplaceCandidate[]): {
+  message: string;
+  details: string[];
+} {
+  if (candidates.length === 1) {
+    const item = candidates[0]!;
+    return {
+      message: t('cmd.replaceIdentityConfirm', {
+        name: item.name,
+        from: formatSkillIdentity(item.current),
+        to: formatSkillIdentity(item.incoming),
+      }),
+      details: [collectionMatchLabels()[item.match]],
+    };
+  }
+  return {
+    message: t('cmd.replaceSameNameConfirm', {
+      names: candidates.map((c) => c.name).join(t('common.listSep')),
+    }),
+    details: candidates.map(
+      (c) =>
+        `${c.name}: ${formatSkillIdentity(c.current)} → ${formatSkillIdentity(c.incoming)} · ${collectionMatchLabels()[c.match]}`
+    ),
+  };
 }
 
 export async function importSkillsToCollection(
@@ -272,71 +370,47 @@ export async function importSkillsToCollection(
 ): Promise<{ count: number }> {
   if (!skills.length) return { count: 0 };
   let selected = skills;
-  let allowReplace = options.replace ?? false;
-  const paths = collectionPaths();
-  const conflicts: string[] = [];
-  for (const skill of selected) {
-    if (await exists(join(paths.skills, skill.name))) conflicts.push(skill.name);
+  const replaceNames = new Set<string>();
+  if (options.replace) {
+    for (const skill of selected) replaceNames.add(skill.name);
   }
-  if (conflicts.length && !allowReplace) {
+  const { candidates } = await classifyImportReplacements(selected);
+  if (candidates.length && !options.replace) {
     if (!process.stdin.isTTY || options.yes) {
-      throw new Error(t('cmd.conflictsExistReplace', { names: conflicts.join(', ') }));
-    }
-    allowReplace = options.confirmReplace
-      ? await options.confirmReplace(conflicts)
-      : await (await import('../ui/overlay/static.js')).Modal.confirm({
-        title: t('common.confirm'),
-        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
+      throw new DomainError('cmd.conflictsExistReplace', {
+        names: candidates.map((c) => c.name).join(t('common.listSep')),
       });
-    if (!allowReplace) {
-      selected = selected.filter((skill) => !conflicts.includes(skill.name));
+    }
+    const confirm = options.confirmReplace
+      ? await options.confirmReplace(candidates)
+      : await (async () => {
+          const { message, details } = defaultReplaceConfirmMessage(candidates);
+          return (await import('../ui/overlay/static.js')).Modal.confirm({
+            title: t('cmd.replaceCollectionTitle'),
+            message,
+            details,
+          });
+        })();
+    if (!confirm) {
+      const blocked = new Set(candidates.map((c) => c.name));
+      selected = selected.filter((skill) => !blocked.has(skill.name));
+    } else {
+      for (const c of candidates) replaceNames.add(c.name);
     }
   }
   if (!selected.length) return { count: 0 };
   let count = 0;
   for (const skill of selected) {
-    if (await importLocalSkill(skill, allowReplace, options.tags ?? [])) count++;
+    // Same-source names never get replace permission; importLocalSkill no-ops them.
+    if (await importLocalSkill(skill, replaceNames.has(skill.name), options.tags ?? [])) {
+      count++;
+    }
   }
   await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
   if (!options.quiet) {
     console.log(t('cmd.importedCount', { count }));
   }
   return { count };
-}
-
-export async function globalSkillGroups(names: string[] = []): Promise<
-  { agent: string; root: string; skills: Skill[] }[]
-> {
-  const home = homedir();
-  const collectedByPath = new Map<string, CollectedSkill>();
-  for (const skill of await listCollection()) {
-    try {
-      collectedByPath.set(await realpath(skill.path), skill);
-    } catch {}
-  }
-  // Empty present → empty groups (browser global tab). import -g checks separately.
-  const selected = names.length
-    ? names.map((name) => ({ name, agent: getAgent(name) }))
-    : (await listPresentAgents(home)).map((name) => ({ name, agent: getAgent(name) }));
-  const groups: { agent: string; root: string; skills: Skill[] }[] = [];
-  for (const { name, agent } of selected) {
-    const root = agent.global(home);
-    const skills = await Promise.all(
-      (await discoverSkills(root)).map(async (skill) => {
-        try {
-          const collected = collectedByPath.get(await realpath(skill.path));
-          return collected
-            ? { ...collected, path: skill.path, fromCollection: true }
-            : { ...skill, fromCollection: false };
-        } catch {
-          return { ...skill, fromCollection: false };
-        }
-      })
-    );
-    skills.sort((a, b) => a.name.localeCompare(b.name));
-    groups.push({ agent: name, root, skills });
-  }
-  return groups.sort((a, b) => a.agent.localeCompare(b.agent));
 }
 
 export async function commandImport(argv: string[]): Promise<void> {
@@ -351,8 +425,8 @@ export async function commandImport(argv: string[]): Promise<void> {
       yes: { type: 'boolean', short: 'y' },
     },
   });
-  if (values.global && positionals.length) throw new Error(t('cmd.cannotSourceAndGlobal'));
-  if (positionals.length > 1) throw new Error(t('cmd.oneImportRootOnly'));
+  if (values.global && positionals.length) throw new DomainError('cmd.cannotSourceAndGlobal');
+  if (positionals.length > 1) throw new DomainError('cmd.oneImportRootOnly');
 
   const input = positionals[0];
   const localInput = input ? resolve(input) : undefined;
@@ -376,9 +450,9 @@ export async function commandImport(argv: string[]): Promise<void> {
       );
     } else if (values.global) {
       if (!(values.agent?.length) && !(await listPresentAgents()).length) {
-        throw new Error(noPresentAgentsError());
+        throw noPresentAgentsError();
       }
-      const groups = await globalSkillGroups(values.agent);
+      const groups = await listGlobalGroups(values.agent);
       globalGroups = groups
         .map((group) => ({
           agent: group.agent,
@@ -389,11 +463,11 @@ export async function commandImport(argv: string[]): Promise<void> {
     } else {
       skills = (await discoverSkills(localInput || resolve('.'))).filter(isCollected);
     }
-    if (!skills.length) throw new Error(t('cmd.noSkillMd'));
+    if (!skills.length) throw new DomainError('cmd.noSkillMd');
 
     let selected = skills;
     if (!values.all && (skills.length > 1 || !input)) {
-      if (!process.stdin.isTTY) throw new Error(t('cmd.useAllOrInteractive'));
+      if (!process.stdin.isTTY) throw new DomainError('cmd.useAllOrInteractive');
       const groups = globalGroups ?? [{ agent: gitContext ? t('common.git') : t('common.local'), skills }];
       selected = await (await present()).promptSkillGroups(
         groups,
@@ -408,7 +482,7 @@ export async function commandImport(argv: string[]): Promise<void> {
 
     let importTags: string[] = [];
     if (!values.yes) {
-      if (!process.stdin.isTTY) throw new Error(t('cmd.useYesToConfirmImport'));
+      if (!process.stdin.isTTY) throw new DomainError('cmd.useYesToConfirmImport');
       const existingTags = [...new Set((await listCollection().catch(() => []))
         .flatMap((skill) => skill.tags))]
         .sort((a, b) => a.localeCompare(b));
@@ -425,37 +499,53 @@ export async function commandImport(argv: string[]): Promise<void> {
       importTags = review.tags;
     }
 
-    let allowReplace = values.replace ?? false;
     if (!gitContext) {
       await importSkillsToCollection(selected, {
-        replace: allowReplace,
+        replace: values.replace ?? false,
         yes: values.yes ?? false,
         tags: importTags,
       });
       return;
     }
-    const conflicts: string[] = [];
-    for (const skill of selected) {
-      if (
-        await exists(join(paths.skills, skill.name)) &&
-        skill.collectionStatus !== 'same-source'
-      ) {
-        conflicts.push(skill.name);
-      }
+    const replaceNames = new Set<string>();
+    if (values.replace) {
+      for (const skill of selected) replaceNames.add(skill.name);
     }
-    if (conflicts.length && !allowReplace) {
-      if (!process.stdin.isTTY) {
-        throw new Error(t('cmd.conflictsExistReplace', { names: conflicts.join(', ') }));
+    const candidates: ImportReplaceCandidate[] = [];
+    for (const skill of selected) {
+      if (!(await pathPresent(join(paths.skills, skill.name)))) continue;
+      if (skill.collectionStatus === 'same-source') continue;
+      const current = await readMetadata(skill.name);
+      const incoming = gitSkillMetadata(skill, gitContext, importTags);
+      const match =
+        skill.collectionStatus ?? classifyCollectionMatch(current, incoming);
+      if (match === 'same-source') continue;
+      candidates.push({ name: skill.name, match, current, incoming });
+    }
+    if (candidates.length && !values.replace) {
+      if (!process.stdin.isTTY || values.yes) {
+        throw new DomainError('cmd.conflictsExistReplace', {
+          names: candidates.map((c) => c.name).join(t('common.listSep')),
+        });
       }
-      allowReplace = await (await import('../ui/overlay/static.js')).Modal.confirm({
-        title: t('common.confirm'),
-        message: t('cmd.replaceSameNameConfirm', { names: conflicts.join(', ') }),
+      const { message, details } = defaultReplaceConfirmMessage(candidates);
+      const confirmed = await (await import('../ui/overlay/static.js')).Modal.confirm({
+        title: t('cmd.replaceCollectionTitle'),
+        message,
+        details,
       });
-      if (!allowReplace) selected = selected.filter((skill) => !conflicts.includes(skill.name));
+      if (!confirmed) {
+        const blocked = new Set(candidates.map((c) => c.name));
+        selected = selected.filter((skill) => !blocked.has(skill.name));
+      } else {
+        for (const c of candidates) replaceNames.add(c.name);
+      }
     }
     let count = 0;
     for (const skill of selected) {
-      if (await importRemoteSkill(skill, gitContext, allowReplace, importTags)) count++;
+      if (await importRemoteSkill(skill, gitContext, replaceNames.has(skill.name), importTags)) {
+        count++;
+      }
     }
     await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
     console.log(t('cmd.importedCount', { count }));
@@ -481,14 +571,14 @@ async function resolveTargets(values: AddValues): Promise<string[]> {
   if (values.global) {
     let names = requestedAgents;
     if (!names.length) {
-      if (!process.stdin.isTTY) throw new Error(t('cmd.globalNeedsAgent'));
+      if (!process.stdin.isTTY) throw new DomainError('cmd.globalNeedsAgent');
       const presentNames = await listPresentAgents();
-      if (!presentNames.length) throw new Error(noPresentAgentsError());
+      if (!presentNames.length) throw noPresentAgentsError();
       names = await (await present()).promptChoicesMany(
         presentNames.map((name) => ({ label: name, value: name })),
         t('cmd.selectGlobalAgent')
       );
-      if (!names.length) throw new Error(noPresentAgentsError());
+      if (!names.length) throw noPresentAgentsError();
     }
     return [...new Set(names.map((name) => agentGlobalPath(name)))];
   }
@@ -518,10 +608,10 @@ async function selectCollectionSkills(names: string[]): Promise<CollectedSkill[]
     });
     const found = new Set(selected.map((skill) => skill.name));
     const missing = names.filter((name) => !found.has(name));
-    if (missing.length) throw new Error(t('cmd.missingInCollection', { names: missing.join(', ') }));
+    if (missing.length) throw new DomainError('cmd.missingInCollection', { names: missing.join(', ') });
     return selected;
   }
-  if (!process.stdin.isTTY) throw new Error(t('cmd.specifySkillNames'));
+  if (!process.stdin.isTTY) throw new DomainError('cmd.specifySkillNames');
   if (!skills.length) {
     let source: string | undefined;
     const ui = await present();
@@ -563,7 +653,7 @@ export async function addSkillsToProject(
     for (const skill of skills) {
       const target = join(targetRoot, skill.name);
       if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
-        throw new Error(t('cmd.targetPointsSelf', { target }));
+        throw new DomainError('cmd.targetPointsSelf', { target });
       }
       if (await pathPresent(target)) {
         if (await isExactSymlink(target, skill.path)) continue;
@@ -578,7 +668,7 @@ export async function addSkillsToProject(
         }
         if (!replace) {
           if (process.stdin.isTTY && !values.yes) continue;
-          throw new Error(t('cmd.targetExistsReplace', { target }));
+          throw new DomainError('cmd.targetExistsReplace', { target });
         }
         await rm(target, { recursive: true });
       }

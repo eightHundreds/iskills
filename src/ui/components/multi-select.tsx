@@ -5,13 +5,13 @@ import { termcnColors } from './colors.js';
 import {
   resolveOptionValues,
   toListOptions,
+  toggleSelection,
   useScrollWindow,
   visibleOptionCount,
   type InternalOption,
   type Option,
 } from './options.js';
 import { isReturn } from './text.js';
-import { t } from '../../i18n/index.js';
 
 function OptionMultiSelect({
   options,
@@ -39,12 +39,7 @@ function OptionMultiSelect({
     if (input === ' ') {
       const option = options[focus];
       if (!option) return;
-      setSelected((previous) => {
-        const next = new Set(previous);
-        if (next.has(option.value)) next.delete(option.value);
-        else next.add(option.value);
-        return next;
-      });
+      setSelected((previous) => toggleSelection(previous, option.value));
       return;
     }
     if (isReturn(input, key.return) && selected.size) {
@@ -136,7 +131,6 @@ export function MultiSelect<T>({
         onSubmit={(values) => onSubmit(resolveOptionValues(options, values))}
         {...(onCancel ? { onCancel } : {})}
       />
-      <Text color={chrome.muted}>{t('ui.multiSelectFooter')}</Text>
     </box>
   );
 }

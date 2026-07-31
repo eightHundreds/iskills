@@ -82,7 +82,7 @@ if (shouldReexecToBun()) {
 await import('./opentui-register.mjs');
 
 const { main } = await import('../dist/src/cli.js');
-const { t } = await import('../dist/src/i18n/index.js');
+const { formatAppError, t } = await import('../dist/src/i18n/index.js');
 const { InterruptError } = await import('../dist/src/ui/shell/terminal.js');
 
 main().catch((error) => {
@@ -93,7 +93,8 @@ main().catch((error) => {
     process.exitCode = 130;
     return;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  // Single presentation path: DomainError codes → catalog; plain Error → message.
+  const message = formatAppError(error);
   console.error(t('cli.errorPrefix', { message }));
   process.exitCode = 1;
 });

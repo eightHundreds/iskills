@@ -98,9 +98,6 @@ export function TagEditor({
         onSubmit={save}
         {...(onCancel ? { onCancel } : {})}
       />
-      <Text color={chrome.muted}>
-        {t('ui.tagEditorFooter')}
-      </Text>
     </box>
   );
 }

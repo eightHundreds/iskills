@@ -226,9 +226,6 @@ export function SettingsPanel({
       <Text color={termcnColors.primary} backgroundColor={panelBg}>
         {bottom}
       </Text>
-      <Text color={muted} backgroundColor={panelBg}>
-        {t('config.settingsFooter')}
-      </Text>
     </box>
   );
 }

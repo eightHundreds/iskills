@@ -26,6 +26,7 @@
 ## 环境要求
 
 - **Node.js** 24+
+- **Bun** 推荐用于完整全屏 TUI（OpenTUI 原生 FFI）。当前 Node 缺少 `node:ffi` 时，`iskills` 会 re-exec 到 Bun。纯 CLI 路径（帮助、非 TTY 参数）可仅用 Node。
 - **macOS** 或 **Linux**
 - 交互界面需要 TTY（`stdin` 与 `stdout`）
 - **Git** 可选 — 仅在需要收藏夹版本管理 / 远端同步时启用
@@ -35,9 +36,7 @@
 ## 安装
 
 ```bash
-npm install -g iskills
-# 或
-pnpm add -g iskills
+bun install -g iskills
 ```
 
 验证：

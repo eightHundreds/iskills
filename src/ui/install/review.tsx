@@ -3,12 +3,9 @@ import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
 import { Tabs, termcnColors, type Tab } from '../components/termcn.js';
+import { isReturn } from '../components/text.js';
 import type { InstallReviewResult, InstallReviewTarget } from './types.js';
 import { t } from '../../i18n/index.js';
-
-function isReturn(input: string, keyReturn: boolean): boolean {
-  return keyReturn || input.includes('\r') || input.includes('\n');
-}
 
 export function InstallReview({
   skills,
@@ -138,7 +135,6 @@ export function InstallReview({
               </Text>
             );
           })}
-          <Text color={colors.muted}>{t('install.locationStepFooter')}</Text>
         </box>
       ),
     },
@@ -153,7 +149,6 @@ export function InstallReview({
           <Text color={copy ? colors.primary : colors.body} bold={copy}>
             {copy ? '●' : '○'} {t('common.copy')}
           </Text>
-          <Text color={colors.muted}>{t('install.methodStepFooter')}</Text>
         </box>
       ),
     },
@@ -175,9 +170,6 @@ export function InstallReview({
               </Text>
             );
           })}
-          <Text color={colors.muted}>
-            {t('install.targetsFooter', { next: activeAgents.size ? t('install.nextStep') : t('install.selectAtLeastOne') })}
-          </Text>
         </box>
       ),
     },
@@ -196,7 +188,6 @@ export function InstallReview({
           <Text color={colors.body}>
             {t('install.targetsLine', { value: selectedTargetLabels.join(', ') })}
           </Text>
-          <Text color={colors.muted}>{t('install.confirmFooter')}</Text>
         </box>
       ),
     },
