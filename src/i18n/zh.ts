@@ -323,6 +323,10 @@ export const zh = {
   'browser.removeCollectionTitle': '删除收藏',
   'browser.removeCollectionOne': '从收藏夹移除 {name} 吗？',
   'browser.removeCollectionMany': '从收藏夹移除 {count} 个技能吗？',
+  'browser.adoptMissingTitle': '收编不完整技能',
+  'browser.adoptMissingMessage':
+    '发现 {count} 个技能目录缺少收藏元数据（可能是手动放入 skills/）。收编将写入默认元数据（来源未知），不猜测 Git/本地来源。',
+  'browser.adoptedCount': '已收编 {count} 个技能',
   'browser.removeLocationsTitle': '删除技能',
   'browser.removeLocationOne': '删除 {name} 的当前位置吗？',
   'browser.removeLocationsMany': '删除所选 {count} 个技能位置吗？',

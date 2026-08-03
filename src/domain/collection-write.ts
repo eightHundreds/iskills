@@ -89,6 +89,71 @@ export async function createCollectionSkill(name: string): Promise<string> {
   return target;
 }
 
+/**
+ * Collected skill trees that have SKILL.md but no metadata file on disk.
+ * Skips directory/frontmatter name mismatches (those need interactive repair).
+ */
+export async function listCollectionSkillsMissingMetadata(): Promise<string[]> {
+  const paths = collectionPaths();
+  if (!(await exists(paths.skills))) return [];
+  const missing: string[] = [];
+  for (const entry of await readdir(paths.skills, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillDir = join(paths.skills, entry.name);
+    if (!(await exists(join(skillDir, 'SKILL.md')))) continue;
+    let skill;
+    try {
+      skill = await readSkill(skillDir);
+    } catch {
+      continue;
+    }
+    if (skill.name !== entry.name) continue;
+    if (await pathPresent(metadataPath(skill.name))) continue;
+    missing.push(skill.name);
+  }
+  return missing.sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Adopt skill trees already under skills/ by writing create-shaped metadata
+ * (`source: unknown`). Does not invent git/local provenance or origin links.
+ */
+export async function adoptCollectionSkillsMissingMetadata(
+  names?: string[]
+): Promise<string[]> {
+  const candidates = names ?? (await listCollectionSkillsMissingMetadata());
+  const adopted: string[] = [];
+  const paths = collectionPaths();
+
+  for (const name of candidates) {
+    const skillName = assertSkillName(name);
+    const skillDir = join(paths.skills, skillName);
+    if (!(await exists(join(skillDir, 'SKILL.md')))) continue;
+    let skill;
+    try {
+      skill = await readSkill(skillDir);
+    } catch {
+      continue;
+    }
+    if (skill.name !== skillName) continue;
+    if (await pathPresent(metadataPath(skillName))) continue;
+
+    await writeMetadata({
+      name: skillName,
+      description: skill.description,
+      tags: [],
+      note: '',
+      source: { type: 'unknown' },
+    });
+    adopted.push(skillName);
+  }
+
+  if (adopted.length) {
+    await commitCollection(`adopt ${adopted.join(', ')}`);
+  }
+  return adopted;
+}
+
 // Replaces one collected Skill while keeping its tree, metadata, links and baseline coherent.
 export async function replaceCollectionSkill(input: ReplacementInput): Promise<void> {
   const paths = collectionPaths();
