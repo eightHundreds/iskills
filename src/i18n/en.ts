@@ -342,6 +342,10 @@ Options:
   'browser.removeCollectionTitle': 'Remove from collection',
   'browser.removeCollectionOne': 'Remove {name} from the collection?',
   'browser.removeCollectionMany': 'Remove {count} skills from the collection?',
+  'browser.adoptMissingTitle': 'Adopt incomplete skills',
+  'browser.adoptMissingMessage':
+    'Found {count} skill folder(s) missing collection metadata (often dropped into skills/). Adopt writes default metadata (unknown source); does not invent Git/local provenance.',
+  'browser.adoptedCount': 'Adopted {count} skill(s)',
   'browser.removeLocationsTitle': 'Delete skills',
   'browser.removeLocationOne': 'Delete the current location of {name}?',
   'browser.removeLocationsMany': 'Delete the {count} selected skill locations?',
