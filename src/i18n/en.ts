@@ -279,8 +279,16 @@ Options:
   'cmd.selectSkills': 'Select skills:',
   'cmd.targetPointsSelf': 'Target would point at the skill itself: {target}',
   'cmd.replaceTargetConfirm': 'Target already exists. Replace {target}?',
+  'cmd.replaceTargetsConfirm':
+    'The following {count} target(s) already exist. Replace all?',
   'cmd.targetExistsReplace':
     'Target already exists: {target}; confirm and use --replace',
+  'cmd.crossAgentUnsupported':
+    'Cannot install "{name}" across agents ({path}): only collection refs or real directories',
+  'cmd.crossAgentAmbiguousSource':
+    'Multiple different sources for "{name}" would install to the same target: {target}',
+  'cmd.noOtherAgentTargets': 'No other agent with a different path to install to',
+  'cmd.selectInstallAgents': 'Install to other agents:',
   'cmd.addedSkillsToDirs':
     'Added {skills} skill(s) to {dirs} directory(ies){copy}.',
   'cmd.addedCopySuffix': ' (copy)',
@@ -368,7 +376,8 @@ Options:
   'browser.referencePrefix': 'Reference · ',
   'browser.spaceSelect': 'Space select',
   'browser.enterViewSpaceSelect': 'Enter view · Space select',
-  'browser.materializeAction': '› Materialize reference to copy',
+  'browser.materializeAction': 'Materialize reference to copy',
+  'browser.installToAgentsAction': 'Install to other agents',
   'browser.shortcutHelpTitle': ' All shortcuts ',
   'browser.shortcutHelpFooterScroll':
     '↑/↓/wheel move · e/Space expand/collapse · ← collapse · Esc close  {range}',
@@ -378,7 +387,7 @@ Options:
   'browser.helpNavMove': 'Move focus or list item',
   'browser.helpNavTab': 'Switch tab at current level',
   'browser.helpNavDetail':
-    'Open detail on narrow screens (three-pane right column is preview)',
+    'Collection: open detail on narrow screens; enter detail column in three-pane (project/global right column is preview only)',
   'browser.helpNavFilter': 'Filter skills',
   'browser.helpNavGroup': 'Jump to tag (when tags exist)',
   'browser.helpSelect': 'Selection',
@@ -394,7 +403,7 @@ Options:
   'browser.helpMaintainUpdate':
     'Update: selected updatable skills, else current item',
   'browser.helpMaintainMore':
-    'More · materialize reference (project symlink)',
+    'More · materialize reference / install to other agents',
   'browser.helpMaintainSync': 'Sync collection Git (when available)',
   'browser.helpMaintainDelete':
     'Delete selected; if none selected, delete current item',

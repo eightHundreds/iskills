@@ -34,6 +34,7 @@ import {
   masterDetailViewportHeight,
   masterDetailWidths,
 } from './layout.js';
+import { isCrossAgentInstallable } from '../../domain/cross-agent-install.js';
 import {
   browseSelectionSets,
   projectActionSkills,
@@ -52,7 +53,6 @@ import {
   focusAfterUpFromTags,
   groupedRows,
   listSkillSummary,
-  moreActionModalContent,
   nextAgent,
   nextMainTab,
   selectableSkills,
@@ -78,25 +78,51 @@ import { Clickable } from '../components/mouse/clickable.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
 import { ShortcutHelpPanel } from './shortcut-help.js';
 
-/** Framed more-actions panel for absolute modal overlay (list shows through). */
+type MoreActionId = 'materialize' | 'installToAgents';
+
+/** Framed more-actions picker when multiple m-actions are available. */
 function MoreActionsPanel({
   scope,
-  onConfirm,
+  items,
+  onSelect,
   onCancel,
 }: {
   scope: string;
-  onConfirm: () => void;
+  items: Array<{ id: MoreActionId; label: string }>;
+  onSelect: (id: MoreActionId) => void;
   onCancel: () => void;
 }): ReactNode {
+  const [cursor, setCursor] = useState(0);
+  const clamped = Math.max(0, Math.min(cursor, items.length - 1));
+  const lines = [
+    scope,
+    '',
+    ...items.map((item, index) =>
+      index === clamped ? `› ${item.label}` : `  ${item.label}`
+    ),
+    t('browser.moreActionsFooter'),
+  ];
   return (
     <FramedPanel
       title={t('browser.moreActionsTitle')}
-      content={[...moreActionModalContent(scope), t('browser.moreActionsFooter')]}
+      content={lines}
       width={64}
       muteLastContent
+      scrollWithArrows={false}
       onEscape={onCancel}
       onKey={(input, key) => {
-        if (key.return || input.includes('\r') || input.includes('\n')) onConfirm();
+        if (key.upArrow) {
+          setCursor((current) => Math.max(0, current - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setCursor((current) => Math.min(items.length - 1, current + 1));
+          return;
+        }
+        if (key.return || input.includes('\r') || input.includes('\n')) {
+          const item = items[clamped];
+          if (item) onSelect(item.id);
+        }
       }}
     />
   );
@@ -730,14 +756,22 @@ export function Browser({
   const currentRow = listRows[cursor];
   const actionSkills = projectActionSkills(
     tab,
-    selectedProject,
+    tab === 'global' ? selectedGlobal : selectedProject,
     currentRow?.type === 'skill' ? currentRow.skill : undefined
   );
-  const canOpenActions =
+  const canMaterialize =
     !updatingSkillName &&
     focus === 'list' &&
+    tab === 'project' &&
     actionSkills.length > 0 &&
     actionSkills.every((skill) => skill.isReference);
+  const canInstallToAgents =
+    !updatingSkillName &&
+    focus === 'list' &&
+    (tab === 'project' || tab === 'global') &&
+    actionSkills.length > 0 &&
+    actionSkills.every((skill) => isCrossAgentInstallable(skill));
+  const canOpenActions = canMaterialize || canInstallToAgents;
   const previousTab = useRef(tab);
   useEffect(() => {
     if (previousTab.current !== tab) {
@@ -846,6 +880,10 @@ export function Browser({
   useEffect(() => {
     if (focus === 'detail' && currentRow?.type !== 'skill') setFocus('list');
   }, [focus, currentRow, setFocus]);
+  // Project / global never own detail-column focus (preview only).
+  useEffect(() => {
+    if (focus === 'detail' && tab !== 'collection') setFocus('list');
+  }, [focus, tab, setFocus]);
   useEffect(() => {
     if (detailFieldIndex >= detailFields.length && detailFields.length > 0) {
       setDetailFieldIndex(detailFields.length - 1);
@@ -1015,11 +1053,35 @@ export function Browser({
       const row = listRows[cursorRef.current];
       if (input === 'm' && canOpenActions) {
         const skills = actionSkills;
-        const scope = selectedProject.length
+        const moreItems: Array<{ id: MoreActionId; label: string }> = [];
+        if (canMaterialize) {
+          moreItems.push({ id: 'materialize', label: t('browser.materializeAction') });
+        }
+        if (canInstallToAgents) {
+          moreItems.push({
+            id: 'installToAgents',
+            label: t('browser.installToAgentsAction'),
+          });
+        }
+        const runMore = (id: MoreActionId): void => {
+          if (id === 'materialize') finish({ type: 'materialize', skills });
+          else if (tab === 'project' || tab === 'global') {
+            finish({ type: 'installToAgents', skills, scope: tab });
+          }
+        };
+        // Single available action: enter its flow directly (no intermediate menu).
+        if (moreItems.length === 1) {
+          const only = moreItems[0];
+          if (only) runMore(only.id);
+          return;
+        }
+        const selectedAtTab =
+          tab === 'global' ? selectedGlobal.length : selectedProject.length;
+        const scope = selectedAtTab
           ? t('browser.selectedSkills', { count: skills.length })
           : t('browser.skillLine', { names: skills[0]?.name ?? '' });
         void modal
-          .open<boolean>({
+          .open<MoreActionId | null>({
             footerItems: [
               { key: 'Enter', label: t('common.confirm') },
               { key: 'Esc', label: t('common.cancel') },
@@ -1027,13 +1089,14 @@ export function Browser({
             content: (close) => (
               <MoreActionsPanel
                 scope={scope}
-                onConfirm={() => close(true)}
-                onCancel={() => close(false)}
+                items={moreItems}
+                onSelect={(id) => close(id)}
+                onCancel={() => close(null)}
               />
             ),
           })
-          .then((confirmed) => {
-            if (confirmed) finish({ type: 'materialize', skills });
+          .then((id) => {
+            if (id) runMore(id);
           });
         return;
       }
@@ -1146,16 +1209,15 @@ export function Browser({
           return next;
         });
       }
-      // Wide 3-column: → moves focus into the right detail column (editable fields).
-      // Narrow layout keeps → as fullscreen detail for collection / collected skills.
-      if (key.rightArrow && row?.type === 'skill') {
+      // Collection only: wide → focuses detail column; narrow → opens fullscreen detail.
+      // Project / global: right pane is preview only — no → focus/open detail.
+      if (key.rightArrow && row?.type === 'skill' && tab === 'collection') {
         if (useMasterDetail) {
           setDetailFieldIndex(0);
           return setFocus('detail');
         }
         if (!useBrowseHome) {
-          if (tab === 'collection') return openDetail(row.skill, true);
-          if (row.skill.fromCollection) return openDetail(row.skill, true);
+          return openDetail(row.skill, true);
         }
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {

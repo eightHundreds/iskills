@@ -39,6 +39,7 @@ export type BrowserResult =
   | { type: 'removeCollection'; skills: CollectedSkill[] }
   | { type: 'removeLocations'; skills: Skill[] }
   | { type: 'materialize'; skills: Skill[] }
+  | { type: 'installToAgents'; skills: Skill[]; scope: 'project' | 'global' }
   | { type: 'import'; skills: Skill[] }
   | {
       type: 'open';

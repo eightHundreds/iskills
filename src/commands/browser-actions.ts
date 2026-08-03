@@ -13,7 +13,9 @@ import {
   listCollection,
   noPresentAgentsError,
   agentDisplayName,
+  agentGlobalPath,
   agentInstallTargets,
+  agentProjectPath,
   listPresentAgents,
   listGlobalGroups,
   listProjectGroups,
@@ -29,6 +31,10 @@ import {
   removeFromCollection,
   removeSkillLocations,
 } from '../domain/collection-write.js';
+import {
+  canonicalizePath,
+  collectSkillSourceRoots,
+} from '../domain/cross-agent-install.js';
 import { DomainError } from '../domain/errors.js';
 import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
@@ -36,6 +42,7 @@ import type { InstallReviewTarget } from '../ui/install/types.js';
 import { Modal } from '../ui/overlay/static.js';
 import {
   promptChoice,
+  promptChoicesMany,
   promptInstallReview,
   promptTags,
   promptText,
@@ -52,6 +59,7 @@ import {
   addSkillsToProject,
   confirmCollectionReplace,
   importSkillsToCollection,
+  installSkillsAcrossAgents,
 } from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
 
@@ -181,6 +189,9 @@ export async function handleBrowserResult(
       break;
     case 'materialize':
       await handleMaterialize(host, result.skills);
+      break;
+    case 'installToAgents':
+      await handleInstallToAgents(host, result.skills, result.scope);
       break;
     case 'import':
       await handleImport(host, result.skills);
@@ -338,6 +349,87 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
       ...host.getNavigation(),
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
+  } catch (error) {
+    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+  }
+}
+
+async function handleInstallToAgents(
+  host: BrowserActionHost,
+  skills: Skill[],
+  scope: 'project' | 'global'
+): Promise<void> {
+  if (!skills.length) return;
+  let present: string[];
+  try {
+    present = await listPresentAgents();
+  } catch (error) {
+    host.setStatus(formatAppError(error), false, 'error');
+    return;
+  }
+  if (!present.length) {
+    host.setStatus(formatAppError(noPresentAgentsError()), false, 'error');
+    return;
+  }
+  // Exclude every source skill root (lexical + canonical — symlink aliases collapse).
+  const sourceRoots = await collectSkillSourceRoots(skills);
+  const targets = agentInstallTargets(present, undefined, (name) =>
+    name === 'agents' ? t('cmd.agentDisplayAgents') : agentDisplayName(name)
+  );
+  const choices: Array<{ label: string; value: string }> = [];
+  const seenRoots = new Set<string>();
+  for (const target of targets) {
+    let root: string | undefined;
+    let label: string | undefined;
+    if (scope === 'project') {
+      if (!target.projectLabel) continue;
+      try {
+        root = resolve(agentProjectPath(target.value));
+      } catch {
+        continue;
+      }
+      label = target.projectLabel;
+    } else {
+      if (!target.globalLabel) continue;
+      root = resolve(agentGlobalPath(target.value));
+      label = target.globalLabel;
+    }
+    const rootCanon = await canonicalizePath(root);
+    if (sourceRoots.has(root) || sourceRoots.has(rootCanon)) continue;
+    if (seenRoots.has(rootCanon)) continue;
+    seenRoots.add(rootCanon);
+    choices.push({ label, value: target.value });
+  }
+  if (!choices.length) {
+    host.setStatus(t('cmd.noOtherAgentTargets'), false, 'error');
+    return;
+  }
+  const selectedAgents = await promptChoicesMany(
+    choices,
+    t('cmd.selectInstallAgents'),
+    []
+  );
+  if (!selectedAgents.length) return;
+  // Dedupe by canonical root so symlink-aliased agents are not written twice.
+  const rootsByCanon = new Map<string, string>();
+  for (const name of selectedAgents) {
+    const root =
+      scope === 'project' ? resolve(agentProjectPath(name)) : resolve(agentGlobalPath(name));
+    const canon = await canonicalizePath(root);
+    if (!rootsByCanon.has(canon)) rootsByCanon.set(canon, root);
+  }
+  const roots = [...rootsByCanon.values()];
+  try {
+    const { count } = await installSkillsAcrossAgents(skills, roots, {
+      confirmReplaceAll: (conflicts) =>
+        Modal.confirm({
+          title: t('cmd.replaceTargetTitle'),
+          message: t('cmd.replaceTargetsConfirm', { count: conflicts.length }),
+          details: conflicts,
+        }),
+    });
+    host.setStatus(t('cmd.addedCount', { count }), true, 'normal');
+    host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
     host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }

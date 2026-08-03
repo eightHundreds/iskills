@@ -34,6 +34,8 @@ export function FramedPanel({
   width: preferredWidth,
   muteLastContent = false,
   maxHeight,
+  /** When false, ↑/↓ are not used for body scroll (pass through to onKey). Default true. */
+  scrollWithArrows = true,
   onEscape,
   onKey,
 }: {
@@ -43,8 +45,12 @@ export function FramedPanel({
   muteLastContent?: boolean;
   /** Total painted rows including borders; defaults from terminal height. */
   maxHeight?: number;
+  scrollWithArrows?: boolean;
   onEscape?: () => void;
-  onKey?: (input: string, key: { return: boolean; escape: boolean }) => void;
+  onKey?: (
+    input: string,
+    key: { return: boolean; escape: boolean; upArrow: boolean; downArrow: boolean }
+  ) => void;
 }): ReactNode {
   const { stdout } = useStdout();
   const chrome = useModalChrome();
@@ -77,11 +83,11 @@ export function FramedPanel({
 
   useInput(
     (input, key) => {
-      if (key.upArrow && maxOffset > 0) {
+      if (scrollWithArrows && key.upArrow && maxOffset > 0) {
         nudgeScroll(-1);
         return;
       }
-      if (key.downArrow && maxOffset > 0) {
+      if (scrollWithArrows && key.downArrow && maxOffset > 0) {
         nudgeScroll(1);
         return;
       }

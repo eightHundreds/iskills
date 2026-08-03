@@ -34,6 +34,8 @@ export interface FooterBrowseCapabilities {
   canTag: boolean;
   canImport: boolean;
   canMaterialize: boolean;
+  /** Project/global: install selected location skills to other agent roots via m. */
+  canInstallToAgents?: boolean;
   /** 0 = hide update action; >0 shows u 更新 or u 更新(N). */
   updateCount: number;
   /** When updateCount > 0 and selection-based, show (N). */

@@ -1,3 +1,4 @@
+import { isCrossAgentInstallable } from '../../domain/cross-agent-install.js';
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import type {
   FooterBrowseCapabilities,
@@ -16,7 +17,6 @@ export function enterActionFor(
   tab: BrowserTab,
   selectionCount: number,
   currentIsSkill: boolean,
-  canViewWithRightArrow: boolean,
   masterDetail: boolean
 ): FooterEnterAction {
   if (tab === 'collection' && selectionCount > 0) return 'add';
@@ -24,7 +24,7 @@ export function enterActionFor(
   // 3-column layout already peeks detail in the right pane — omit Enter 详情/查看.
   if (masterDetail) return null;
   if (tab === 'collection') return 'detail';
-  if (canViewWithRightArrow) return null;
+  // Project / global narrow: Enter opens fullscreen view (no → detail).
   return 'view';
 }
 
@@ -53,13 +53,14 @@ export function browseSelectionSets(
   };
 }
 
+/** Selected-or-current skills on project/global location tabs (materialize / cross-agent). */
 export function projectActionSkills(
   tab: BrowserTab,
-  selectedProject: Skill[],
+  selectedAtLocation: Skill[],
   currentSkill: Skill | undefined
 ): Skill[] {
-  if (tab !== 'project') return [];
-  if (selectedProject.length) return selectedProject;
+  if (tab !== 'project' && tab !== 'global') return [];
+  if (selectedAtLocation.length) return selectedAtLocation;
   return currentSkill ? [currentSkill] : [];
 }
 
@@ -121,11 +122,21 @@ export function computeBrowseCapabilities(
     selectedGlobalLocal,
   } = browseSelectionSets(selected, data);
 
-  const actionSkills = projectActionSkills(tab, selectedProject, currentSkill);
+  const actionSkills = projectActionSkills(
+    tab,
+    tab === 'global' ? selectedGlobal : selectedProject,
+    currentSkill
+  );
   const canMaterialize =
     focus === 'list' &&
+    tab === 'project' &&
     actionSkills.length > 0 &&
     actionSkills.every((skill) => skill.isReference);
+  const canInstallToAgents =
+    focus === 'list' &&
+    (tab === 'project' || tab === 'global') &&
+    actionSkills.length > 0 &&
+    actionSkills.every((skill) => isCrossAgentInstallable(skill));
 
   const canDelete =
     focus === 'list' &&
@@ -134,17 +145,12 @@ export function computeBrowseCapabilities(
       selectedGlobal.length > 0 ||
       Boolean(currentSkill));
 
-  const canViewWithRightArrow =
-    Boolean(currentSkill) &&
-    (tab === 'collection' || Boolean(currentSkill?.fromCollection));
-
   const enterAction =
     focus === 'list'
       ? enterActionFor(
           tab,
           tab === 'collection' ? selectedCollection.length : 0,
           Boolean(currentSkill),
-          canViewWithRightArrow,
           masterDetail
         )
       : null;
@@ -169,7 +175,10 @@ export function computeBrowseCapabilities(
   }
 
   const canFocusDetail =
-    focus === 'list' && masterDetail && currentRow?.type === 'skill';
+    focus === 'list' &&
+    masterDetail &&
+    tab === 'collection' &&
+    currentRow?.type === 'skill';
   // Collection only: tags + note are editable from the right column.
   const canEditDetailField = focus === 'detail' && tab === 'collection' && Boolean(currentSkill);
 
@@ -189,6 +198,7 @@ export function computeBrowseCapabilities(
       ((tab === 'project' && selectedProjectLocal.length > 0) ||
         (tab === 'global' && selectedGlobalLocal.length > 0)),
     canMaterialize,
+    canInstallToAgents,
     updateCount,
     updateIsSelection,
     selectionCount: focus === 'list' ? selectionCount : 0,

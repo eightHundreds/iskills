@@ -286,7 +286,7 @@ export function shortcutModalContent(): string[] {
 }
 
 export function moreActionModalContent(scope: string): string[] {
-  return [scope, '', t('browser.materializeAction')];
+  return [scope, '', `› ${t('browser.materializeAction')}`];
 }
 
 export function categorySidebarLine(

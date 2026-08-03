@@ -1,5 +1,5 @@
-import { cp, lstat, mkdir, realpath, rm, symlink } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { cp, lstat, mkdir, realpath, rename, rm, symlink } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   noPresentAgentsError,
@@ -19,13 +19,21 @@ import {
   listPresentAgents,
   pathPresent,
   readMetadata,
+  readState,
   resolveIncomingProvenance,
   sanitizeTerminal,
+  writeState,
 } from '../domain/core.js';
 import {
   installCollectionSkill,
   registerCollectionLinks,
 } from '../domain/collection-write.js';
+import {
+  canonicalizePath,
+  isPhysicalSelfInstall,
+  resolveCrossAgentInstallPlan,
+  type CrossAgentInstallPlan,
+} from '../domain/cross-agent-install.js';
 import { DomainError } from '../domain/errors.js';
 import { matchesSkill } from '../domain/skill-query.js';
 import { cloneGitSource } from '../domain/git.js';
@@ -35,6 +43,7 @@ import type {
   CollectionMatch,
   GitImportContext,
   Skill,
+  SkillLink,
   SkillMetadata,
 } from '../domain/types.js';
 import { t } from '../i18n/index.js';
@@ -634,6 +643,179 @@ export async function addSkillsToProject(
       })
     );
   }
+  return { count: addedSkills.size, targetCount: addedTargets.size };
+}
+
+export interface InstallAcrossAgentsOptions {
+  /** One-shot confirm for all conflicting targets; default cancel semantics via caller. */
+  confirmReplaceAll?: (targets: string[]) => Promise<boolean>;
+  /** When true, replace conflicts without prompting. */
+  replace?: boolean;
+}
+
+/** Move existing target aside, create symlink, restore on failure. */
+async function replacePathWithSymlink(target: string, linkTarget: string): Promise<void> {
+  const absolute = resolve(target);
+  const parent = dirname(absolute);
+  await mkdir(parent, { recursive: true });
+  let backup: string | undefined;
+  if (await pathPresent(absolute)) {
+    backup = join(
+      parent,
+      `.iskills-replace-${basename(absolute)}-${process.pid}-${Date.now()}`
+    );
+    await rename(absolute, backup);
+  }
+  try {
+    await symlink(linkTarget, absolute, 'dir');
+    if (backup) await rm(backup, { recursive: true, force: true });
+  } catch (error) {
+    await rm(absolute, { recursive: true, force: true }).catch(() => {});
+    if (backup) await rename(backup, absolute);
+    throw error;
+  }
+}
+
+/**
+ * Drop any collection links recorded at `paths`, then append usage links for successful installs.
+ */
+async function rewriteUsageLinksAtTargets(
+  clearPaths: string[],
+  add: Array<{ skill: string; path: string }>
+): Promise<void> {
+  if (!clearPaths.length && !add.length) return;
+  const clear = new Set(clearPaths.map((path) => resolve(path)));
+  const state = await readState();
+  const links: SkillLink[] = state.links.filter(
+    (link) => !clear.has(resolve(link.path))
+  );
+  for (const item of add) {
+    links.push({ skill: item.skill, path: resolve(item.path), kind: 'usage' });
+  }
+  await writeState({ ...state, links });
+}
+
+/**
+ * Install skills from one agent location into other agent roots (symlink only).
+ * Collection-backed refs link to the collection skill path; local dirs link to A.
+ * Conflict handling aligns with add (best-effort); replace is confirmed once for all conflicts.
+ */
+export async function installSkillsAcrossAgents(
+  skills: Skill[],
+  targetRoots: string[],
+  options: InstallAcrossAgentsOptions = {}
+): Promise<{ count: number; targetCount: number }> {
+  if (!skills.length || !targetRoots.length) return { count: 0, targetCount: 0 };
+
+  const plans: CrossAgentInstallPlan[] = [];
+  for (const skill of skills) {
+    const plan = await resolveCrossAgentInstallPlan(skill);
+    if (!plan) {
+      throw new DomainError('cmd.crossAgentUnsupported', { name: skill.name, path: skill.path });
+    }
+    plans.push(plan);
+  }
+
+  // Dedupe target roots by canonical identity (symlink aliases collapse).
+  const rootsByCanon = new Map<string, string>();
+  for (const root of targetRoots) {
+    const absolute = resolve(root);
+    await mkdir(absolute, { recursive: true });
+    const canon = await canonicalizePath(absolute);
+    if (!rootsByCanon.has(canon)) rootsByCanon.set(canon, absolute);
+  }
+  const roots = [...rootsByCanon.values()];
+
+  // One plan per absolute target path; reject ambiguous same-name sources.
+  const planByTarget = new Map<string, CrossAgentInstallPlan>();
+  for (const targetRoot of roots) {
+    for (const plan of plans) {
+      const target = resolve(join(targetRoot, plan.skill.name));
+      if (await isPhysicalSelfInstall(target, plan.linkTarget)) {
+        throw new DomainError('cmd.targetPointsSelf', { target });
+      }
+      if (
+        target === resolve(plan.linkTarget) ||
+        target.startsWith(`${resolve(plan.linkTarget)}${sep}`)
+      ) {
+        throw new DomainError('cmd.targetPointsSelf', { target });
+      }
+      const existing = planByTarget.get(target);
+      if (existing) {
+        if (existing.linkTarget === plan.linkTarget) continue;
+        throw new DomainError('cmd.crossAgentAmbiguousSource', {
+          name: plan.skill.name,
+          target,
+        });
+      }
+      planByTarget.set(target, plan);
+    }
+  }
+
+  type WorkItem = { plan: CrossAgentInstallPlan; target: string };
+  const work: WorkItem[] = [];
+  const conflicts: string[] = [];
+
+  for (const [target, plan] of planByTarget) {
+    if (await pathPresent(target)) {
+      if (await isExactSymlink(target, plan.linkTarget)) continue;
+      // Same physical tree via agent-root alias — never treat as replaceable conflict.
+      if (await isPhysicalSelfInstall(target, plan.linkTarget)) {
+        throw new DomainError('cmd.targetPointsSelf', { target });
+      }
+      conflicts.push(target);
+    }
+    work.push({ plan, target });
+  }
+
+  let replaceAll = options.replace ?? false;
+  if (conflicts.length && !replaceAll) {
+    if (options.confirmReplaceAll) {
+      replaceAll = await options.confirmReplaceAll(conflicts);
+    } else if (process.stdin.isTTY) {
+      replaceAll = await (await import('../ui/overlay/static.js')).Modal.confirm({
+        title: t('cmd.replaceTargetTitle'),
+        message: t('cmd.replaceTargetsConfirm', { count: conflicts.length }),
+        details: conflicts,
+      });
+    } else {
+      throw new DomainError('cmd.targetExistsReplace', { target: conflicts[0] ?? '' });
+    }
+  }
+
+  const conflictSet = new Set(conflicts);
+  const addedSkills = new Set<string>();
+  const addedTargets = new Set<string>();
+  const writtenPaths: string[] = [];
+  const usageAdds: Array<{ skill: string; path: string }> = [];
+
+  for (const item of work) {
+    const { plan, target } = item;
+    const isConflict = conflictSet.has(target);
+    if (isConflict && !replaceAll) continue;
+
+    if (await pathPresent(target)) {
+      if (await isExactSymlink(target, plan.linkTarget)) continue;
+      if (await isPhysicalSelfInstall(target, plan.linkTarget)) {
+        throw new DomainError('cmd.targetPointsSelf', { target });
+      }
+      if (!isConflict && !replaceAll) continue;
+      await replacePathWithSymlink(target, plan.linkTarget);
+    } else {
+      await mkdir(dirname(target), { recursive: true });
+      await symlink(plan.linkTarget, target, 'dir');
+    }
+
+    writtenPaths.push(target);
+    if (plan.registerUsage) {
+      usageAdds.push({ skill: plan.skill.name, path: target });
+    }
+    addedSkills.add(plan.skill.name);
+    addedTargets.add(dirname(target));
+  }
+
+  // Clear stale link records at written paths, then register new usage rows.
+  await rewriteUsageLinksAtTargets(writtenPaths, usageAdds);
   return { count: addedSkills.size, targetCount: addedTargets.size };
 }
 
