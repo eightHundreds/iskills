@@ -16,7 +16,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type {
   AgentConfig,
   CollectedSkill,
@@ -309,16 +309,82 @@ export function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata)
     (current.source.path || '.') === (incoming.source.path || '.');
 }
 
-export function classifyCollectionMatch(
+/** realpath for identity; returns undefined when path cannot be resolved. */
+export async function tryRealpath(path: string): Promise<string | undefined> {
+  try {
+    return await realpath(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve identity path: realpath when readable, else absolute resolve (for storage only). */
+export async function resolveIdentityPath(path: string): Promise<string> {
+  return (await tryRealpath(path)) ?? resolve(path);
+}
+
+/**
+ * Local 同源: both sources are local with paths; compare realpath (invariant).
+ * Returns undefined when either side cannot realpath — cannot prove conflict either.
+ */
+export async function sameLocalIdentity(
   current: SkillMetadata,
   incoming: SkillMetadata
-): CollectionMatch {
+): Promise<boolean | undefined> {
+  if (current.source.type !== 'local' || incoming.source.type !== 'local') return undefined;
+  if (!current.source.path || !incoming.source.path) return undefined;
+  const left = await tryRealpath(current.source.path);
+  const right = await tryRealpath(incoming.source.path);
+  if (left === undefined || right === undefined) return undefined;
+  return left === right;
+}
+
+/**
+ * Classify same-name collection relation (git + local realpath).
+ * Unknown / mixed provenance → `unverified-source` (not the same as confirmed conflict).
+ */
+export async function classifyCollectionMatch(
+  current: SkillMetadata,
+  incoming: SkillMetadata
+): Promise<CollectionMatch> {
   if (sameGitIdentity(current, incoming)) return 'same-source';
-  const comparable = current.source.type === 'git' &&
+  if (
+    current.source.type === 'git' &&
     incoming.source.type === 'git' &&
-    !!current.source.url &&
-    !!incoming.source.url;
-  return comparable ? 'conflicting-source' : 'unverified-source';
+    current.source.url &&
+    incoming.source.url
+  ) {
+    return 'conflicting-source';
+  }
+  const localSame = await sameLocalIdentity(current, incoming);
+  if (localSame === true) return 'same-source';
+  if (localSame === false) return 'conflicting-source';
+  return 'unverified-source';
+}
+
+/**
+ * Build incoming provenance for a candidate skill.
+ * Prefer explicit skill.source, then lock files, then local absolute path.
+ * Git import context overrides path to the in-repo relative location.
+ */
+export async function resolveIncomingProvenance(
+  skill: Skill,
+  gitContext?: { repository: string; source: SkillSource }
+): Promise<SkillSource> {
+  if (gitContext) {
+    const rel = relative(gitContext.repository, skill.path).split(sep).join('/');
+    return {
+      ...gitContext.source,
+      path: assertRelativePath(rel || '.'),
+    };
+  }
+  if (skill.source?.type === 'local' && skill.source.path) {
+    return { type: 'local', path: await resolveIdentityPath(skill.source.path) };
+  }
+  if (skill.source?.type) return skill.source;
+  const lockSource = await provenanceFromKnownLocks(skill);
+  if (lockSource.type && lockSource.type !== 'unknown') return lockSource;
+  return { type: 'local', path: await resolveIdentityPath(skill.path) };
 }
 
 /**
@@ -676,9 +742,14 @@ function startBackgroundSync(): void {
   child.unref();
 }
 
-export async function commitCollection(message: string, strict = false): Promise<void> {
+/**
+ * Post-write collection Git commit (soft-fail by default).
+ * @returns true when no commit failure (including no .git / no changes); false after soft-fail notify.
+ * Callers MUST NOT print 已收藏 / 已导入 / 已删除 success lines when this returns false.
+ */
+export async function commitCollection(message: string, strict = false): Promise<boolean> {
   const { root } = collectionPaths();
-  if (!(await exists(join(root, '.git')))) return;
+  if (!(await exists(join(root, '.git')))) return true;
   try {
     execFileSync('git', ['-C', root, 'add', '-A', '--', 'skills', 'metadata', '.gitignore'], {
       stdio: 'ignore',
@@ -692,9 +763,11 @@ export async function commitCollection(message: string, strict = false): Promise
       execFileSync('git', ['-C', root, 'commit', '-m', message], { stdio: 'ignore' });
       startBackgroundSync();
     }
+    return true;
   } catch (error) {
     if (strict) throw error;
     domainNotify('domain.gitCommitFailed', { error: errorMessage(error) });
+    return false;
   }
 }
 

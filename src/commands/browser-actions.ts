@@ -50,10 +50,9 @@ import type {
 } from '../ui/browser/types.js';
 import {
   addSkillsToProject,
-  formatSkillIdentity,
+  confirmCollectionReplace,
   importSkillsToCollection,
 } from './library.js';
-import { collectionMatchLabels } from '../ui/collection-match.js';
 import { formatAppError, t } from '../i18n/index.js';
 
 async function bindMetadataSource(
@@ -263,8 +262,9 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
     metadata.tags = [...new Set([...metadata.tags, ...added])];
     await writeMetadata(metadata);
   }));
-  await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`);
-  host.setStatus(t('cmd.tagged'), true, 'normal');
+  if (await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`)) {
+    host.setStatus(t('cmd.tagged'), true, 'normal');
+  }
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
@@ -381,34 +381,16 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
 
 async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<void> {
   try {
-    const { count } = await importSkillsToCollection(skills, {
+    const { count, commitFailed } = await importSkillsToCollection(skills, {
       quiet: true,
-      confirmReplace: (candidates) => {
-        if (candidates.length === 1) {
-          const item = candidates[0]!;
-          return Modal.confirm({
-            title: t('cmd.replaceCollectionTitle'),
-            message: t('cmd.replaceIdentityConfirm', {
-              name: item.name,
-              from: formatSkillIdentity(item.current),
-              to: formatSkillIdentity(item.incoming),
-            }),
-            details: [collectionMatchLabels()[item.match]],
-          });
-        }
-        return Modal.confirm({
-          title: t('cmd.replaceCollectionTitle'),
-          message: t('cmd.replaceSameNameConfirm', {
-            names: candidates.map((c) => c.name).join(t('common.listSep')),
-          }),
-          details: candidates.map(
-            (c) =>
-              `${c.name}: ${formatSkillIdentity(c.current)} → ${formatSkillIdentity(c.incoming)} · ${collectionMatchLabels()[c.match]}`
-          ),
-        });
-      },
+      confirmReplace: confirmCollectionReplace,
     });
-    host.setStatus(t('cmd.importedShort', { count }), true, 'normal');
+    if (commitFailed) {
+      // domainNotify already printed full warning to stderr; surface in TUI without 已导入.
+      host.setStatus(t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''), false, 'error');
+    } else if (count > 0) {
+      host.setStatus(t('cmd.importedShort', { count }), true, 'normal');
+    }
   } catch (error) {
     host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }

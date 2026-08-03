@@ -21,6 +21,7 @@ export default defineConfig({
             'test/cli.test.ts',
             'test/create.test.ts',
             'test/library.test.ts',
+            'test/collection-match.test.ts',
             'test/mouse.test.ts',
             'test/ui.test.tsx',
             'test/footer-resolve.test.ts',

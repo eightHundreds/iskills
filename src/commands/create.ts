@@ -24,8 +24,9 @@ export async function commandCreate(argv: string[]): Promise<void> {
     if (!name) throw new DomainError('cmd.specifySkillNames');
   }
 
-  const path = await createCollectionSkill(name);
-  console.log(t('cmd.createdSkill', { name }));
+  const { path, committed } = await createCollectionSkill(name);
+  // 消息真实性: soft-fail Git commit already domainNotify'd; do not claim 已创建.
+  if (committed) console.log(t('cmd.createdSkill', { name }));
   console.log(path);
   try {
     await openPath(path);

@@ -6,26 +6,20 @@ import {
   sanitizeTerminal,
 } from '../domain/core.js';
 import { Modal } from '../ui/overlay/static.js';
-import type {
-  RemoteSkill,
-  SkillMetadata,
-} from '../domain/types.js';
+import type { RemoteSkill } from '../domain/types.js';
 import { searchRemoteSkill } from '../ui/search/index.js';
 import { DomainError } from '../domain/errors.js';
-import { importRemoteSkillToCollection } from './library.js';
+import {
+  confirmCollectionReplace,
+  importRemoteSkillToCollection,
+} from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
 
 const GITHUB_SOURCE =
   /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
 
-function formatIdentity(skill: SkillMetadata): string {
-  const source = skill.source;
-  const base = source.url || source.id || source.type;
-  const path = source.path && source.path !== '.' ? `/${source.path}` : '';
-  return sanitizeTerminal(`${base.replace(/\/$/, '')}${path}`);
-}
-
 function printImportResult(result: Awaited<ReturnType<typeof importRemoteSkillToCollection>>): void {
+  // status 'imported' is only returned when post-write commit did not soft-fail.
   if (result.status === 'imported') console.log(t('cmd.collected', { name: result.name }));
   if (result.status === 'unchanged') {
     console.log(t('cmd.collectedSameSource', { name: result.name }));
@@ -105,14 +99,7 @@ export async function commandSearch(argv: string[]): Promise<void> {
     try {
       const result = await importRemoteSkillToCollection(selected.source, selected.name, {
         replace: values.replace ?? false,
-        confirmReplace: (current, incoming) => Modal.confirm({
-          title: t('common.confirm'),
-          message: t('cmd.replaceIdentityConfirm', {
-            name: selected.name,
-            from: formatIdentity(current),
-            to: formatIdentity(incoming),
-          }),
-        }),
+        confirmReplace: confirmCollectionReplace,
       });
       printImportResult(result);
       return;

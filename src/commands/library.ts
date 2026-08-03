@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { cp, lstat, mkdir, realpath, rm, symlink } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
@@ -7,33 +7,24 @@ import {
   agentGlobalPath,
   agentProjectPath,
   assertRelativePath,
-  assertSkillName,
-  baselinePath,
   classifyCollectionMatch,
   collectionPaths,
   commitCollection,
   discoverSkills,
-  ensureCollection,
   exists,
-  getAgent,
   isExactSymlink,
   isGitSource,
   listCollection,
   listGlobalGroups,
   listPresentAgents,
-  metadataPath,
-  moveDirectory,
   pathPresent,
-  provenanceFromKnownLocks,
   readMetadata,
-  sameGitIdentity,
+  resolveIncomingProvenance,
   sanitizeTerminal,
-  validateSkillTree,
-  writeMetadata,
 } from '../domain/core.js';
 import {
+  installCollectionSkill,
   registerCollectionLinks,
-  replaceCollectionSkill,
 } from '../domain/collection-write.js';
 import { DomainError } from '../domain/errors.js';
 import { matchesSkill } from '../domain/skill-query.js';
@@ -44,14 +35,17 @@ import type {
   CollectionMatch,
   GitImportContext,
   Skill,
-  SkillLink,
   SkillMetadata,
 } from '../domain/types.js';
 import { t } from '../i18n/index.js';
 
 export function formatSkillIdentity(meta: SkillMetadata): string {
   const source = meta.source;
-  const base = source.url || source.id || source.path || source.type;
+  // Local / path-only: show the path once (do not also append as /suffix).
+  if (source.type === 'local' || (!source.url && !source.id && source.path)) {
+    return sanitizeTerminal(source.path || source.type || 'local');
+  }
+  const base = source.url || source.id || source.type;
   const path = source.path && source.path !== '.' ? `/${source.path}` : '';
   return sanitizeTerminal(`${String(base).replace(/\/$/, '')}${path}`);
 }
@@ -80,174 +74,118 @@ function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string
   return `${sanitizeTerminal(gitContext.source.url)}${sanitizeTerminal(ref)} · ${sanitizeTerminal(sourcePath)}${status}`;
 }
 
-function gitSkillMetadata(
+async function gitSkillMetadata(
   skill: Skill,
   gitContext: GitImportContext,
   tags: string[] = []
-): SkillMetadata {
+): Promise<SkillMetadata> {
   return {
     name: skill.name,
     description: skill.description,
     tags,
     note: '',
-    source: {
-      ...gitContext.source,
-      path: assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/')),
-    },
+    source: await resolveIncomingProvenance(skill, gitContext),
   };
 }
 
-function annotateGitCollectionStatus(
+async function annotateGitCollectionStatus(
   skills: Skill[],
   gitContext: GitImportContext,
   collection: CollectedSkill[]
-): Skill[] {
-  return skills.map((skill) => {
+): Promise<Skill[]> {
+  const out: Skill[] = [];
+  for (const skill of skills) {
     const sameName = collection.find(
       (collected) => collected.name.toLowerCase() === skill.name.toLowerCase()
     );
-    if (!sameName) return skill;
-    return {
+    if (!sameName) {
+      out.push(skill);
+      continue;
+    }
+    out.push({
       ...skill,
-      collectionStatus: classifyCollectionMatch(sameName, gitSkillMetadata(skill, gitContext)),
-    };
-  });
+      collectionStatus: await classifyCollectionMatch(
+        sameName,
+        await gitSkillMetadata(skill, gitContext)
+      ),
+    });
+  }
+  return out;
 }
 
+/** Write only — caller owns post-write commitCollection (and success messaging). */
 async function importLocalSkill(
   skill: Skill,
   allowReplace: boolean,
   tags: string[] = []
 ): Promise<boolean> {
-  const paths = collectionPaths();
   const selectedPath = resolve(skill.path);
   const selectedStats = await lstat(selectedPath);
-  const source = selectedStats.isSymbolicLink() ? await realpath(selectedPath) : selectedPath;
-  const target = join(paths.skills, assertSkillName(skill.name));
-  if (source === target) return false;
-
-  // Same provenance builder as classifyImportReplacements (locks, then local path).
-  const lockSource = await provenanceFromKnownLocks(skill);
-  const provenance: SkillMetadata['source'] = skill.source?.type
-    ? (skill.source as SkillMetadata['source'])
-    : lockSource.type
-      ? lockSource
-      : { type: 'local', path: skill.path };
-  await validateSkillTree(source);
-  if (await pathPresent(target)) {
-    const current = await readMetadata(skill.name);
-    const incoming: SkillMetadata = {
-      name: skill.name,
-      description: skill.description,
-      tags,
-      note: '',
-      source: provenance,
-    };
-    // Same-source is a no-op (annotated status or git identity).
-    if (
-      skill.collectionStatus === 'same-source' ||
-      classifyCollectionMatch(current, incoming) === 'same-source'
-    ) {
-      return false;
-    }
-    if (!allowReplace) {
-      throw new DomainError('cmd.sameNameExistsReplace', { name: skill.name });
-    }
-    await ensureCollection();
-    const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
-    const staged = join(transaction, 'tree');
-    try {
-      await cp(source, staged, { recursive: true, errorOnExist: true });
-      await replaceCollectionSkill({
-        name: skill.name,
-        staged,
-        metadata: incoming,
-        local: {
-          source,
-          selectedPath,
-          selectedWasSymlink: selectedStats.isSymbolicLink(),
-        },
-      });
-    } finally {
-      await rm(transaction, { recursive: true, force: true });
-    }
-    return true;
-  }
-  await ensureCollection();
-  await moveDirectory(source, target);
-  try {
-    await symlink(target, source, 'dir');
-  } catch (error) {
-    await moveDirectory(target, source);
-    throw error;
-  }
-
-  await writeMetadata({
+  const originPath = selectedStats.isSymbolicLink() ? await realpath(selectedPath) : selectedPath;
+  const provenance = await resolveIncomingProvenance(skill);
+  const metadata: SkillMetadata = {
     name: skill.name,
     description: skill.description,
     tags,
     note: '',
     source: provenance,
+  };
+  const result = await installCollectionSkill({
+    name: skill.name,
+    sourceTree: originPath,
+    metadata,
+    allowReplace,
+    local: {
+      originPath,
+      selectedPath,
+      selectedWasSymlink: selectedStats.isSymbolicLink(),
+    },
+    commit: false,
+    commitMessage: `import ${skill.name}`,
   });
-  if (provenance.type === 'git' && !provenance.commit) {
-    const baseline = baselinePath(skill.name);
-    await rm(baseline, { recursive: true, force: true });
-    await cp(target, baseline, { recursive: true });
-  }
-  const links: SkillLink[] = [{ skill: skill.name, path: source, kind: 'origin' }];
-  if (selectedStats.isSymbolicLink()) {
-    links.push({ skill: skill.name, path: selectedPath, kind: 'dependent' });
-  }
-  await registerCollectionLinks(links);
-  return true;
+  return result === 'installed' || result === 'installed-uncommitted';
 }
 
+/** Write only — caller owns post-write commitCollection (and success messaging). */
 async function importRemoteSkill(
   skill: Skill,
   gitContext: GitImportContext,
   allowReplace: boolean,
   tags: string[] = []
 ): Promise<boolean> {
-  const paths = collectionPaths();
-  const target = join(paths.skills, assertSkillName(skill.name));
-  const metadata = gitSkillMetadata(skill, gitContext, tags);
-  await validateSkillTree(skill.path);
-  if (await pathPresent(target)) {
-    const current = await readMetadata(skill.name);
-    if (sameGitIdentity(current, metadata)) return false;
-    if (!allowReplace) {
-      throw new DomainError('cmd.sameNameExistsReplace', { name: skill.name });
-    }
-    await ensureCollection();
-    const transaction = await mkdtemp(join(paths.local, `.prepare-${skill.name}-`));
-    const staged = join(transaction, 'tree');
-    try {
-      await cp(skill.path, staged, { recursive: true, errorOnExist: true });
-      await replaceCollectionSkill({
-        name: skill.name,
-        staged,
-        metadata,
-      });
-    } finally {
-      await rm(transaction, { recursive: true, force: true });
-    }
-    return true;
-  }
-  await ensureCollection();
-  await cp(skill.path, target, { recursive: true, errorOnExist: true });
-  await writeMetadata(metadata);
-  return true;
+  const metadata = await gitSkillMetadata(skill, gitContext, tags);
+  const result = await installCollectionSkill({
+    name: skill.name,
+    sourceTree: skill.path,
+    metadata,
+    allowReplace,
+    commit: false,
+    commitMessage: `import ${skill.name}`,
+  });
+  return result === 'installed' || result === 'installed-uncommitted';
 }
 
 export interface RemoteImportOptions {
   replace?: boolean;
   tags?: string[];
-  confirmReplace?: (current: SkillMetadata, incoming: SkillMetadata) => Promise<boolean>;
+  /** Same shape as batch import confirm (single-skill list for search). */
+  confirmReplace?: (candidates: ImportReplaceCandidate[]) => Promise<boolean>;
 }
 
 export interface RemoteImportResult {
   name: string;
-  status: 'imported' | 'unchanged' | 'cancelled';
+  /** commit-failed: tree/metadata written, post-write Git commit soft-failed */
+  status: 'imported' | 'unchanged' | 'cancelled' | 'commit-failed';
+}
+
+export interface ImportToCollectionResult {
+  /** Skills written this run (0 when nothing installed or selection empty). */
+  count: number;
+  /**
+   * Post-write Git commit soft-failed after `count` skills were written.
+   * Success copy must not be shown; domainNotify already warned.
+   */
+  commitFailed?: true;
 }
 
 export async function importRemoteSkillToCollection(
@@ -263,12 +201,12 @@ export async function importRemoteSkillToCollection(
     if (!found.length) throw new DomainError('cmd.skillMissingInSource', { name: skillName });
     if (found.length > 1) throw new DomainError('cmd.skillDuplicateInSource', { name: skillName });
     const skill = found[0]!;
-    const incoming = gitSkillMetadata(skill, gitContext);
+    const incoming = await gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
     const replacing = await pathPresent(target);
     if (replacing) {
       const current = await readMetadata(skill.name);
-      const match = classifyCollectionMatch(current, incoming);
+      const match = await classifyCollectionMatch(current, incoming);
       if (match === 'same-source') {
         return { name: skill.name, status: 'unchanged' };
       }
@@ -281,13 +219,20 @@ export async function importRemoteSkillToCollection(
             { name: skill.name }
           );
         }
-        if (!(await options.confirmReplace(current, incoming))) {
+        const allowed = await options.confirmReplace([
+          { name: skill.name, match, current, incoming },
+        ]);
+        if (!allowed) {
           return { name: skill.name, status: 'cancelled' };
         }
       }
     }
-    await importRemoteSkill(skill, gitContext, replacing, options.tags ?? []);
-    if (!replacing) await commitCollection(`import ${skill.name}`);
+    const wrote = await importRemoteSkill(skill, gitContext, replacing, options.tags ?? []);
+    if (!wrote) return { name: skill.name, status: 'unchanged' };
+    // Soft-fail commit: warn already emitted; distinct from user cancel.
+    if (!(await commitCollection(`import ${skill.name}`))) {
+      return { name: skill.name, status: 'commit-failed' };
+    }
     return { name: skill.name, status: 'imported' };
   } finally {
     await rm(gitContext.temporary, { recursive: true, force: true });
@@ -304,7 +249,8 @@ interface ImportToCollectionOptions {
 }
 
 async function classifyImportReplacements(
-  skills: Skill[]
+  skills: Skill[],
+  gitContext?: GitImportContext
 ): Promise<{ sameSource: string[]; candidates: ImportReplaceCandidate[] }> {
   const paths = collectionPaths();
   const sameSource: string[] = [];
@@ -312,23 +258,17 @@ async function classifyImportReplacements(
   for (const skill of skills) {
     if (!(await pathPresent(join(paths.skills, skill.name)))) continue;
     const current = await readMetadata(skill.name);
-    const lockSource = await provenanceFromKnownLocks(skill);
-    const provenance: SkillMetadata['source'] = skill.source?.type
-      ? (skill.source as SkillMetadata['source'])
-      : lockSource.type
-        ? lockSource
-        : { type: 'local', path: skill.path };
-    const incoming: SkillMetadata = {
-      name: skill.name,
-      description: skill.description,
-      tags: skill.tags ?? [],
-      note: skill.note ?? '',
-      source: provenance,
-    };
-    // Prefer pre-annotated git match when present; else full metadata classify.
-    const match =
-      skill.collectionStatus ??
-      classifyCollectionMatch(current, incoming);
+    const incoming: SkillMetadata = gitContext
+      ? await gitSkillMetadata(skill, gitContext, skill.tags ?? [])
+      : {
+          name: skill.name,
+          description: skill.description,
+          tags: skill.tags ?? [],
+          note: skill.note ?? '',
+          source: await resolveIncomingProvenance(skill),
+        };
+    // Always re-classify at plan time; scan-time collectionStatus is display-only.
+    const match = await classifyCollectionMatch(current, incoming);
     if (match === 'same-source') {
       sameSource.push(skill.name);
       continue;
@@ -338,7 +278,7 @@ async function classifyImportReplacements(
   return { sameSource, candidates };
 }
 
-function defaultReplaceConfirmMessage(candidates: ImportReplaceCandidate[]): {
+export function defaultReplaceConfirmMessage(candidates: ImportReplaceCandidate[]): {
   message: string;
   details: string[];
 } {
@@ -364,17 +304,31 @@ function defaultReplaceConfirmMessage(candidates: ImportReplaceCandidate[]): {
   };
 }
 
-export async function importSkillsToCollection(
+/** Shared replace confirm for CLI default, browser, and search. */
+export async function confirmCollectionReplace(
+  candidates: ImportReplaceCandidate[]
+): Promise<boolean> {
+  const { message, details } = defaultReplaceConfirmMessage(candidates);
+  return (await import('../ui/overlay/static.js')).Modal.confirm({
+    title: t('cmd.replaceCollectionTitle'),
+    message,
+    details,
+  });
+}
+
+async function resolveImportSelection(
   skills: Skill[],
-  options: ImportToCollectionOptions = {}
-): Promise<{ count: number }> {
-  if (!skills.length) return { count: 0 };
+  options: ImportToCollectionOptions,
+  gitContext?: GitImportContext
+): Promise<{ selected: Skill[]; replaceNames: Set<string> }> {
   let selected = skills;
   const replaceNames = new Set<string>();
   if (options.replace) {
     for (const skill of selected) replaceNames.add(skill.name);
   }
-  const { candidates } = await classifyImportReplacements(selected);
+  const { sameSource, candidates } = await classifyImportReplacements(selected, gitContext);
+  const sameSourceNames = new Set(sameSource);
+  selected = selected.filter((skill) => !sameSourceNames.has(skill.name));
   if (candidates.length && !options.replace) {
     if (!process.stdin.isTTY || options.yes) {
       throw new DomainError('cmd.conflictsExistReplace', {
@@ -383,14 +337,7 @@ export async function importSkillsToCollection(
     }
     const confirm = options.confirmReplace
       ? await options.confirmReplace(candidates)
-      : await (async () => {
-          const { message, details } = defaultReplaceConfirmMessage(candidates);
-          return (await import('../ui/overlay/static.js')).Modal.confirm({
-            title: t('cmd.replaceCollectionTitle'),
-            message,
-            details,
-          });
-        })();
+      : await confirmCollectionReplace(candidates);
     if (!confirm) {
       const blocked = new Set(candidates.map((c) => c.name));
       selected = selected.filter((skill) => !blocked.has(skill.name));
@@ -398,19 +345,51 @@ export async function importSkillsToCollection(
       for (const c of candidates) replaceNames.add(c.name);
     }
   }
+  return { selected, replaceNames };
+}
+
+export async function importSkillsToCollection(
+  skills: Skill[],
+  options: ImportToCollectionOptions = {}
+): Promise<ImportToCollectionResult> {
+  if (!skills.length) return { count: 0 };
+  const { selected, replaceNames } = await resolveImportSelection(skills, options);
   if (!selected.length) return { count: 0 };
-  let count = 0;
+  const installed: string[] = [];
   for (const skill of selected) {
-    // Same-source names never get replace permission; importLocalSkill no-ops them.
     if (await importLocalSkill(skill, replaceNames.has(skill.name), options.tags ?? [])) {
-      count++;
+      installed.push(skill.name);
     }
   }
-  await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
-  if (!options.quiet) {
-    console.log(t('cmd.importedCount', { count }));
+  if (!installed.length) return { count: 0 };
+  // One commit point. Soft-fail: warn via domainNotify; no 已导入 line.
+  if (!(await commitCollection(`import ${installed.join(', ')}`))) {
+    return { count: installed.length, commitFailed: true };
   }
-  return { count };
+  if (!options.quiet) console.log(t('cmd.importedCount', { count: installed.length }));
+  return { count: installed.length };
+}
+
+export async function importGitSkillsToCollection(
+  skills: Skill[],
+  gitContext: GitImportContext,
+  options: ImportToCollectionOptions = {}
+): Promise<ImportToCollectionResult> {
+  if (!skills.length) return { count: 0 };
+  const { selected, replaceNames } = await resolveImportSelection(skills, options, gitContext);
+  if (!selected.length) return { count: 0 };
+  const installed: string[] = [];
+  for (const skill of selected) {
+    if (await importRemoteSkill(skill, gitContext, replaceNames.has(skill.name), options.tags ?? [])) {
+      installed.push(skill.name);
+    }
+  }
+  if (!installed.length) return { count: 0 };
+  if (!(await commitCollection(`import ${installed.join(', ')}`))) {
+    return { count: installed.length, commitFailed: true };
+  }
+  if (!options.quiet) console.log(t('cmd.importedCount', { count: installed.length }));
+  return { count: installed.length };
 }
 
 export async function commandImport(argv: string[]): Promise<void> {
@@ -443,7 +422,7 @@ export async function commandImport(argv: string[]): Promise<void> {
     let globalGroups: { agent: string; skills: Skill[] }[] | undefined;
     if (gitContext) {
       const collection = await listCollection().catch(() => []);
-      skills = annotateGitCollectionStatus(
+      skills = await annotateGitCollectionStatus(
         (await discoverSkills(gitContext.repository)).filter(isCollected),
         gitContext,
         collection
@@ -507,48 +486,11 @@ export async function commandImport(argv: string[]): Promise<void> {
       });
       return;
     }
-    const replaceNames = new Set<string>();
-    if (values.replace) {
-      for (const skill of selected) replaceNames.add(skill.name);
-    }
-    const candidates: ImportReplaceCandidate[] = [];
-    for (const skill of selected) {
-      if (!(await pathPresent(join(paths.skills, skill.name)))) continue;
-      if (skill.collectionStatus === 'same-source') continue;
-      const current = await readMetadata(skill.name);
-      const incoming = gitSkillMetadata(skill, gitContext, importTags);
-      const match =
-        skill.collectionStatus ?? classifyCollectionMatch(current, incoming);
-      if (match === 'same-source') continue;
-      candidates.push({ name: skill.name, match, current, incoming });
-    }
-    if (candidates.length && !values.replace) {
-      if (!process.stdin.isTTY || values.yes) {
-        throw new DomainError('cmd.conflictsExistReplace', {
-          names: candidates.map((c) => c.name).join(t('common.listSep')),
-        });
-      }
-      const { message, details } = defaultReplaceConfirmMessage(candidates);
-      const confirmed = await (await import('../ui/overlay/static.js')).Modal.confirm({
-        title: t('cmd.replaceCollectionTitle'),
-        message,
-        details,
-      });
-      if (!confirmed) {
-        const blocked = new Set(candidates.map((c) => c.name));
-        selected = selected.filter((skill) => !blocked.has(skill.name));
-      } else {
-        for (const c of candidates) replaceNames.add(c.name);
-      }
-    }
-    let count = 0;
-    for (const skill of selected) {
-      if (await importRemoteSkill(skill, gitContext, replaceNames.has(skill.name), importTags)) {
-        count++;
-      }
-    }
-    await commitCollection(`import ${selected.map((skill) => skill.name).join(', ')}`);
-    console.log(t('cmd.importedCount', { count }));
+    await importGitSkillsToCollection(selected, gitContext, {
+      replace: values.replace ?? false,
+      yes: values.yes ?? false,
+      tags: importTags,
+    });
   } finally {
     if (gitContext) await rm(gitContext.temporary, { recursive: true, force: true });
   }

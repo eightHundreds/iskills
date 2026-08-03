@@ -4,7 +4,6 @@ import {
   mkdir,
   mkdtemp,
   readdir,
-  readlink,
   realpath,
   rename,
   rm,
@@ -15,6 +14,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import {
   assertSkillName,
   baselinePath,
+  classifyCollectionMatch,
   collectionPaths,
   commitCollection,
   copyDirectoryContents,
@@ -28,6 +28,7 @@ import {
   readMetadata,
   readSkill,
   readState,
+  resolveIdentityPath,
   validateSkillTree,
   writeMetadata,
   writeState,
@@ -42,10 +43,177 @@ export interface ReplacementInput {
   local?: { source: string; selectedPath: string; selectedWasSymlink: boolean };
   /** Defaults to `import ${name}`. */
   commitMessage?: string;
+  /** When false, skip post-write Git commit (caller owns the commit point). Default true. */
+  commit?: boolean;
 }
 
+/**
+ * `installed` — write done; if `commit` was true, Git commit also succeeded (or no-op).
+ * `installed-uncommitted` — write done but post-write Git commit soft-failed (when commit true).
+ * `unchanged` — same-source / already at target.
+ */
+export type InstallCollectionSkillResult =
+  | 'installed'
+  | 'installed-uncommitted'
+  | 'unchanged';
+
+export interface InstallCollectionSkillInput {
+  name: string;
+  /** Absolute path of the skill tree to install (copied for remote; moved for local). */
+  sourceTree: string;
+  metadata: SkillMetadata;
+  allowReplace: boolean;
+  /** Local origin: move into collection and leave a symlink at origin. */
+  local?: {
+    originPath: string;
+    selectedPath: string;
+    selectedWasSymlink: boolean;
+  };
+  /**
+   * When false, skip post-write Git commit for both first install and replace.
+   * Default true. Batch import should pass false and commit once at the end.
+   */
+  commit?: boolean;
+  commitMessage?: string;
+}
+
+/**
+ * Single 收藏夹写入 entry for import: first install or replace.
+ * Same-source is a no-op. Callers decide allowReplace after confirm.
+ */
+export async function installCollectionSkill(
+  input: InstallCollectionSkillInput
+): Promise<InstallCollectionSkillResult> {
+  const skillName = assertSkillName(input.name);
+  await ensureCollection();
+  const paths = collectionPaths();
+  const target = join(paths.skills, skillName);
+  const commitMessage = input.commitMessage ?? `import ${skillName}`;
+
+  // Canonical name is the install key; never write mismatched metadata files.
+  const metadata: SkillMetadata = { ...input.metadata, name: skillName };
+  if (input.local && resolve(input.sourceTree) !== resolve(input.local.originPath)) {
+    throw new DomainError('domain.unsafeSourcePath', { path: input.sourceTree });
+  }
+
+  if (input.local) {
+    const originReal = await resolveIdentityPath(input.local.originPath);
+    const targetReal = await resolveIdentityPath(target);
+    if (originReal === targetReal) return 'unchanged';
+  }
+
+  await validateSkillTree(input.sourceTree);
+
+  if (await pathPresent(target)) {
+    const current = await readMetadata(skillName);
+    if ((await classifyCollectionMatch(current, metadata)) === 'same-source') {
+      return 'unchanged';
+    }
+    if (!input.allowReplace) {
+      throw new DomainError('cmd.sameNameExistsReplace', { name: skillName });
+    }
+    const transaction = await mkdtemp(join(paths.local, `.prepare-${skillName}-`));
+    const staged = join(transaction, 'tree');
+    try {
+      await cp(input.sourceTree, staged, { recursive: true, errorOnExist: true });
+      const replacement: ReplacementInput = {
+        name: skillName,
+        staged,
+        metadata,
+        commitMessage,
+      };
+      if (input.local) {
+        replacement.local = {
+          source: input.local.originPath,
+          selectedPath: input.local.selectedPath,
+          selectedWasSymlink: input.local.selectedWasSymlink,
+        };
+      }
+      if (input.commit === false) replacement.commit = false;
+      const replaceCommit = await replaceCollectionSkill(replacement);
+      if (replaceCommit === 'failed') return 'installed-uncommitted';
+    } finally {
+      await rm(transaction, { recursive: true, force: true });
+    }
+    return 'installed';
+  }
+
+  // First-time install: tree + metadata + links (+ baseline); optional commit.
+  const stateBefore = await readState();
+  let sourceMoved = false;
+  let linksRegistered = false;
+  try {
+    if (input.local) {
+      await moveDirectory(input.local.originPath, target);
+      sourceMoved = true;
+      try {
+        await symlink(target, input.local.originPath, 'dir');
+      } catch (error) {
+        await moveDirectory(target, input.local.originPath);
+        sourceMoved = false;
+        throw error;
+      }
+    } else {
+      await cp(input.sourceTree, target, { recursive: true, errorOnExist: true });
+    }
+
+    await writeMetadata(metadata);
+    // Align with replace: always clear stale baseline, then recreate when needed.
+    await rm(baselinePath(skillName), { recursive: true, force: true });
+    if (metadata.source.type === 'git' && !metadata.source.commit) {
+      await cp(target, baselinePath(skillName), { recursive: true });
+    }
+    if (input.local) {
+      const links: SkillLink[] = [
+        { skill: skillName, path: input.local.originPath, kind: 'origin' },
+      ];
+      if (input.local.selectedWasSymlink) {
+        links.push({
+          skill: skillName,
+          path: input.local.selectedPath,
+          kind: 'dependent',
+        });
+      }
+      await registerCollectionLinks(links);
+      linksRegistered = true;
+    }
+    if (input.commit !== false) {
+      if (!(await commitCollection(commitMessage))) return 'installed-uncommitted';
+    }
+  } catch (error) {
+    try {
+      if (linksRegistered) {
+        await writeState(stateBefore);
+      }
+      if (input.local && sourceMoved) {
+        await rm(input.local.originPath, { recursive: true, force: true });
+        if (await pathPresent(target)) {
+          await moveDirectory(target, input.local.originPath);
+        }
+      } else if (await pathPresent(target)) {
+        await rm(target, { recursive: true, force: true });
+      }
+      await rm(metadataPath(skillName), { force: true });
+      await rm(baselinePath(skillName), { recursive: true, force: true });
+    } catch (rollbackError) {
+      throw new DomainError('domain.importFailedRollback', {
+        error: errorMessage(error),
+        rollback: errorMessage(rollbackError),
+      });
+    }
+    throw error;
+  }
+  return 'installed';
+}
+
+export type CreateCollectionSkillResult = {
+  path: string;
+  /** false when post-write Git commit soft-failed (tree already exists). */
+  committed: boolean;
+};
+
 /** Creates a minimal collected Skill born in the collection (not an import). */
-export async function createCollectionSkill(name: string): Promise<string> {
+export async function createCollectionSkill(name: string): Promise<CreateCollectionSkillResult> {
   const skillName = assertSkillName(name);
   const paths = await ensureCollection();
   const target = join(paths.skills, skillName);
@@ -85,8 +253,8 @@ export async function createCollectionSkill(name: string): Promise<string> {
     }
     throw error;
   }
-  await commitCollection(`create ${skillName}`);
-  return target;
+  const committed = await commitCollection(`create ${skillName}`);
+  return { path: target, committed };
 }
 
 /**
@@ -154,8 +322,13 @@ export async function adoptCollectionSkillsMissingMetadata(
   return adopted;
 }
 
+export type ReplaceCommitResult = 'ok' | 'deferred' | 'failed';
+
 // Replaces one collected Skill while keeping its tree, metadata, links and baseline coherent.
-export async function replaceCollectionSkill(input: ReplacementInput): Promise<void> {
+/** @returns deferred when commit:false; failed when commit soft-failed; ok otherwise. */
+export async function replaceCollectionSkill(
+  input: ReplacementInput
+): Promise<ReplaceCommitResult> {
   const paths = collectionPaths();
   const target = join(paths.skills, input.name);
   const metadata = metadataPath(input.name);
@@ -221,7 +394,23 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
       }
     }
     await writeState(nextState);
-    await commitCollection(input.commitMessage ?? `import ${input.name}`);
+    let commitResult: ReplaceCommitResult = 'deferred';
+    if (input.commit !== false) {
+      commitResult = (await commitCollection(input.commitMessage ?? `import ${input.name}`))
+        ? 'ok'
+        : 'failed';
+    }
+    for (const conflict of state.conflicts) {
+      if (conflict.type === 'source' && conflict.skill === input.name) {
+        await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
+          domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
+        });
+      }
+    }
+    await rm(transaction, { recursive: true, force: true }).catch((error) => {
+      domainNotify('domain.warnReplaceBackupCleanup', { error: errorMessage(error) });
+    });
+    return commitResult;
   } catch (error) {
     try {
       if (input.local && sourceMoved) {
@@ -249,17 +438,6 @@ export async function replaceCollectionSkill(input: ReplacementInput): Promise<v
     await rm(transaction, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
-
-  for (const conflict of state.conflicts) {
-    if (conflict.type === 'source' && conflict.skill === input.name) {
-      await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
-        domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
-      });
-    }
-  }
-  await rm(transaction, { recursive: true, force: true }).catch((error) => {
-    domainNotify('domain.warnReplaceBackupCleanup', { error: errorMessage(error) });
-  });
 }
 
 export async function registerCollectionLinks(links: SkillLink[]): Promise<void> {
@@ -332,8 +510,9 @@ export async function removeFromCollection(
     (conflict) => conflict.type !== 'source' || conflict.skill !== name
   );
   await writeState(state);
-  await commitCollection(`remove ${name}`);
-  if (!quiet) {
+  const commitOk = await commitCollection(`remove ${name}`);
+  // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
+  if (!quiet && commitOk) {
     domainNotify(origin ? 'domain.removedWithRestore' : 'domain.removed', origin ? { name, path: origin.path } : { name });
   }
 }
