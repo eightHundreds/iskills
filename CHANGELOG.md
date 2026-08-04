@@ -6,6 +6,12 @@
 
 ## [未发布]
 
+## [0.2.48] - 2026-08-04
+
+### 修复
+
+- 启动时若弹出收编确认，不再因 OverlayHost 尚未注册而二次 `createCliRenderer`，避免 `stdin is already used by another CliRenderer` 崩溃。
+
 ## [0.2.47] - 2026-08-04
 
 ### 新增

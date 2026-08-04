@@ -26,6 +26,7 @@ export default defineConfig({
             'test/ui.test.tsx',
             'test/footer-resolve.test.ts',
             'test/opentui-runtime.test.ts',
+            'test/overlay-bridge.test.ts',
             'test/bin-runtime.test.ts',
             'test/i18n.test.ts',
             'test/user-config.test.ts',

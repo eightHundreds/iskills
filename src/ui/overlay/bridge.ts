@@ -1,3 +1,4 @@
+import { getActiveTui } from '../shell/lifecycle.js';
 import type { LayerApi, ModalApi } from './types.js';
 
 /** Imperative handle registered by the mounted OverlayHost. */
@@ -38,13 +39,34 @@ export function setOverlayBootstrap(fn: OverlayBootstrap | null): void {
   bootstrap = fn;
 }
 
+/** Wait until OverlayHost registers (child useEffect can run before parent effect). */
+async function waitForActiveOverlayHost(
+  timeoutMs = 5000
+): Promise<OverlayHostHandle> {
+  const started = Date.now();
+  for (;;) {
+    if (activeHost) return activeHost;
+    if (Date.now() - started > timeoutMs) {
+      throw new Error('OverlayHost bootstrap timed out');
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 /**
  * Run work against the active host, or bootstrap a temporary one.
+ *
+ * If a TUI already owns stdin, never create a second CliRenderer — wait for
+ * OverlayHost registration instead (avoids "stdin is already used").
  */
 export async function withOverlayHost<T>(
   work: (host: OverlayHostHandle) => Promise<T>
 ): Promise<T> {
   if (activeHost) return work(activeHost);
+  // Long-lived shell already mounted (e.g. browser); host may register one tick later.
+  if (getActiveTui()) {
+    return work(await waitForActiveOverlayHost());
+  }
   if (!bootstrap) {
     // Side-effect: shell registers temporary AppShell bootstrap (lazy OpenTUI).
     await import('../shell/run.js');

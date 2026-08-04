@@ -199,6 +199,10 @@ export function OverlayHost({
     [confirm, info, openModalContent, destroyModal, modalOpen, bumpFooter]
   );
 
+  // Register during render so static Modal/Layer works from child useEffects.
+  // (Child effects run before parent effects; waiting until useEffect left a window
+  // where withOverlayHost saw no host and tried a second createCliRenderer.)
+  registerOverlayHost({ layer: layerApi, modal: modalApi });
   useEffect(() => {
     registerOverlayHost({ layer: layerApi, modal: modalApi });
     return () => {
