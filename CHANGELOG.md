@@ -6,6 +6,24 @@
 
 ## [未发布]
 
+## [0.2.47] - 2026-08-04
+
+### 新增
+
+- 浏览器「更多」菜单：跨 agent 安装（收藏夹引用 → 收藏夹链接；本地目录 → 指向源的符号链接），含同源路径保护、安全替换与 usage 清理。
+- 启动时若 `skills/` 下存在缺少收藏元数据的技能树，提示一次并写入 create 形态的 unknown-source 元数据。
+
+### 修复
+
+- 项目/全局详情显示路径是否已在收藏夹；`i` 导入前确认弹窗，取消不写盘。
+
+### 变更
+
+- 项目/全局不再用 `→` 聚焦详情列，右栏保持预览。
+- 收藏写入：首次安装与替换统一为 `installCollectionSkill`；本地 realpath 同源判定；import plan/confirm/apply 共用；成功文案仅在 post-write Git commit 成功后打印。
+- DomainError、shell footer、OpenTUI Node bootstrap 统一；合并安装改为事务式。
+- 双仓 CI：私有仓完整测试 + 过滤同步公开仓；公开仓 `v*` 标签发布 npm。
+
 ## [0.2.46] - 2026-07-30
 
 ### 新增
