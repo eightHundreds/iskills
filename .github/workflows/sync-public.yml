@@ -1,7 +1,8 @@
 name: Sync public
 
 # Replay private main (first-parent) onto eightHundreds/iskills:
-#   - drop private-only paths: test/, docs/, AGENTS.md, CONTEXT.md
+#   - drop private-only paths (see PRIVATE_ONLY_PATHS in scripts/sync-to-public.sh):
+#     test/, docs/, AGENTS.md, CONTEXT.md, .grok/, .impeccable/, PRODUCT.md, DESIGN.md
 #   - keep other files, commit message, author, committer, and timestamps
 #   - skip commits that only touch private-only paths
 #

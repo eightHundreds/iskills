@@ -2,7 +2,7 @@
 # Replay private main history onto eightHundreds/iskills with private paths stripped.
 #
 # For each first-parent commit on private main:
-#   - build a tree without test/, docs/, AGENTS.md, CONTEXT.md
+#   - build a tree without private-only paths (see PRIVATE_ONLY_PATHS)
 #   - if unchanged vs previous public commit, skip (private-only change)
 #   - else create a public commit reusing author, committer, dates, and message
 #
@@ -16,7 +16,16 @@
 #   GITHUB_REF / GITHUB_REF_NAME  optional tag to mirror after sync
 set -euo pipefail
 
-PRIVATE_ONLY_PATHS=(test docs AGENTS.md CONTEXT.md)
+PRIVATE_ONLY_PATHS=(
+  test
+  docs
+  AGENTS.md
+  CONTEXT.md
+  .grok
+  .impeccable
+  PRODUCT.md
+  DESIGN.md
+)
 SYNC_REF='refs/sync/last-private'
 PUBLIC_REPO=${PUBLIC_REPO:-eightHundreds/iskills}
 # Optional override for local dry-runs, e.g. PUBLIC_CLONE_URL=file:///tmp/public.git
