@@ -9,6 +9,7 @@ import type {
   DetailViewContext,
   WorkingProgressSnapshot,
 } from './types.js';
+import type { BrowserHealthAlert } from './health.js';
 
 /** Navigation without multi-select — selection is a separate atom. */
 export type BrowserNavigationState = Omit<BrowserState, 'selected'>;
@@ -67,6 +68,9 @@ export const browserUpdateCheckAtom = atom<BrowserUpdateCheckState>({
   failed: 0,
 });
 
+/** Live health issues for the footer ⚠ entry (async probe; empty until first probe). */
+export const browserHealthAtom = atom<BrowserHealthAlert[]>([]);
+
 export type BrowserAppStore = ReturnType<typeof createBrowserAppStore>;
 
 export function createBrowserAppStore(
@@ -112,6 +116,15 @@ export function invalidateUpdateCheck(store: BrowserAppStore): void {
     updates: new Set<string>(),
     failed: 0,
   });
+}
+
+/** Fire-and-forget health refresh for footer ⚠ (never blocks UI). */
+export function scheduleHealthRefresh(store: BrowserAppStore): void {
+  void import('./health.js').then(({ loadHealthAlerts }) =>
+    loadHealthAlerts().then((alerts) => {
+      store.set(browserHealthAtom, alerts);
+    })
+  );
 }
 
 export function readNavigation(store: BrowserAppStore): BrowserNavigationSnapshot {

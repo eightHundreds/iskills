@@ -292,6 +292,8 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
   if (await commitCollection(`tag ${skills.map((skill) => skill.name).join(', ')}`)) {
     host.setStatus(t('cmd.tagged'), true, 'normal');
   }
+  // Clear multi-select like other bulk list actions (add/update/import).
+  host.setNavigation({ ...host.getNavigation(), selected: [] });
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {

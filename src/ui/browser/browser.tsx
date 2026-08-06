@@ -19,9 +19,11 @@ import type {
   SkillGroup,
 } from './types.js';
 import type { CollectedSkill, Skill } from '../../domain/types.js';
+import { presentHealthAlerts } from './health.js';
 import {
   browserFilterAtom,
   browserGroupJumpAtom,
+  browserHealthAtom,
   browserNavigationAtom,
   browserSelectionAtom,
   browserTagFilterAtom,
@@ -910,6 +912,11 @@ export function Browser({
         });
         return;
       }
+      // Health alerts panel (demo seed via browserHealthAtom).
+      if (input === '!') {
+        void presentHealthAlerts(store.get(browserHealthAtom));
+        return;
+      }
       if (key.escape || input === 'q') return finish({ type: 'quit' });
       if (input === '/') {
         setFilter({
@@ -920,8 +927,23 @@ export function Browser({
         });
         return;
       }
-      if (input === 'g' && groups.length) {
-        return setChoosingGroup(true);
+      // Jump tags: wide master-detail already has a tag column — focus it (no popup).
+      // Narrow layout still uses a full-content Select over group headers.
+      if (input === 'g') {
+        if (useMasterDetail && tagOptions.length > 0) {
+          const index = Math.max(
+            0,
+            tagOptions.findIndex((option) => option.key === tagFilter)
+          );
+          setTagCursor(index);
+          tagCursorRef.current = index;
+          setFocus('tags');
+          return;
+        }
+        if (groups.length) {
+          setChoosingGroup(true);
+        }
+        return;
       }
       if (input === 's' && liveTab === 'collection' && canSync) {
         return finish({ type: 'sync' });
@@ -1502,6 +1524,7 @@ export function Browser({
     },
   ];
 
+  // Narrow layout only — wide layout focuses the tag column instead of this Select.
   if (choosingGroup) {
     return (
       <Select
@@ -1512,19 +1535,12 @@ export function Browser({
           value: group.name,
         }))}
         onSubmit={(name) => {
-          if (useMasterDetail) {
-            const index = tagOptions.findIndex((option) => option.key === name);
-            setTagFilter(name);
-            setTagCursor(Math.max(0, index));
-            setCursor(0);
-            setFocus('list');
-          } else {
-            setQuery('');
-            setCursor(groupRows.findIndex((row) => row.type === 'group' && row.name === name));
-            setFocus('list');
-          }
+          setQuery('');
+          setCursor(groupRows.findIndex((row) => row.type === 'group' && row.name === name));
+          setFocus('list');
           setChoosingGroup(false);
         }}
+        onCancel={() => setChoosingGroup(false)}
       />
     );
   }

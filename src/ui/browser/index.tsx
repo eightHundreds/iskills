@@ -28,6 +28,7 @@ import {
   detailContextAtom,
   invalidateUpdateCheck,
   readNavigation,
+  scheduleHealthRefresh,
   setBrowserStatus,
   writeNavigation,
   workingProgressAtom,
@@ -127,13 +128,19 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   const reloadData = useCallback(async () => {
     const snapshot = await loadBrowserData();
     setData(snapshot);
+    scheduleHealthRefresh(store);
     return snapshot;
-  }, [setData]);
+  }, [setData, store]);
 
   useEffect(() => {
     if (data) return;
     void reloadData();
   }, [data, reloadData]);
+
+  // Initial health probe (async); also re-runs after each reloadData.
+  useEffect(() => {
+    scheduleHealthRefresh(store);
+  }, [store]);
 
   // Tier-2 adopt: one session prompt when skills/ has trees without metadata files.
   useEffect(() => {

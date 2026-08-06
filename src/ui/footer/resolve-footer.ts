@@ -7,6 +7,7 @@ import type {
   FooterBrowseCapabilities,
   FooterItem,
   FooterResolveInput,
+  FooterStatusAction,
   FooterStatusKind,
   FooterView,
   FooterWorkingState,
@@ -99,7 +100,7 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
     items.push({ key: 'm', label: t('common.more') });
   }
   if (browse.canTag) items.push({ key: 't', label: t('common.tags') });
-  if (browse.canJumpTag) items.push({ key: 'g', label: t('common.jumpTag') });
+  // `g` jump-to-tags stays as a hidden shortcut (still in ? help); not listed in footer.
   if (browse.canSync) items.push({ key: 's', label: t('common.sync') });
   if (browse.updateCount > 0) {
     items.push({
@@ -130,12 +131,22 @@ function workingStatus(working: FooterWorkingState): string {
   return t('footer.working', { action: workingActionLabel(working.action), progress });
 }
 
-function rightStatus(input: FooterResolveInput): { text: string; kind: FooterStatusKind } | undefined {
+function rightStatus(
+  input: FooterResolveInput
+): { text: string; kind: FooterStatusKind; action?: FooterStatusAction } | undefined {
   if (input.working) {
     return { text: workingStatus(input.working), kind: 'progress' };
   }
   if (input.status?.text) {
     return { text: input.status.text, kind: input.status.kind };
+  }
+  // Sticky health entry (⚠ N) — VS Code–style problems indicator; click/! opens details.
+  if (input.health && input.health.count > 0) {
+    return {
+      text: t('footer.healthCount', { count: input.health.count }),
+      kind: 'error',
+      action: 'health',
+    };
   }
   if (input.updateCheck) {
     if (input.updateCheck.failed > 0) {
@@ -189,7 +200,13 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
     return {
       mode: 'keys',
       items,
-      ...(status ? { status: status.text, statusKind: status.kind } : {}),
+      ...(status
+        ? {
+            status: status.text,
+            statusKind: status.kind,
+            ...(status.action ? { statusAction: status.action } : {}),
+          }
+        : {}),
     };
   }
 
@@ -213,7 +230,11 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
       mode: 'keys',
       items,
       ...(statusText && status
-        ? { status: statusText, statusKind: status.kind }
+        ? {
+            status: statusText,
+            statusKind: status.kind,
+            ...(status.action ? { statusAction: status.action } : {}),
+          }
         : {}),
     };
   }

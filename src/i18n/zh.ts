@@ -24,7 +24,7 @@ export const zh = {
   'common.collect': '收藏',
   'common.more': '更多',
   'common.tags': '标签',
-  'common.jumpTag': '跳转标签',
+  'common.jumpTag': '跳转',
   'common.sync': '同步',
   'common.update': '更新',
   'common.materialize': '转换',
@@ -313,8 +313,21 @@ export const zh = {
   'footer.workingProgress': ' {current}/{total}',
   'footer.checkFailed': '{count} 个检查失败',
   'footer.checkingUpdates': '检查更新中',
+  'footer.healthCount': '⚠ {count}',
+
+  // ── health ──────────────────────────────────────────────────────────────
+  'health.gitRebase': '收藏夹 Git rebase 未完成',
+  'health.gitRebaseDetail': '在收藏夹目录完成或 abort rebase 后重试',
+  'health.gitMerge': '收藏夹 Git merge 未完成',
+  'health.gitMergeDetail': '在收藏夹目录完成或 abort merge 后重试',
+  'health.gitDiverged': '收藏夹与 origin/{branch} 分叉',
+  'health.gitDivergedDetail': '可按 s 同步；若仍失败请在收藏夹目录用 Git 处理',
+  'health.sourceConflict': '技能 {skill} 更新待解决',
+  'health.sourceConflictDetail': '解决冲突工作区后重新进入应用或等待启动收尾',
 
   // ── browser ─────────────────────────────────────────────────────────────
+  'browser.healthTitle': '告警',
+  'browser.healthEmpty': '当前无告警',
   'browser.moreActionsTitle': ' 更多操作 ',
   'browser.moreActionsFooter': 'Enter 执行 · Esc 返回',
   'browser.localSkill': '本地 · {name}',
@@ -360,7 +373,7 @@ export const zh = {
   'browser.helpNavTab': '切换当前层级 Tab',
   'browser.helpNavDetail': '收藏夹：窄屏打开详情；三栏进入详情列（项目/全局右栏仅预览）',
   'browser.helpNavFilter': '筛选技能',
-  'browser.helpNavGroup': '跳转标签（有标签时）',
+  'browser.helpNavGroup': '跳转到标签列 / 分组（有标签时）',
   'browser.helpSelect': '选择',
   'browser.helpSelectToggle': '切换选中（标签列：该标签下全部）；点击列表仅聚焦，不切换多选',
   'browser.helpSelectEnter':

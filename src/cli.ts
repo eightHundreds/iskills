@@ -8,10 +8,10 @@ import {
   commandSearch,
   printHelp,
 } from './commands/index.js';
-import { commitCollection, ensureCollection, readState } from './domain/core.js';
+import { commitCollection, ensureCollection } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
 import { DomainError } from './domain/errors.js';
-import { applyUserConfigLocale, installDomainNotify, t } from './i18n/index.js';
+import { applyUserConfigLocale, installDomainNotify } from './i18n/index.js';
 import { InterruptError } from './ui/shell/terminal.js';
 
 const packageVersion = (
@@ -52,8 +52,7 @@ async function run(argv: string[]): Promise<void> {
   if (command === 'init') return commandInit(rest);
   await finalizeResolvedConflicts();
   await commitCollection('capture external skill edits');
-  const pending = (await readState()).conflicts;
-  if (pending.length) console.error(t('cli.pendingConflicts', { count: pending.length }));
+  // Collection / source health is shown live in the browser footer (⚠), not via stderr cache.
 
   if (!command) {
     const { runBrowserApp } = await import('./ui/browser/index.js');

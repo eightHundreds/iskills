@@ -593,16 +593,13 @@ export async function writeMetadata(metadata: SkillMetadata): Promise<void> {
 
 export async function readState(): Promise<CollectionState> {
   const paths = collectionPaths();
+  // Collection Git health is live-probed (see probeCollectionHealth); only source
+  // update workspaces are persisted under conflicts.
   const state = await readJson<CollectionState>(paths.state, { links: [], conflicts: [] });
-  const collectionConflict = await readJson<CollectionState['conflicts'][number] | null>(
-    paths.collectionConflict,
-    null
-  );
-  if (collectionConflict) {
-    state.conflicts = state.conflicts.filter((conflict) => conflict.type !== 'collection');
-    state.conflicts.push(collectionConflict);
-  }
-  return state;
+  return {
+    ...state,
+    conflicts: state.conflicts.filter((conflict) => conflict.type !== 'collection'),
+  };
 }
 
 export async function writeState(state: CollectionState): Promise<void> {

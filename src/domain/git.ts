@@ -19,7 +19,6 @@ import {
   readState,
   sourceSkillFile,
   validateSkillTree,
-  writeJson,
   writeMetadata,
   writeState,
 } from './core.js';
@@ -270,40 +269,13 @@ async function prepareSourceMerge(
   return prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
 }
 
+/** Apply source-update conflict workspaces that the user finished resolving. */
 export async function finalizeResolvedConflicts(): Promise<void> {
   const state = await readState();
   const remaining = [];
   let finalized = false;
   for (const conflict of state.conflicts) {
-    if (conflict.type === 'collection') {
-      const { root } = collectionPaths();
-      const gitDir = join(root, '.git');
-      const inProgress =
-        (await exists(join(gitDir, 'MERGE_HEAD'))) ||
-        (await exists(join(gitDir, 'rebase-merge'))) ||
-        (await exists(join(gitDir, 'rebase-apply')));
-      let clean = false;
-      let remoteMerged = false;
-      try {
-        clean = !git(['-C', root, 'status', '--porcelain']);
-        if (conflict.remoteHead) {
-          execFileSync(
-            'git',
-            ['-C', root, 'merge-base', '--is-ancestor', conflict.remoteHead, 'HEAD'],
-            { stdio: 'ignore' }
-          );
-          remoteMerged = true;
-        }
-      } catch {}
-      if (!inProgress && clean && remoteMerged) {
-        await rm(collectionPaths().collectionConflict, { force: true });
-        domainNotify('git.conflictResolved');
-        finalized = true;
-      } else {
-        remaining.push(conflict);
-      }
-      continue;
-    }
+    if (conflict.type !== 'source') continue;
     if (!(await exists(conflict.path))) {
       remaining.push(conflict);
       continue;
@@ -335,14 +307,6 @@ export async function finalizeResolvedConflicts(): Promise<void> {
     await writeState(state);
   }
   if (finalized) await commitCollection('apply resolved source updates');
-}
-
-async function markCollectionConflict(message: string, remoteHead?: string): Promise<void> {
-  await writeJson(collectionPaths().collectionConflict, {
-    type: 'collection',
-    message,
-    ...(remoteHead ? { remoteHead } : {}),
-  });
 }
 
 export async function backgroundCollectionSync(): Promise<void> {
@@ -381,7 +345,7 @@ export async function backgroundCollectionSync(): Promise<void> {
         stdio: 'ignore',
       });
     } catch {
-      await markCollectionConflict('git.conflictWithOrigin', remoteHead);
+      // Leave main tree clean; UI health probe reports live divergence.
       return;
     }
 
@@ -400,10 +364,8 @@ export async function backgroundCollectionSync(): Promise<void> {
     if (currentHead !== localHead || dirty) return;
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
     git(['-C', paths.root, 'push', '--quiet', 'origin', branch]);
-  } catch (error) {
-    await markCollectionConflict(
-      `git.backgroundSyncFailed:${errorMessage(error)}`
-    );
+  } catch {
+    // Soft-fail background sync; no on-disk conflict cache.
   } finally {
     if (worktree && worktreeRoot) {
       try {
@@ -563,13 +525,6 @@ async function abortLeftoverCollectionRebase(root: string): Promise<void> {
   }
 }
 
-async function clearCollectionConflictState(): Promise<void> {
-  const state = await readState();
-  state.conflicts = state.conflicts.filter((conflict) => conflict.type !== 'collection');
-  await writeState(state);
-  await rm(collectionPaths().collectionConflict, { force: true });
-}
-
 /**
  * Foreground collection sync: commit pending managed paths, then merge origin in a
  * detached worktree and only ff-only apply to the live tree (same isolation model as
@@ -608,13 +563,11 @@ async function foregroundCollectionSync(): Promise<void> {
     const upstream = `refs/remotes/origin/${branch}`;
     if (!gitObjectExists(root, upstream)) {
       gitForeground(['-C', root, 'push', '-u', 'origin', branch]);
-      await clearCollectionConflictState();
       return;
     }
 
     const remoteHead = git(['-C', root, 'rev-parse', upstream]);
     if (remoteHead === localHead) {
-      await clearCollectionConflictState();
       return;
     }
 
@@ -626,7 +579,6 @@ async function foregroundCollectionSync(): Promise<void> {
     try {
       gitForeground(['-C', worktree, 'merge', '--no-edit', remoteHead]);
     } catch {
-      await markCollectionConflict('git.conflictWithOrigin', remoteHead);
       throw new DomainError('git.conflictWithOrigin');
     }
 
@@ -649,10 +601,8 @@ async function foregroundCollectionSync(): Promise<void> {
     }
     git(['-C', root, 'merge', '--quiet', '--ff-only', mergedHead]);
     gitForeground(['-C', root, 'push', 'origin', branch]);
-    await clearCollectionConflictState();
   } catch (error) {
     if (error instanceof DomainError) throw error;
-    await markCollectionConflict('git.syncConflictManual');
     throw new DomainError('git.syncFailed', { error: errorMessage(error) });
   } finally {
     if (worktree && worktreeRoot) {

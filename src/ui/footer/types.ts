@@ -7,12 +7,17 @@ export interface FooterItem {
 
 export type FooterStatusKind = 'normal' | 'error' | 'progress';
 
+/** Right-slot status that can open a panel (e.g. health ⚠). */
+export type FooterStatusAction = 'health';
+
 export type FooterView =
   | {
       mode: 'keys';
       items: FooterItem[];
       status?: string;
       statusKind?: FooterStatusKind;
+      /** When set, status is a control (click / key opens details). */
+      statusAction?: FooterStatusAction;
     }
   | {
       mode: 'input';
@@ -67,6 +72,11 @@ export interface FooterUpdateCheckState {
   failed: number;
 }
 
+export interface FooterHealthState {
+  /** Number of sticky health alerts; 0 hides the ⚠ entry. */
+  count: number;
+}
+
 export interface FooterResolveInput {
   /** modal > layer items when an overlay owns the footer; null if none. */
   overlayItems: FooterItem[] | null;
@@ -80,6 +90,8 @@ export interface FooterResolveInput {
   browse: FooterBrowseCapabilities | null;
   status: FooterStatusState | null;
   updateCheck: FooterUpdateCheckState | null;
+  /** Sticky health (footer ⚠ N); below action status, above update-check text. */
+  health?: FooterHealthState | null;
   /** Terminal columns for truncation; omit to skip. */
   columns?: number;
 }

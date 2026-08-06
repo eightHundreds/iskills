@@ -26,7 +26,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.collect': 'Collect',
   'common.more': 'More',
   'common.tags': 'Tags',
-  'common.jumpTag': 'Jump tag',
+  'common.jumpTag': 'Jump',
   'common.sync': 'Sync',
   'common.update': 'Update',
   'common.materialize': 'Materialize',
@@ -339,8 +339,21 @@ Options:
   'footer.workingProgress': ' {current}/{total}',
   'footer.checkFailed': '{count} check(s) failed',
   'footer.checkingUpdates': 'Checking for updates',
+  'footer.healthCount': '⚠ {count}',
+
+  // ── health ──────────────────────────────────────────────────────────────
+  'health.gitRebase': 'Collection Git rebase in progress',
+  'health.gitRebaseDetail': 'Finish or abort the rebase in the collection directory, then retry',
+  'health.gitMerge': 'Collection Git merge in progress',
+  'health.gitMergeDetail': 'Finish or abort the merge in the collection directory, then retry',
+  'health.gitDiverged': 'Collection diverged from origin/{branch}',
+  'health.gitDivergedDetail': 'Press s to sync; if it still fails, resolve with Git in the collection directory',
+  'health.sourceConflict': 'Skill update pending: {skill}',
+  'health.sourceConflictDetail': 'Resolve the conflict workspace, then reopen the app or wait for startup finalize',
 
   // ── browser ─────────────────────────────────────────────────────────────
+  'browser.healthTitle': 'Alerts',
+  'browser.healthEmpty': 'No alerts',
   'browser.moreActionsTitle': ' More actions ',
   'browser.moreActionsFooter': 'Enter run · Esc back',
   'browser.localSkill': 'Local · {name}',
@@ -389,7 +402,7 @@ Options:
   'browser.helpNavDetail':
     'Collection: open detail on narrow screens; enter detail column in three-pane (project/global right column is preview only)',
   'browser.helpNavFilter': 'Filter skills',
-  'browser.helpNavGroup': 'Jump to tag (when tags exist)',
+  'browser.helpNavGroup': 'Jump to tag column / groups (when tags exist)',
   'browser.helpSelect': 'Selection',
   'browser.helpSelectToggle':
     'Toggle selection (tag column: all under that tag); list click focuses only, does not multi-select',

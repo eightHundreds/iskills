@@ -11,10 +11,12 @@ import { computeBrowseCapabilities } from './browse-capabilities.js';
 import { masterDetailLayout } from './layout.js';
 import { t } from '../../i18n/index.js';
 import type { FooterItem } from '../footer/types.js';
+import { presentHealthAlerts } from './health.js';
 import {
   browserDataAtom,
   browserFilterAtom,
   browserGroupJumpAtom,
+  browserHealthAtom,
   browserNavigationAtom,
   browserPhaseAtom,
   browserSelectionAtom,
@@ -47,6 +49,7 @@ export function BrowserShellFooter(): ReactNode {
   const detail = useAtomValue(detailContextAtom);
   const tagFilter = useAtomValue(browserTagFilterAtom);
   const updateCheck = useAtomValue(browserUpdateCheckAtom);
+  const healthAlerts = useAtomValue(browserHealthAtom);
   const setFilter = useSetAtom(browserFilterAtom);
   const setNavigation = useSetAtom(browserNavigationAtom);
 
@@ -140,6 +143,7 @@ export function BrowserShellFooter(): ReactNode {
       checking: updateCheck.checking,
       failed: updateCheck.failed,
     },
+    health: healthAlerts.length > 0 ? { count: healthAlerts.length } : null,
     columns,
   };
 
@@ -194,5 +198,13 @@ export function BrowserShellFooter(): ReactNode {
     );
   }
 
-  return <FooterPaint view={view} />;
+  return (
+    <FooterPaint
+      view={view}
+      onStatusAction={(action) => {
+        if (action !== 'health') return;
+        void presentHealthAlerts(healthAlerts);
+      }}
+    />
+  );
 }
