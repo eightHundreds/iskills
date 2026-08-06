@@ -213,6 +213,22 @@ export function collectionPaths(): CollectionPaths {
 }
 
 export function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const execError = error as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string };
+    const stderr = typeof execError.stderr === 'string'
+      ? execError.stderr
+      : Buffer.isBuffer(execError.stderr)
+        ? execError.stderr.toString('utf8')
+        : '';
+    const stdout = typeof execError.stdout === 'string'
+      ? execError.stdout
+      : Buffer.isBuffer(execError.stdout)
+        ? execError.stdout.toString('utf8')
+        : '';
+    const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n').trim();
+    if (detail) return detail;
+    if (typeof execError.message === 'string' && execError.message) return execError.message;
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -244,10 +260,18 @@ export async function ensureCollection(): Promise<CollectionPaths> {
   ]);
 
   const gitignore = join(paths.root, '.gitignore');
+  // config.json is user preference, not collection content (see cli-tui config rules).
+  const requiredIgnores = ['.local/', 'config.json'];
   if (!(await exists(gitignore))) {
-    await writeFile(gitignore, '.local/\n', 'utf8');
-  } else if (!(await readFile(gitignore, 'utf8')).split(/\r?\n/).includes('.local/')) {
-    await appendFile(gitignore, '\n.local/\n', 'utf8');
+    await writeFile(gitignore, `${requiredIgnores.join('\n')}\n`, 'utf8');
+  } else {
+    const text = await readFile(gitignore, 'utf8');
+    const lines = new Set(text.split(/\r?\n/));
+    const missing = requiredIgnores.filter((line) => !lines.has(line));
+    if (missing.length) {
+      const suffix = text.endsWith('\n') || text.length === 0 ? '' : '\n';
+      await appendFile(gitignore, `${suffix}${missing.join('\n')}\n`, 'utf8');
+    }
   }
   if (!(await exists(paths.state))) await writeJson(paths.state, { links: [], conflicts: [] });
   return paths;
@@ -746,8 +770,14 @@ function startBackgroundSync(): void {
  * Post-write collection Git commit (soft-fail by default).
  * @returns true when no commit failure (including no .git / no changes); false after soft-fail notify.
  * Callers MUST NOT print 已收藏 / 已导入 / 已删除 success lines when this returns false.
+ * @param backgroundSync When false, skip spawning the detached push/pull child (e.g. before
+ *   an explicit foreground `syncCollection`). Default true.
  */
-export async function commitCollection(message: string, strict = false): Promise<boolean> {
+export async function commitCollection(
+  message: string,
+  strict = false,
+  backgroundSync = true
+): Promise<boolean> {
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return true;
   try {
@@ -761,7 +791,7 @@ export async function commitCollection(message: string, strict = false): Promise
     ).trim();
     if (changed) {
       execFileSync('git', ['-C', root, 'commit', '-m', message], { stdio: 'ignore' });
-      startBackgroundSync();
+      if (backgroundSync) startBackgroundSync();
     }
     return true;
   } catch (error) {

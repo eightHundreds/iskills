@@ -52,7 +52,7 @@ export interface FooterBrowseCapabilities {
 }
 
 export interface FooterWorkingState {
-  action: 'update' | 'materialize';
+  action: 'update' | 'materialize' | 'sync';
   current: number;
   total: number;
 }

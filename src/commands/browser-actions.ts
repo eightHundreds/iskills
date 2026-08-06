@@ -205,10 +205,26 @@ export async function handleBrowserResult(
 }
 
 async function handleSync(host: BrowserActionHost): Promise<void> {
-  await host.lifecycle.suspendForSubprocess(async () => {
-    await syncCollection(false);
+  host.setStatus('', false);
+  // Busy gate: browser disables input while workingAction/updatingSkillName is set.
+  host.setWorkingProgress({
+    skillName: '',
+    current: 1,
+    total: 1,
+    workingAction: 'sync',
   });
-  host.setStatus(t('cmd.syncDone'), true, 'normal');
+  try {
+    // In-process git (no interactive TTY child). Keep TUI mounted so failures
+    // land in the status bar instead of being lost across suspend/resume.
+    await syncCollection(false);
+    host.setStatus(t('cmd.syncDone'), true, 'normal');
+  } catch (error) {
+    if (error instanceof InterruptError) throw error;
+    // Prefer DomainError text alone — avoid "失败：收藏夹 Git 同步失败：…" double prefix.
+    host.setStatus(formatAppError(error), false, 'error');
+  } finally {
+    host.setWorkingProgress(null);
+  }
 }
 
 async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {

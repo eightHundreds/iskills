@@ -535,30 +535,139 @@ export async function updateGitSkill(
   }
 }
 
+/** Foreground git with captured stderr so DomainError can surface the real failure. */
+function gitForeground(args: string[]): void {
+  try {
+    execFileSync('git', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    throw new Error(errorMessage(error));
+  }
+}
+
+/** Abort leftover rebase from older pull --rebase paths so the main tree is usable again. */
+async function abortLeftoverCollectionRebase(root: string): Promise<void> {
+  const gitDir = join(root, '.git');
+  const inProgress =
+    (await exists(join(gitDir, 'rebase-merge'))) ||
+    (await exists(join(gitDir, 'rebase-apply')));
+  if (!inProgress) return;
+  try {
+    gitForeground(['-C', root, 'rebase', '--abort']);
+  } catch (error) {
+    throw new Error(
+      `collection git rebase in progress and could not abort: ${errorMessage(error)}`
+    );
+  }
+}
+
+async function clearCollectionConflictState(): Promise<void> {
+  const state = await readState();
+  state.conflicts = state.conflicts.filter((conflict) => conflict.type !== 'collection');
+  await writeState(state);
+  await rm(collectionPaths().collectionConflict, { force: true });
+}
+
+/**
+ * Foreground collection sync: commit pending managed paths, then merge origin in a
+ * detached worktree and only ff-only apply to the live tree (same isolation model as
+ * background sync). Never runs `pull --rebase` on the main collection, so a conflict
+ * cannot leave skills/metadata mid-rebase.
+ */
+async function foregroundCollectionSync(): Promise<void> {
+  const paths = collectionPaths();
+  const root = paths.root;
+  const lock = join(paths.local, 'git-sync.lock');
+  try {
+    await writeFile(lock, String(process.pid), { flag: 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new DomainError('git.syncFailed', { error: 'sync already in progress' });
+    }
+    throw error;
+  }
+
+  let worktree: string | undefined;
+  let worktreeRoot: string | undefined;
+  try {
+    // Flush local WIP first so dirty skills/metadata never block sync.
+    // Skip background child — this call is the sync.
+    await commitCollection('sync pending collection changes', true, false);
+    await abortLeftoverCollectionRebase(root);
+
+    const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
+    if (!remotes.includes('origin')) {
+      throw new DomainError('git.syncFailed', { error: 'no origin remote' });
+    }
+
+    const branch = git(['-C', root, 'symbolic-ref', '--short', 'HEAD']);
+    const localHead = git(['-C', root, 'rev-parse', 'HEAD']);
+    gitForeground(['-C', root, 'fetch', 'origin']);
+    const upstream = `refs/remotes/origin/${branch}`;
+    if (!gitObjectExists(root, upstream)) {
+      gitForeground(['-C', root, 'push', '-u', 'origin', branch]);
+      await clearCollectionConflictState();
+      return;
+    }
+
+    const remoteHead = git(['-C', root, 'rev-parse', upstream]);
+    if (remoteHead === localHead) {
+      await clearCollectionConflictState();
+      return;
+    }
+
+    worktreeRoot = await mkdtemp(join(tmpdir(), 'iskills-collection-sync-'));
+    worktree = join(worktreeRoot, 'worktree');
+    git(['-C', root, 'worktree', 'add', '--quiet', '--detach', worktree, localHead]);
+    git(['-C', worktree, 'config', 'user.name', 'Skill Collection']);
+    git(['-C', worktree, 'config', 'user.email', 'iskills@localhost']);
+    try {
+      gitForeground(['-C', worktree, 'merge', '--no-edit', remoteHead]);
+    } catch {
+      await markCollectionConflict('git.conflictWithOrigin', remoteHead);
+      throw new DomainError('git.conflictWithOrigin');
+    }
+
+    const mergedHead = git(['-C', worktree, 'rev-parse', 'HEAD']);
+    const currentHead = git(['-C', root, 'rev-parse', 'HEAD']);
+    const dirty = git([
+      '-C',
+      root,
+      'status',
+      '--porcelain',
+      '--',
+      'skills',
+      'metadata',
+      '.gitignore',
+    ]);
+    if (currentHead !== localHead || dirty) {
+      throw new DomainError('git.syncFailed', {
+        error: 'collection changed during sync',
+      });
+    }
+    git(['-C', root, 'merge', '--quiet', '--ff-only', mergedHead]);
+    gitForeground(['-C', root, 'push', 'origin', branch]);
+    await clearCollectionConflictState();
+  } catch (error) {
+    if (error instanceof DomainError) throw error;
+    await markCollectionConflict('git.syncConflictManual');
+    throw new DomainError('git.syncFailed', { error: errorMessage(error) });
+  } finally {
+    if (worktree && worktreeRoot) {
+      try {
+        git(['-C', root, 'worktree', 'remove', '--force', worktree]);
+      } catch {}
+      await rm(worktreeRoot, { recursive: true, force: true });
+    }
+    await rm(lock, { force: true });
+  }
+}
+
 export async function syncCollection(background: boolean): Promise<void> {
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) throw new DomainError('git.notARepo');
   if (background) return backgroundCollectionSync();
-  try {
-    let hasUpstream = true;
-    try {
-      git(['-C', root, 'rev-parse', '--abbrev-ref', '@{u}']);
-    } catch {
-      hasUpstream = false;
-    }
-    if (hasUpstream) {
-      execFileSync('git', ['-C', root, 'pull', '--rebase'], { stdio: 'inherit' });
-      execFileSync('git', ['-C', root, 'push'], { stdio: 'inherit' });
-    } else {
-      const branch = git(['-C', root, 'symbolic-ref', '--short', 'HEAD']);
-      execFileSync('git', ['-C', root, 'push', '-u', 'origin', branch], { stdio: 'inherit' });
-    }
-    const state = await readState();
-    state.conflicts = state.conflicts.filter((conflict) => conflict.type !== 'collection');
-    await writeState(state);
-    await rm(collectionPaths().collectionConflict, { force: true });
-  } catch (error) {
-    await markCollectionConflict('git.syncConflictManual');
-    throw new DomainError('git.syncFailed', { error: errorMessage(error) });
-  }
+  return foregroundCollectionSync();
 }

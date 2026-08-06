@@ -117,7 +117,9 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
 }
 
 function workingActionLabel(action: FooterWorkingState['action']): string {
-  return action === 'materialize' ? t('common.materialize') : t('common.update');
+  if (action === 'materialize') return t('common.materialize');
+  if (action === 'sync') return t('common.sync');
+  return t('common.update');
 }
 
 function workingStatus(working: FooterWorkingState): string {

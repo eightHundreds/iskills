@@ -206,7 +206,8 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
         exit(error);
         return;
       }
-      throw error;
+      // Surface action failures in the footer — never leave the promise rejection silent.
+      setBrowserStatus(store, formatAppError(error), false, 'error');
     }
   }, [actionHost, exit, setDetail, setPhase, store]);
 
@@ -237,16 +238,24 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
           setDetail(null);
         }}
         onAction={async (context, action) => {
-          await handleDetailAction(actionHost, context, action);
-          await reloadData();
-          const current = store.get(detailContextAtom);
-          if (!current) return;
-          setDetail(await loadDetailContext(
-            current.skill,
-            current.collection,
-            current.frameHeight,
-            current.frameWidth
-          ));
+          try {
+            await handleDetailAction(actionHost, context, action);
+            await reloadData();
+            const current = store.get(detailContextAtom);
+            if (!current) return;
+            setDetail(await loadDetailContext(
+              current.skill,
+              current.collection,
+              current.frameHeight,
+              current.frameWidth
+            ));
+          } catch (error) {
+            if (error instanceof InterruptError) {
+              exit(error);
+              return;
+            }
+            setBrowserStatus(store, formatAppError(error), false, 'error');
+          }
         }}
       />
     );
@@ -257,7 +266,11 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
       {...viewInput}
       finish={(result) => {
         void dispatchResult(result).catch((error) => {
-          if (error instanceof InterruptError) exit(error);
+          if (error instanceof InterruptError) {
+            exit(error);
+            return;
+          }
+          setBrowserStatus(store, formatAppError(error), false, 'error');
         });
       }}
     />

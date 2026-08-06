@@ -621,11 +621,14 @@ export function Browser({
   canSync,
   checkUpdates,
   updatingSkillName,
+  workingAction,
   finish,
 }: BrowserProps) {
   const modal = useModal();
   const shellBusy = useOverlayBusy();
   const store = useStore();
+  // Block list input while a long action runs (update/materialize skill row or collection sync).
+  const actionBusy = Boolean(updatingSkillName) || workingAction === 'sync';
   // Local braille spinner only while a skill is updating (not a global busy overlay).
   const updatingFrame = useSpinnerFrame(Boolean(updatingSkillName));
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
@@ -760,13 +763,13 @@ export function Browser({
     currentRow?.type === 'skill' ? currentRow.skill : undefined
   );
   const canMaterialize =
-    !updatingSkillName &&
+    !actionBusy &&
     focus === 'list' &&
     tab === 'project' &&
     actionSkills.length > 0 &&
     actionSkills.every((skill) => skill.isReference);
   const canInstallToAgents =
-    !updatingSkillName &&
+    !actionBusy &&
     focus === 'list' &&
     (tab === 'project' || tab === 'global') &&
     actionSkills.length > 0 &&
@@ -1242,7 +1245,7 @@ export function Browser({
       }
     },
     {
-      isActive: !shellBusy && !searching && !choosingGroup && !updatingSkillName,
+      isActive: !shellBusy && !searching && !choosingGroup && !actionBusy,
     }
   );
   useInput(

@@ -68,7 +68,7 @@ export interface BrowserViewInput {
   checkUpdates: BrowserUpdateChecker;
   updatingSkillName?: string | undefined;
   updatingProgress?: { current: number; total: number } | undefined;
-  workingAction?: 'update' | 'materialize';
+  workingAction?: 'update' | 'materialize' | 'sync';
 }
 
 export type BrowserAppPhase = 'browse' | 'detail';
@@ -93,7 +93,7 @@ export interface WorkingProgressSnapshot {
   skillName: string;
   current: number;
   total: number;
-  workingAction: 'update' | 'materialize';
+  workingAction: 'update' | 'materialize' | 'sync';
 }
 
 export interface DetailViewContext {
@@ -128,7 +128,7 @@ export interface BrowserActionHost {
       skillName: string;
       current: number;
       total: number;
-      workingAction: 'update' | 'materialize';
+      workingAction: 'update' | 'materialize' | 'sync';
     } | null
   ) => void;
   setStatus: (text: string, transient: boolean, kind?: 'normal' | 'error') => void;
