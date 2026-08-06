@@ -362,8 +362,9 @@ export const zh = {
   'browser.helpNavFilter': '筛选技能',
   'browser.helpNavGroup': '跳转标签（有标签时）',
   'browser.helpSelect': '选择',
-  'browser.helpSelectToggle': '切换选中（标签列：该标签下全部）',
-  'browser.helpSelectEnter': '添加已选；窄屏打开详情（三栏右栏即预览）',
+  'browser.helpSelectToggle': '切换选中（标签列：该标签下全部）；点击列表仅聚焦，不切换多选',
+  'browser.helpSelectEnter':
+    '收藏夹有已选则添加；无已选：窄屏打开详情，三栏进入详情列（项目/全局三栏右栏仅预览，窄屏 Enter 查看）',
   'browser.helpCollect': '收藏与安装',
   'browser.helpCollectImport': '加入收藏夹（项目 / 全局已选本地技能）',
   'browser.helpMaintain': '维护',

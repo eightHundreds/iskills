@@ -21,8 +21,9 @@ export function enterActionFor(
 ): FooterEnterAction {
   if (tab === 'collection' && selectionCount > 0) return 'add';
   if (!currentIsSkill) return null;
-  // 3-column layout already peeks detail in the right pane — omit Enter 详情/查看.
-  if (masterDetail) return null;
+  // Master-detail: collection Enter focuses the detail column (same as →);
+  // project/global right pane is preview-only — no Enter activation.
+  if (masterDetail) return tab === 'collection' ? 'detail' : null;
   if (tab === 'collection') return 'detail';
   // Project / global narrow: Enter opens fullscreen view (no → detail).
   return 'view';

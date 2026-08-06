@@ -392,9 +392,9 @@ Options:
   'browser.helpNavGroup': 'Jump to tag (when tags exist)',
   'browser.helpSelect': 'Selection',
   'browser.helpSelectToggle':
-    'Toggle selection (tag column: all under that tag)',
+    'Toggle selection (tag column: all under that tag); list click focuses only, does not multi-select',
   'browser.helpSelectEnter':
-    'Add selected; open detail on narrow screens (three-pane right is preview)',
+    'Collection with selection: add. No selection: open detail (narrow) or focus detail column (three-pane). Project/global three-pane is preview-only; narrow Enter views fullscreen',
   'browser.helpCollect': 'Collect & install',
   'browser.helpCollectImport':
     'Add to collection (project / global selected local skills)',

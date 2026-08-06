@@ -1224,7 +1224,15 @@ export function Browser({
         if (tab === 'collection' && selectedCollection.length) {
           return finish({ type: 'add', skills: selectedCollection });
         }
-        if (useBrowseHome) return;
+        // Master-detail collection: Enter focuses detail column (never silent no-op).
+        // Project/global master-detail: peek-only — no Enter open.
+        if (useMasterDetail) {
+          if (tab === 'collection' && row?.type === 'skill') {
+            setDetailFieldIndex(0);
+            return setFocus('detail');
+          }
+          return;
+        }
         if (tab === 'collection' && row?.type === 'skill') {
           return openDetail(row.skill, true);
         }
@@ -1381,23 +1389,11 @@ export function Browser({
             }}
             onListLineClick={(visibleIndex) => {
               // Paired name/summary lines → skill index.
+              // Click focuses the row only; Space toggles multi-select.
               const skillIndex = skillOffset + Math.floor(visibleIndex / 2);
               if (skillIndex < 0 || skillIndex >= paneRows.length) return;
               setCursor(skillIndex);
               setFocus('list');
-              const row = paneRows[skillIndex];
-              if (!row) return;
-              const paths = selectableSkills(row).map((skill) => skill.path);
-              if (!paths.length) return;
-              setSelected((previous) => {
-                const next = new Set(previous);
-                const allSelected = paths.every((path) => previous.has(path));
-                for (const path of paths) {
-                  if (allSelected) next.delete(path);
-                  else next.add(path);
-                }
-                return next;
-              });
             }}
             onDetailLineClick={(visibleIndex) => {
               const row = detailRows[visibleIndex];
@@ -1427,21 +1423,9 @@ export function Browser({
         isActive={focus === 'list'}
         viewportHeight={viewportHeight}
         onRowClick={(index) => {
+          // Click focuses the row only; Space toggles multi-select.
           setCursor(index);
           setFocus('list');
-          const row = paneRows[index];
-          if (!row) return;
-          const paths = selectableSkills(row).map((skill) => skill.path);
-          if (!paths.length) return;
-          setSelected((previous) => {
-            const next = new Set(previous);
-            const allSelected = paths.every((path) => previous.has(path));
-            for (const path of paths) {
-              if (allSelected) next.delete(path);
-              else next.add(path);
-            }
-            return next;
-          });
         }}
         onCursorDelta={(delta) => {
           setFocus('list');
