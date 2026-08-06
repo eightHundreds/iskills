@@ -54,9 +54,14 @@ fi
 PRIVATE_ROOT=$(git rev-parse --show-toplevel)
 cd "$PRIVATE_ROOT"
 
+# Tag checkouts are detached: ensure a local main ref (origin/main after fetch-depth:0).
 if ! git rev-parse --verify main >/dev/null 2>&1; then
-  echo 'Branch main not found' >&2
-  exit 1
+  if git rev-parse --verify origin/main >/dev/null 2>&1; then
+    git branch main origin/main
+  else
+    echo 'Branch main not found' >&2
+    exit 1
+  fi
 fi
 PRIVATE_MAIN=$(git rev-parse main)
 
