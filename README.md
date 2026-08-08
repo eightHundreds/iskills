@@ -25,7 +25,7 @@ Data integrity comes first: writes are transactional where it matters; conflicts
 
 ## Requirements
 
-- **Node.js** 24+
+- **Node.js** 20.6+
 - **Bun** recommended for the full-screen TUI (OpenTUI native FFI). `iskills` re-execs under Bun when the current Node lacks `node:ffi`. Pure CLI paths (help, non-TTY flags) work on Node alone.
 - **macOS** or **Linux**
 - A TTY for the interactive UI (`stdin` and `stdout`)

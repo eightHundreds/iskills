@@ -6,6 +6,10 @@
 
 ## [未发布]
 
+### 变更
+
+- 最低 Node.js 版本降至 20.6（`module.register` / `AbortSignal.any` 等 API 地板；完整 TUI 仍推荐 Bun）。
+
 ## [0.2.49] - 2026-08-06
 
 ### 修复

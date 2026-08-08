@@ -18,9 +18,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 20
           cache: pnpm
-      # OpenTUI native Zig core loads under Bun (Node lacks node:ffi on stock 24.x).
+      # OpenTUI native Zig core loads under Bun (stock Node lacks node:ffi).
       # UI frame tests and interactive bin re-exec require Bun on PATH.
       - uses: oven-sh/setup-bun@v2
         with:
@@ -39,7 +39,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run type-check

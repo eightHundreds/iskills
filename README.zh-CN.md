@@ -25,7 +25,7 @@
 
 ## 环境要求
 
-- **Node.js** 24+
+- **Node.js** 20.6+
 - **Bun** 推荐用于完整全屏 TUI（OpenTUI 原生 FFI）。当前 Node 缺少 `node:ffi` 时，`iskills` 会 re-exec 到 Bun。纯 CLI 路径（帮助、非 TTY 参数）可仅用 Node。
 - **macOS** 或 **Linux**
 - 交互界面需要 TTY（`stdin` 与 `stdout`）
