@@ -6,6 +6,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.confirm': 'Confirm',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
+  'common.clear': 'Clear',
   'common.none': 'None',
   'common.noneIndented': '  None',
   'common.help': 'Help',

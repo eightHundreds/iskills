@@ -4,6 +4,7 @@ export const zh = {
   'common.confirm': '确认',
   'common.cancel': '取消',
   'common.close': '关闭',
+  'common.clear': '清空',
   'common.none': '无',
   'common.noneIndented': '  无',
   'common.help': '帮助',

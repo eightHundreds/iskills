@@ -5,6 +5,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
+import { registerTextInputFocus } from './text-input-ctrl-c.js';
 import { useInput } from './use-input.js';
 
 export function TextInput({
@@ -17,6 +18,8 @@ export function TextInput({
   width = 72,
   /** box = form field (label above bordered value); inline = single-row label+value (footer filter). */
   variant = 'box',
+  /** First Ctrl+C clears; AppShell only interrupts on a second press within 1s. */
+  clearOnCtrlC = false,
 }: {
   label: string;
   initialValue?: string;
@@ -26,6 +29,7 @@ export function TextInput({
   onSubmit: (value: string) => void;
   width?: number;
   variant?: 'box' | 'inline';
+  clearOnCtrlC?: boolean;
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
   const { stdout } = useStdout();
@@ -36,18 +40,29 @@ export function TextInput({
     setValue(initialValue);
   }, [initialValue]);
 
-  // Esc is product-level cancel; OpenTUI input does not own it.
-  useInput(
-    (_input, key) => {
-      if (key.escape) onCancel?.();
-    },
-    { isActive }
-  );
+  useEffect(() => {
+    if (!isActive || !clearOnCtrlC) return;
+    return registerTextInputFocus();
+  }, [isActive, clearOnCtrlC]);
 
   const handleInput = (next: string): void => {
     setValue(next);
     onChange?.(next);
   };
+
+  // Esc cancels. Optional first Ctrl+C clears; AppShell then needs a second press to exit.
+  useInput(
+    (input, key, event) => {
+      if (clearOnCtrlC && key.ctrl && input === 'c') {
+        event.preventDefault();
+        if (event.eventType === 'repeat' || event.repeated) return;
+        handleInput('');
+        return;
+      }
+      if (key.escape) onCancel?.();
+    },
+    { isActive }
+  );
 
   const field = (inputWidth: number | `${number}%` | undefined) => (
     <input

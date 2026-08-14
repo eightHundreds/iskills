@@ -88,6 +88,7 @@ export function promptText(
   return Modal.open<string | undefined>({
     footerItems: [
       { key: 'Enter', label: t('common.confirm') },
+      { key: 'Ctrl+C', label: t('common.clear') },
       { key: 'Esc', label: t('common.cancel') },
     ],
     content: (close) => (
@@ -96,6 +97,7 @@ export function promptText(
           key={label}
           label={label}
           initialValue={initialValue}
+          clearOnCtrlC
           onCancel={() => close(undefined)}
           onSubmit={(value) => close(value.trim())}
         />
