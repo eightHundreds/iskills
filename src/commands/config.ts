@@ -1,4 +1,5 @@
 import { DomainError } from '../domain/errors.js';
+import { commitCollection } from '../domain/core.js';
 import {
   clearCollectionRemote,
   configureCollectionRemote,
@@ -10,7 +11,7 @@ import { presentSettings } from '../ui/config/index.js';
 
 /**
  * Interactive preferences (`iskills config`).
- * Locale → config.json; collection remote → git origin (not tracked prefs).
+ * Locale → tracked config.json; collection remote → git origin.
  * Settings list: ←→ / Enter apply immediately; Esc/q closes.
  */
 export async function commandConfig(_argv: string[] = []): Promise<void> {
@@ -28,6 +29,7 @@ export async function commandConfig(_argv: string[] = []): Promise<void> {
     onPersist: async (config) => {
       await writeUserConfig(config);
       applyLocalePreference(config.locale);
+      await commitCollection('update collection config');
     },
     onPersistRemote: async (url) => {
       const trimmed = url.trim();

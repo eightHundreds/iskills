@@ -1,7 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import {
   access,
-  appendFile,
   cp,
   lstat,
   mkdir,
@@ -251,6 +250,53 @@ export async function pathPresent(path: string): Promise<boolean> {
   }
 }
 
+/** Paths collection Git add/status should cover when the files exist. */
+const COLLECTION_GIT_BASE_PATHS = ['skills', 'metadata', '.gitignore'] as const;
+
+async function readGitignoreText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+/** Keep `.local/` ignored; never ignore `config.json` (it is collection Git content). */
+export function nextCollectionGitignore(existing: string | undefined): string {
+  const required = ['.local/'];
+  const drop = new Set(['config.json']);
+  const lines = existing === undefined ? [] : existing.split(/\r?\n/);
+  const kept: string[] = [];
+  const present = new Set<string>();
+  for (const line of lines) {
+    if (drop.has(line)) continue;
+    kept.push(line);
+    if (line) present.add(line);
+  }
+  const missing = required.filter((line) => !present.has(line));
+  let next = kept.join('\n');
+  if (missing.length) {
+    if (next && !next.endsWith('\n')) next += '\n';
+    next += `${missing.join('\n')}\n`;
+  } else if (next && !next.endsWith('\n')) {
+    next += '\n';
+  }
+  return next || `${required.join('\n')}\n`;
+}
+
+/** `git add` pathspecs: include `config.json` only when the file exists. */
+export async function collectionGitAddPaths(root: string): Promise<string[]> {
+  const paths: string[] = [...COLLECTION_GIT_BASE_PATHS];
+  if (await exists(join(root, 'config.json'))) paths.push('config.json');
+  return paths;
+}
+
+/** `git status` pathspecs: always include `config.json` so a missing tracked file is visible. */
+export function collectionGitStatusPaths(): string[] {
+  return [...COLLECTION_GIT_BASE_PATHS, 'config.json'];
+}
+
 export async function ensureCollection(): Promise<CollectionPaths> {
   const paths = collectionPaths();
   await Promise.all([
@@ -260,19 +306,9 @@ export async function ensureCollection(): Promise<CollectionPaths> {
   ]);
 
   const gitignore = join(paths.root, '.gitignore');
-  // config.json is user preference, not collection content (see cli-tui config rules).
-  const requiredIgnores = ['.local/', 'config.json'];
-  if (!(await exists(gitignore))) {
-    await writeFile(gitignore, `${requiredIgnores.join('\n')}\n`, 'utf8');
-  } else {
-    const text = await readFile(gitignore, 'utf8');
-    const lines = new Set(text.split(/\r?\n/));
-    const missing = requiredIgnores.filter((line) => !lines.has(line));
-    if (missing.length) {
-      const suffix = text.endsWith('\n') || text.length === 0 ? '' : '\n';
-      await appendFile(gitignore, `${suffix}${missing.join('\n')}\n`, 'utf8');
-    }
-  }
+  const existingIgnore = await readGitignoreText(gitignore);
+  const nextIgnore = nextCollectionGitignore(existingIgnore);
+  if (existingIgnore !== nextIgnore) await writeFile(gitignore, nextIgnore);
   if (!(await exists(paths.state))) await writeJson(paths.state, { links: [], conflicts: [] });
   return paths;
 }
@@ -778,12 +814,14 @@ export async function commitCollection(
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return true;
   try {
-    execFileSync('git', ['-C', root, 'add', '-A', '--', 'skills', 'metadata', '.gitignore'], {
-      stdio: 'ignore',
-    });
+    execFileSync(
+      'git',
+      ['-C', root, 'add', '-A', '--', ...(await collectionGitAddPaths(root))],
+      { stdio: 'ignore' }
+    );
     const changed = execFileSync(
       'git',
-      ['-C', root, 'status', '--porcelain', '--', 'skills', 'metadata', '.gitignore'],
+      ['-C', root, 'status', '--porcelain', '--', ...collectionGitStatusPaths()],
       { encoding: 'utf8' }
     ).trim();
     if (changed) {

@@ -8,6 +8,8 @@ import {
   baselinePath,
   clearDirectory,
   collectionPaths,
+  collectionGitAddPaths,
+  collectionGitStatusPaths,
   commitCollection,
   copyDirectoryContents,
   errorMessage,
@@ -115,7 +117,7 @@ export async function initCollectionGit(): Promise<boolean> {
       } catch {}
       if (!value) git(['-C', root, 'config', key, fallback]);
     }
-    git(['-C', root, 'add', '-A', '--', 'skills', 'metadata', '.gitignore']);
+    git(['-C', root, 'add', '-A', '--', ...(await collectionGitAddPaths(root))]);
     git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
     return true;
   } catch (error) {
@@ -391,9 +393,7 @@ export async function backgroundCollectionSync(): Promise<void> {
       'status',
       '--porcelain',
       '--',
-      'skills',
-      'metadata',
-      '.gitignore',
+      ...collectionGitStatusPaths(),
     ]);
     if (currentHead !== localHead || dirty) return;
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
@@ -624,9 +624,7 @@ async function foregroundCollectionSync(): Promise<void> {
       'status',
       '--porcelain',
       '--',
-      'skills',
-      'metadata',
-      '.gitignore',
+      ...collectionGitStatusPaths(),
     ]);
     if (currentHead !== localHead || dirty) {
       throw new DomainError('git.syncFailed', {
