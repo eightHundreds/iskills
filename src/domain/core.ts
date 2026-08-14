@@ -262,9 +262,9 @@ async function readGitignoreText(path: string): Promise<string | undefined> {
   }
 }
 
-/** Keep `.local/` ignored; never ignore `config.json` (it is collection Git content). */
+/** Keep `.local/` and `.DS_Store` ignored; never ignore `config.json`. */
 export function nextCollectionGitignore(existing: string | undefined): string {
-  const required = ['.local/'];
+  const required = ['.local/', '.DS_Store'];
   const drop = new Set(['config.json']);
   const lines = existing === undefined ? [] : existing.split(/\r?\n/);
   const kept: string[] = [];
