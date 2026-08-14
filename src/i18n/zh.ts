@@ -128,7 +128,7 @@ export const zh = {
   'help.config': `用法：
   iskills config
 
-打开配置界面，设置 UI 语言（跟随系统 / 中文 / English）。
+打开配置界面，设置 UI 语言与收藏夹远程 Git 地址。
 
 选项：
   -h, --help         显示帮助
@@ -144,7 +144,7 @@ export const zh = {
   create [名称]      在收藏夹新建技能并打开目录
   import [来源]      导入本地路径或 Git 来源
   init               初始化收藏夹 Git
-  config             打开配置界面（UI 语言等）
+  config             打开配置界面（UI 语言、远程 Git 等）
 
 选项：
   -h, --help         显示帮助（可用 iskills help <命令>）
@@ -155,9 +155,12 @@ export const zh = {
   'config.localeSystem': '跟随系统',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
+  'config.remoteTitle': '收藏夹远程',
+  'config.remoteUnset': '未设置',
   'config.settingsTitle': ' 设置 ',
   'config.settingsFooter': '←→ 切换 · Esc 关闭',
   'config.changeValue': '切换',
+  'config.editValue': '编辑',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': '不安全的技能名称：{name}',

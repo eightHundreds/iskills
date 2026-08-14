@@ -133,7 +133,7 @@ Options:
   'help.config': `Usage:
   iskills config
 
-Open the config UI to set UI language (follow system / Chinese / English).
+Open the config UI to set UI language and the collection Git remote.
 
 Options:
   -h, --help         Show help
@@ -149,7 +149,7 @@ Commands:
   create [name]      Create a new skill in the collection and open it
   import [source]    Import a local path or Git source
   init               Initialize collection Git
-  config             Open config UI (UI language, …)
+  config             Open config UI (UI language, Git remote, …)
 
 Options:
   -h, --help         Show help (or: iskills help <command>)
@@ -160,9 +160,12 @@ Options:
   'config.localeSystem': 'Follow system',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
+  'config.remoteTitle': 'Collection remote',
+  'config.remoteUnset': 'Not set',
   'config.settingsTitle': ' Settings ',
   'config.settingsFooter': '←→ change · Esc close',
   'config.changeValue': 'Change',
+  'config.editValue': 'Edit',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': 'Unsafe skill name: {name}',
