@@ -302,10 +302,47 @@ export function categorySidebarLine(
   return padColumns(`${labelPart}${' '.repeat(gap)}${countText}`, width);
 }
 
+const GIT_HOST_BRANDS: Readonly<Record<string, string>> = {
+  'github.com': 'GitHub',
+  'gitlab.com': 'GitLab',
+  'bitbucket.org': 'Bitbucket',
+  'codeberg.org': 'Codeberg',
+  'gitee.com': 'Gitee',
+};
+
+/**
+ * Compact git origin for peek panel, e.g. `GitHub: mattpocock/skills`.
+ * Falls back to plain `Git` when the URL cannot be parsed into host + path.
+ */
+export function formatGitSourceLabel(url: string): string {
+  const scp = !url.includes('://') ? url.match(/^(?:[^@]+@)?([^:]+):(.+)$/) : null;
+  const candidate = scp ? `ssh://${scp[1]}/${scp[2]}` : url;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === 'file:') {
+      const filePath = decodeURIComponent(parsed.pathname).replace(/\.git\/?$/i, '').replace(/\/$/, '');
+      return filePath ? `file: ${filePath}` : t('common.git');
+    }
+    let host = parsed.hostname.toLowerCase();
+    if (host.startsWith('www.')) host = host.slice(4);
+    let path = parsed.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
+    if (!host || !path) return t('common.git');
+    // GitHub repos are always owner/repo; drop tree/blob/extra segments if present.
+    if (host === 'github.com') {
+      const parts = path.split('/').filter(Boolean);
+      if (parts.length >= 2) path = `${parts[0]}/${parts[1]}`;
+    }
+    const brand = GIT_HOST_BRANDS[host] ?? host;
+    return `${brand}: ${path}`;
+  } catch {
+    return t('common.git');
+  }
+}
+
 export function collectionSourceLabel(skill: CollectedSkill): string {
   const source = skill.source;
   if (!source) return t('common.unknown');
-  if (source.type === 'git' && source.url) return t('common.git');
+  if (source.type === 'git' && source.url) return formatGitSourceLabel(source.url);
   if (source.type === 'local' || source.path) return t('common.local');
   if (source.type === 'unknown' && source.path) return t('common.local');
   if (source.type === 'unknown') return t('common.local');
