@@ -11,7 +11,7 @@ import {
   renderTerminalScreen,
   runInteractive,
   withCollectionEnvironment,
-} from '../../test/helpers.js';
+} from '../../test/helpers/helpers.js';
 
 const outDir = join(process.cwd(), 'tmp/mcp-tui-frames');
 

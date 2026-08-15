@@ -11,7 +11,7 @@ import {
   BrowserHarness,
   collectedFixture,
   skillFixture,
-} from '../../test/browser-harness.js';
+} from '../../test/helpers/browser-harness.js';
 import { SkillMultiSelect } from '../../src/ui/import/skill-select.js';
 import { MultiSelect } from '../../src/ui/components/multi-select.js';
 import { Select } from '../../src/ui/components/select.js';

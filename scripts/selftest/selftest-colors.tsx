@@ -11,7 +11,7 @@ import { RGBA } from '@opentui/core';
 import { act } from 'react';
 import { ExitProvider } from '../../src/ui/tui/hooks.js';
 import { Text } from '../../src/ui/tui/index.js';
-import { BrowserHarness, collectedFixture } from '../../test/browser-harness.js';
+import { BrowserHarness, collectedFixture } from '../../test/helpers/browser-harness.js';
 import { termcnColors } from '../../src/ui/components/colors.js';
 
 function rgbaToHex(c: { buffer?: ArrayLike<number>; intent?: string }): string {

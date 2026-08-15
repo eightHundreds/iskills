@@ -19,7 +19,7 @@ import { ExitProvider } from '../../src/ui/tui/hooks.js';
 import {
   BrowserHarness,
   collectedFixture,
-} from '../../test/browser-harness.js';
+} from '../../test/helpers/browser-harness.js';
 
 const OUT_DIR = path.resolve('.tmp-selftest');
 const CELL_W = 9;

@@ -10,7 +10,7 @@ import {
   BrowserHarness,
   collectedFixture,
   skillFixture,
-} from '../../test/browser-harness.js';
+} from '../../test/helpers/browser-harness.js';
 
 const SCRATCH =
   process.env.SCRATCH ||

@@ -10,7 +10,7 @@ import { useEffect, type ReactNode } from 'react';
 import {
   BrowserHarness,
   collectedFixture,
-} from '../../test/browser-harness.js';
+} from '../../test/helpers/browser-harness.js';
 import { runApp } from '../../src/ui/shell/run.js';
 
 function LiveHelpBrowser(): ReactNode {

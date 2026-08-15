@@ -5,6 +5,8 @@ const opentuiRegister = fileURLToPath(
   new URL('./bin/opentui-register.mjs', import.meta.url)
 );
 
+const i18nSetup = ['test/helpers/setup-i18n.ts'];
+
 export default defineConfig({
   test: {
     pool: 'forks',
@@ -12,29 +14,16 @@ export default defineConfig({
     projects: [
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'parallel',
           include: [
-            'test/agents.test.ts',
-            'test/browser.test.ts',
-            'test/browse-nav.test.ts',
-            'test/browser-ui.test.tsx',
-            'test/cli.test.ts',
-            'test/create.test.ts',
-            'test/library.test.ts',
-            'test/mcp-collection.test.ts',
-            'test/mcp-ui.test.tsx',
-            'test/collection-match.test.ts',
-            'test/mouse.test.ts',
-            'test/ui.test.tsx',
-            'test/text-input-ctrl-c.test.ts',
-            'test/footer-resolve.test.ts',
-            'test/opentui-runtime.test.ts',
-            'test/overlay-bridge.test.ts',
-            'test/bin-runtime.test.ts',
-            'test/i18n.test.ts',
-            'test/user-config.test.ts',
+            'test/domain/**/*.test.ts',
+            'test/i18n/**/*.test.ts',
+            'test/commands/**/*.test.ts',
+            'test/ui/**/*.{test.ts,test.tsx}',
+            'test/bin/**/*.test.ts',
           ],
+          exclude: ['test/domain/git/**'],
           maxWorkers: 3,
           sequence: { groupOrder: 0 },
           testTimeout: 30_000,
@@ -42,9 +31,9 @@ export default defineConfig({
       },
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'git',
-          include: ['test/git.test.ts'],
+          include: ['test/domain/git/git.test.ts'],
           fileParallelism: false,
           maxConcurrency: 2,
           sequence: { groupOrder: 1 },
@@ -53,9 +42,9 @@ export default defineConfig({
       },
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'git-sync',
-          include: ['test/git-sync.test.ts'],
+          include: ['test/domain/git/git-sync.test.ts'],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
           testTimeout: 30_000,
@@ -63,9 +52,9 @@ export default defineConfig({
       },
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'git-write',
-          include: ['test/git-write.test.ts'],
+          include: ['test/domain/git/git-write.test.ts'],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
           testTimeout: 30_000,
@@ -73,9 +62,9 @@ export default defineConfig({
       },
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'git-async',
-          include: ['test/git-async.test.ts'],
+          include: ['test/domain/git/git-async.test.ts'],
           fileParallelism: false,
           sequence: { groupOrder: 1 },
           testTimeout: 30_000,
@@ -83,11 +72,11 @@ export default defineConfig({
       },
       {
         test: {
-          setupFiles: ['test/setup-i18n.ts'],
+          setupFiles: i18nSetup,
           name: 'tty',
           // PTY sessions are process/CPU heavy; serialize to avoid CI flakes
           // (OpenTUI paints + multi-session key timing races).
-          include: ['test/tty.test.ts'],
+          include: ['test/tty/tty.test.ts'],
           fileParallelism: false,
           maxConcurrency: 1,
           sequence: { groupOrder: 2 },
