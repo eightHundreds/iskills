@@ -83,11 +83,15 @@ export function promptText(
   label: string,
   initialValue = '',
   /** Optional top-left border title (same panel as tag editor). */
-  title?: string
+  title?: string,
+  /** Only the collection-remote field should pass `{ clearOnCtrlC: true }`. */
+  options?: { clearOnCtrlC?: boolean }
 ): Promise<string | undefined> {
+  const clearOnCtrlC = options?.clearOnCtrlC === true;
   return Modal.open<string | undefined>({
     footerItems: [
       { key: 'Enter', label: t('common.confirm') },
+      ...(clearOnCtrlC ? [{ key: 'Ctrl+C', label: t('common.clear') }] : []),
       { key: 'Esc', label: t('common.cancel') },
     ],
     content: (close) => (
@@ -96,6 +100,7 @@ export function promptText(
           key={label}
           label={label}
           initialValue={initialValue}
+          {...(clearOnCtrlC ? { clearOnCtrlC: true } : {})}
           onCancel={() => close(undefined)}
           onSubmit={(value) => close(value.trim())}
         />

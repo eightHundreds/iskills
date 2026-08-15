@@ -112,6 +112,9 @@ export async function mountTui(
   try {
     const useMouse = options.useMouse ?? true;
     renderer = await createCliRenderer({
+      // Renderer must not destroy() on Ctrl+C: that skips InterruptError / 130
+      // and races AppShell + host teardown. Product interrupt is AppShell.onCtrlC
+      // (or AppShell's default exit(InterruptError) when the host omits it).
       exitOnCtrlC: false,
       useMouse,
       // Hover (onMouseOver/Out) needs movement reports, not just button clicks.

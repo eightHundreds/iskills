@@ -27,6 +27,7 @@ export default defineConfig({
             'test/collection-match.test.ts',
             'test/mouse.test.ts',
             'test/ui.test.tsx',
+            'test/text-input-ctrl-c.test.ts',
             'test/footer-resolve.test.ts',
             'test/opentui-runtime.test.ts',
             'test/overlay-bridge.test.ts',

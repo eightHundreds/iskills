@@ -124,11 +124,40 @@ export async function initCollectionGit(): Promise<boolean> {
   }
 }
 
+export async function getCollectionRemote(): Promise<string | undefined> {
+  const { root } = collectionPaths();
+  if (!(await exists(join(root, '.git')))) return undefined;
+  try {
+    const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
+    if (!remotes.includes('origin')) return undefined;
+    const url = git(['-C', root, 'remote', 'get-url', 'origin']).trim();
+    return url || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function configureCollectionRemote(remote: string): Promise<void> {
-  if (!remote.trim()) throw new DomainError('git.remoteEmpty');
-  const { root } = await ensureCollection();
+  const url = remote.trim();
+  if (!url) throw new DomainError('git.remoteEmpty');
+  await initCollectionGit();
+  const { root } = collectionPaths();
   const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
-  git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', remote]);
+  git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', url]);
+}
+
+/** Remove collection `origin` when present. No-op if the repo or remote is missing. */
+export async function clearCollectionRemote(): Promise<void> {
+  const { root } = collectionPaths();
+  if (!(await exists(join(root, '.git')))) return;
+  let remotes: string[] = [];
+  try {
+    remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
+  } catch {
+    return;
+  }
+  if (!remotes.includes('origin')) return;
+  git(['-C', root, 'remote', 'remove', 'origin']);
 }
 
 export async function cloneGitSource(input: string): Promise<GitImportContext> {

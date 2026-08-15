@@ -1,21 +1,28 @@
 
 import { useInput } from '../components/use-input.js';
+import {
+  consumeFocusedTextInputCtrlC,
+  textInputHasFocus,
+} from '../components/text-input-ctrl-c.js';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MouseProvider } from '../components/mouse/index.js';
 import {
   OverlayHost,
   useOverlayBusy,
 } from '../overlay/host.js';
+import { useApp } from '../tui/hooks.js';
 import { OverlayOnlyFooter } from './footer.js';
+import { InterruptError } from './terminal.js';
 
 /**
  * Pure interactive shell: first-frame visibility + global key callbacks.
  * Composes {@link OverlayHost} for Layer / Modal slots — does not own overlay logic.
  *
- * Does **not** call `exit` or throw InterruptError.
- * Hosts (browser entry / overlay bootstrap) decide how to settle or tear down.
+ * Hosts may pass `onCtrlC` to abort in-flight work before tearing down.
+ * If omitted, Ctrl+C still interrupts the session (`InterruptError` → exit 130).
  *
- * - Ctrl+C → `onCtrlC` only
+ * - Ctrl+C → interrupt, except an opt-in text field (collection remote) may
+ *   consume the first press to clear; a second press within 1s still interrupts
  * - Esc → `onCancel` when `cancelOnEscape` and overlay is not busy
  * - bottomBar defaults to overlay-only footer (outside Layer replace region)
  */
@@ -96,10 +103,16 @@ function AppShellBody({
   children: ReactNode;
 }): ReactNode {
   const busy = useOverlayBusy();
+  const { exit } = useApp();
 
-  useInput((input, key) => {
+  useInput((input, key, event) => {
     if (key.ctrl && input === 'c') {
-      onCtrlC?.();
+      if (textInputHasFocus()) {
+        if (event.eventType === 'repeat' || event.repeated) return;
+        if (consumeFocusedTextInputCtrlC()) return;
+      }
+      if (onCtrlC) onCtrlC();
+      else exit(new InterruptError());
       return;
     }
     if (!busy && cancelOnEscape && key.escape) {

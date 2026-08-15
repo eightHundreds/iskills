@@ -4,6 +4,7 @@ export const zh = {
   'common.confirm': '确认',
   'common.cancel': '取消',
   'common.close': '关闭',
+  'common.clear': '清空',
   'common.none': '无',
   'common.noneIndented': '  无',
   'common.help': '帮助',
@@ -181,6 +182,9 @@ import / add 选项：
   'config.settingsTitle': ' 设置 ',
   'config.settingsFooter': '←→ 切换 · Esc 关闭',
   'config.changeValue': '切换',
+  'config.editValue': '编辑',
+  'config.remoteTitle': '收藏夹远程',
+  'config.remoteUnset': '未设置',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': '不安全的技能名称：{name}',
