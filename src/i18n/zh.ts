@@ -23,6 +23,7 @@ export const zh = {
   'common.detail': '详情',
   'common.view': '查看',
   'common.collect': '收藏',
+  'common.openSource': '打开来源',
   'common.more': '更多',
   'common.tags': '标签',
   'common.jumpTag': '跳转',
@@ -54,6 +55,7 @@ export const zh = {
   'common.location': '位置',
   'common.path': '路径',
   'common.collectionStatus': '收藏状态',
+  'common.reference': '引用',
   'common.relatedLocations': '关联位置',
   'common.all': '全部',
   'common.untagged': '未标签',
@@ -318,6 +320,7 @@ export const zh = {
   'footer.checkFailed': '{count} 个检查失败',
   'footer.checkingUpdates': '检查更新中',
   'footer.healthCount': '⚠ {count}',
+  'footer.errorTitle': '错误',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': '收藏夹 Git rebase 未完成',
@@ -384,6 +387,7 @@ export const zh = {
     '收藏夹有已选则添加；无已选：窄屏打开详情，三栏进入详情列（项目/全局三栏右栏仅预览，窄屏 Enter 查看）',
   'browser.helpCollect': '收藏与安装',
   'browser.helpCollectImport': '加入收藏夹（项目 / 全局已选本地技能）',
+  'browser.helpCollectSource': '从 GitHub 来源进入仓库并导入',
   'browser.helpMaintain': '维护',
   'browser.helpMaintainTag': '批量加标签（收藏夹已选）',
   'browser.helpMaintainUpdate': '更新：已选可更新者，否则当前项',

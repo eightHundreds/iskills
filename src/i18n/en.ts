@@ -25,6 +25,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.detail': 'Detail',
   'common.view': 'View',
   'common.collect': 'Collect',
+  'common.openSource': 'Opening source',
   'common.more': 'More',
   'common.tags': 'Tags',
   'common.jumpTag': 'Jump',
@@ -56,6 +57,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.location': 'Location',
   'common.path': 'Path',
   'common.collectionStatus': 'Collection status',
+  'common.reference': 'Reference',
   'common.relatedLocations': 'Related locations',
   'common.all': 'All',
   'common.untagged': 'Untagged',
@@ -344,6 +346,7 @@ Options:
   'footer.checkFailed': '{count} check(s) failed',
   'footer.checkingUpdates': 'Checking for updates',
   'footer.healthCount': '⚠ {count}',
+  'footer.errorTitle': 'Error',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': 'Collection Git rebase in progress',
@@ -415,6 +418,7 @@ Options:
   'browser.helpCollect': 'Collect & install',
   'browser.helpCollectImport':
     'Add to collection (project / global selected local skills)',
+  'browser.helpCollectSource': 'Open a GitHub source and import skills',
   'browser.helpMaintain': 'Maintain',
   'browser.helpMaintainTag': 'Batch tag (selected in collection)',
   'browser.helpMaintainUpdate':

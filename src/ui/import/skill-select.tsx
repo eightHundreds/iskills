@@ -1,3 +1,4 @@
+import type { MouseEvent } from '@opentui/core';
 import { Text, useModalChrome, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -7,7 +8,7 @@ import { collectionMatchLabels, collectionMatchMarkers } from '../collection-mat
 import { termcnColors } from '../components/termcn.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
-import { toggleSelection } from '../components/options.js';
+import { toggleSelection, wrapListIndex } from '../components/options.js';
 import { isReturn } from '../components/text.js';
 import { t } from '../../i18n/index.js';
 
@@ -192,6 +193,24 @@ export function SkillMultiSelect<T extends Skill>({
     setCursorByAgent((prev) => ({ ...prev, [activeAgent]: next }));
   };
 
+  const moveCursor = (delta: number) => {
+    setCursorByAgent((prev) => {
+      const length = options.length;
+      if (!length) return prev;
+      const current = Math.max(0, Math.min(prev[activeAgent] ?? 0, length - 1));
+      return { ...prev, [activeAgent]: wrapListIndex(current, length, delta) };
+    });
+  };
+
+  const onListScroll = (event: MouseEvent) => {
+    const info = event.scroll;
+    if (!info) return;
+    const steps = Math.max(1, Math.abs(info.delta) || 1);
+    if (info.direction === 'down') moveCursor(steps);
+    else if (info.direction === 'up') moveCursor(-steps);
+    event.stopPropagation();
+  };
+
   const toggleCurrent = () => {
     const option = options[clampedCursor];
     if (!option) return;
@@ -263,11 +282,11 @@ export function SkillMultiSelect<T extends Skill>({
         setFocus('tabs');
         return;
       }
-      setCursor(Math.max(0, clampedCursor - 1));
+      moveCursor(-1);
       return;
     }
     if (key.downArrow) {
-      setCursor(options.length ? (clampedCursor + 1) % options.length : 0);
+      moveCursor(1);
       return;
     }
 
@@ -340,6 +359,7 @@ export function SkillMultiSelect<T extends Skill>({
             backgroundColor={colors.surface}
             paddingX={1}
             overflow="hidden"
+            onMouseScroll={onListScroll}
           >
             {visible.length ? (
               visible.map((option, visibleIndex) => {
@@ -381,7 +401,7 @@ export function SkillMultiSelect<T extends Skill>({
                         <Text
                           wrap="truncate-end"
                           bold={isCursor}
-                          color={colors.body}
+                          color={isCursor ? colors.primary : colors.body}
                           backgroundColor={colors.surface}
                         >
                           {option.skill.name}

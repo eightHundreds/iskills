@@ -4,10 +4,12 @@ import { useState } from 'react';
 import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { useOverlayBusy } from '../overlay/host.js';
 import { termcnColors } from '../components/termcn.js';
-import { detailContentLines } from './format.js';
+import { Clickable } from '../components/mouse/clickable.js';
+import { isReturn } from '../components/text.js';
+import { detailContentLines, isGitHubSourceUrl } from './format.js';
 import { detailFrameDimensions } from './layout.js';
 
-export type DetailAction = 'note' | 'tags' | 'source' | 'back';
+export type DetailAction = 'note' | 'tags' | 'source' | 'openSource' | 'back';
 
 /** Fullscreen skill detail phase view. */
 export function Detail({
@@ -33,6 +35,7 @@ export function Detail({
   const source = metadata.source.url
     ? `${metadata.source.url}${metadata.source.ref ? ` @ ${metadata.source.ref}` : ''}`
     : metadata.source.type;
+  const canOpenSource = collection && isGitHubSourceUrl(metadata.source.url);
   const lines = detailContentLines(skill, metadata, links, collection, source, detailFrame.width);
   const viewportHeight = Math.max(1, detailFrame.height - 2);
   const maxOffset = Math.max(0, lines.length - viewportHeight);
@@ -60,6 +63,7 @@ export function Detail({
       if (collection && input === 'n') return finish('note');
       if (collection && input === 't') return finish('tags');
       if (collection && input === 's') return finish('source');
+      if (canOpenSource && isReturn(input, key.return)) return finish('openSource');
     },
     { isActive: !shellBusy }
   );
@@ -75,14 +79,27 @@ export function Detail({
         width={detailFrame.width}
         overflow="hidden"
       >
-        {visibleLines.map((line, index) => (
-          <Text
-            key={`${offset + index}:${line.label ?? ''}:${line.value}`}
-            {...(line.muted ? { color: termcnColors.muted } : {})}
-          >
-            {line.label && <Text bold>{line.label}</Text>}{line.value}
-          </Text>
-        ))}
+        {visibleLines.map((line, index) => {
+          const text = (
+            <Text
+              key={`${offset + index}:${line.label ?? ''}:${line.value}`}
+              {...(line.muted ? { color: termcnColors.muted } : {})}
+            >
+              {line.label && <Text bold>{line.label}</Text>}{line.value}
+            </Text>
+          );
+          if (line.field === 'source' && canOpenSource) {
+            return (
+              <Clickable
+                key={`${offset + index}:source`}
+                onClick={() => finish('openSource')}
+              >
+                {text}
+              </Clickable>
+            );
+          }
+          return text;
+        })}
       </box>
     </box>
   );

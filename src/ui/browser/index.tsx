@@ -9,6 +9,7 @@ import {
   adoptMissingCollectionMetadata,
   handleBrowserResult,
   handleDetailAction,
+  handleOpenCollectedGitHubSource,
   loadBrowserData,
   loadDetailContext,
 } from '../../commands/browser-actions.js';
@@ -246,6 +247,16 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
         }}
         onAction={async (context, action) => {
           try {
+            if (action === 'openSource') {
+              const count = await handleOpenCollectedGitHubSource(actionHost, context.skill);
+              await reloadData();
+              invalidateUpdateCheck(store);
+              if (count > 0) {
+                setPhase('browse');
+                setDetail(null);
+              }
+              return;
+            }
             await handleDetailAction(actionHost, context, action);
             await reloadData();
             const current = store.get(detailContextAtom);
