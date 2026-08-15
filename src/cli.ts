@@ -8,6 +8,7 @@ import {
   commandSearch,
   printHelp,
 } from './commands/index.js';
+import { commandMcp } from './commands/mcp.js';
 import { commitCollection, ensureCollection } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
 import { DomainError } from './domain/errors.js';
@@ -25,6 +26,7 @@ const PUBLIC_COMMANDS = new Set([
   'import',
   'init',
   'config',
+  'mcp',
 ]);
 
 async function run(argv: string[]): Promise<void> {
@@ -43,6 +45,7 @@ async function run(argv: string[]): Promise<void> {
   }
   if (command === 'search') return commandSearch(rest);
   if (command === 'config') return commandConfig(rest);
+  if (command === 'mcp') return commandMcp(rest);
 
   if (!command && (!process.stdin.isTTY || !process.stdout.isTTY)) {
     throw new DomainError('cli.mainTtyRequired');

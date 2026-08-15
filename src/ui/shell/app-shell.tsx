@@ -1,6 +1,5 @@
 
 import { useInput } from '../components/use-input.js';
-import { consumeFocusedTextInputCtrlC } from '../components/text-input-ctrl-c.js';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MouseProvider } from '../components/mouse/index.js';
 import {
@@ -16,8 +15,7 @@ import { OverlayOnlyFooter } from './footer.js';
  * Does **not** call `exit` or throw InterruptError.
  * Hosts (browser entry / overlay bootstrap) decide how to settle or tear down.
  *
- * - Ctrl+C → `onCtrlC`, except a focused text input consumes the first press
- *   (clear) and only a second press within 1s interrupts
+ * - Ctrl+C → `onCtrlC` only
  * - Esc → `onCancel` when `cancelOnEscape` and overlay is not busy
  * - bottomChrome defaults to overlay-only footer (outside Layer replace region)
  */
@@ -99,12 +97,8 @@ function AppShellBody({
 }): ReactNode {
   const busy = useOverlayBusy();
 
-  useInput((input, key, event) => {
+  useInput((input, key) => {
     if (key.ctrl && input === 'c') {
-      event.preventDefault();
-      // Auto-repeat must not count as the second press.
-      if (event.eventType === 'repeat' || event.repeated) return;
-      if (consumeFocusedTextInputCtrlC()) return;
       onCtrlC?.();
       return;
     }

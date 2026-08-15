@@ -5,14 +5,6 @@ export function textWidth(value: string): number {
   return stringWidth(value);
 }
 
-/** Fit `value` into `maxWidth` columns, appending … when truncated. */
-export function ellipsizeColumns(value: string, maxWidth: number): string {
-  if (maxWidth <= 0) return '';
-  if (textWidth(value) <= maxWidth) return value;
-  if (maxWidth === 1) return '…';
-  return `${sliceColumns(value, 0, maxWidth - 1)}…`;
-}
-
 export function sliceColumns(value: string, start: number, end: number): string {
   let column = 0;
   let result = '';

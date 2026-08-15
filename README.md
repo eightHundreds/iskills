@@ -93,7 +93,7 @@ In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) liv
 | `iskills import [source]` | Import a local path or Git URL |
 | `iskills add [skill…]` | Install from the collection into a project or global agent dir |
 | `iskills init` | Initialize Git for the collection (optional remote) |
-| `iskills config` | Configure UI preferences (language, collection Git remote) |
+| `iskills config` | Configure UI preferences (language) |
 
 Common flags (see `iskills help <command>` for the full set):
 

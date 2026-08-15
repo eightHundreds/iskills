@@ -1,7 +1,7 @@
 import type { MouseEvent } from '@opentui/core';
 import { Text, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
+import { useAtom, useAtomValue, useStore } from 'jotai';
 import {
   useCallback,
   useEffect,
@@ -21,7 +21,6 @@ import type {
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import { presentHealthAlerts } from './health.js';
 import {
-  browserDetailFieldAtom,
   browserFilterAtom,
   browserGroupJumpAtom,
   browserHealthAtom,
@@ -48,7 +47,6 @@ import {
   collectionCategoryLines,
   collectionListColumnLines,
   detailEditableFields,
-  detailEntryFieldIndex,
   detailLabelWidth,
   flatRows,
   focusAfterDownFromAgents,
@@ -632,12 +630,11 @@ export function Browser({
   const shellBusy = useOverlayBusy();
   const store = useStore();
   // Block list input while a long action runs (update/materialize skill row or collection sync).
-  const actionBusy = Boolean(updatingSkillName) || Boolean(workingAction);
+  const actionBusy = Boolean(updatingSkillName) || workingAction === 'sync';
   // Local braille spinner only while a skill is updating (not a global busy overlay).
   const updatingFrame = useSpinnerFrame(Boolean(updatingSkillName));
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
-  const setDetailField = useSetAtom(browserDetailFieldAtom);
   const navigationRef = useRef(navigation);
   navigationRef.current = navigation;
   /** Keep ref in lockstep so multi-key stdin never reads a stale focus/tab. */
@@ -877,16 +874,11 @@ export function Browser({
     (focus === 'list' || focus === 'detail') && currentRow?.type === 'skill'
       ? currentRow.skill
       : undefined;
-  const detailSkill =
-    currentRow?.type === 'skill' ? currentRow.skill : undefined;
-  const detailFields = detailEditableFields(tab === 'collection', detailSkill);
+  const detailFields = detailEditableFields(tab === 'collection');
   const activeDetailField =
     focus === 'detail' && detailFields.length
       ? detailFields[Math.max(0, Math.min(detailFieldIndex, detailFields.length - 1))]
       : undefined;
-  useEffect(() => {
-    setDetailField(focus === 'detail' ? activeDetailField : undefined);
-  }, [focus, activeDetailField, setDetailField]);
   useEffect(() => {
     if ((focus === 'detail' || focus === 'tags') && !useMasterDetail) setFocus('list');
   }, [focus, useMasterDetail, setFocus]);
@@ -1054,11 +1046,11 @@ export function Browser({
         }
         return;
       }
-      // Right column: move among activatable fields; Enter edits or opens GitHub source.
+      // Right column: move among editable fields (标签 / 备注); Enter opens editor.
       if (liveFocus === 'detail' || focus === 'detail') {
         const detailRow = listRows[cursorRef.current];
         const skill = detailRow?.type === 'skill' ? detailRow.skill : undefined;
-        const fields = detailEditableFields(tab === 'collection', skill);
+        const fields = detailEditableFields(tab === 'collection');
         if (key.leftArrow) return setFocus('list');
         if (key.upArrow) {
           if (!fields.length) return;
@@ -1073,7 +1065,6 @@ export function Browser({
         if (key.rightArrow) return;
         const field = fields[detailFieldIndexRef.current] ?? fields[0];
         if (skill && field && (key.return || input.includes('\r') || input.includes('\n'))) {
-          if (field === 'source') return finish({ type: 'openSource', skill });
           if (field === 'tags') return finish({ type: 'editTags', skill });
           if (field === 'note') return finish({ type: 'editNote', skill });
         }
@@ -1247,9 +1238,7 @@ export function Browser({
       // Project / global: right pane is preview only — no → focus/open detail.
       if (key.rightArrow && row?.type === 'skill' && tab === 'collection') {
         if (useMasterDetail) {
-          setDetailFieldIndex(
-            detailEntryFieldIndex(detailEditableFields(true, row.skill))
-          );
+          setDetailFieldIndex(0);
           return setFocus('detail');
         }
         if (!useBrowseHome) {
@@ -1264,9 +1253,7 @@ export function Browser({
         // Project/global master-detail: peek-only — no Enter open.
         if (useMasterDetail) {
           if (tab === 'collection' && row?.type === 'skill') {
-            setDetailFieldIndex(
-              detailEntryFieldIndex(detailEditableFields(true, row.skill))
-            );
+            setDetailFieldIndex(0);
             return setFocus('detail');
           }
           return;
@@ -1438,10 +1425,6 @@ export function Browser({
               if (!row?.field) return;
               const index = detailFields.indexOf(row.field);
               if (index < 0) return;
-              if (row.field === 'source' && peekSkill) {
-                finish({ type: 'openSource', skill: peekSkill });
-                return;
-              }
               setDetailFieldIndex(index);
               setFocus('detail');
             }}

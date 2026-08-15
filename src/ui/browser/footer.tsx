@@ -12,11 +12,8 @@ import { masterDetailLayout } from './layout.js';
 import { t } from '../../i18n/index.js';
 import type { FooterItem } from '../footer/types.js';
 import { presentHealthAlerts } from './health.js';
-import { isGitHubSourceUrl } from './format.js';
-import { Modal } from '../overlay/static.js';
 import {
   browserDataAtom,
-  browserDetailFieldAtom,
   browserFilterAtom,
   browserGroupJumpAtom,
   browserHealthAtom,
@@ -51,7 +48,6 @@ export function BrowserShellFooter(): ReactNode {
   const groupJump = useAtomValue(browserGroupJumpAtom);
   const detail = useAtomValue(detailContextAtom);
   const tagFilter = useAtomValue(browserTagFilterAtom);
-  const detailField = useAtomValue(browserDetailFieldAtom);
   const updateCheck = useAtomValue(browserUpdateCheckAtom);
   const healthAlerts = useAtomValue(browserHealthAtom);
   const setFilter = useSetAtom(browserFilterAtom);
@@ -90,9 +86,6 @@ export function BrowserShellFooter(): ReactNode {
   if (!overlayItems && phase === 'detail' && detail) {
     const items: FooterItem[] = [];
     if (detail.collection) {
-      if (isGitHubSourceUrl(detail.metadata.source.url)) {
-        items.push({ key: 'Enter', label: t('common.enter') });
-      }
       items.push(
         { key: 'n', label: t('common.note') },
         { key: 't', label: t('common.tags') },
@@ -126,8 +119,7 @@ export function BrowserShellFooter(): ReactNode {
           data,
           updateCheck,
           masterDetail,
-          tagFilter,
-          detailField
+          tagFilter
         )
       : null;
 
@@ -210,16 +202,8 @@ export function BrowserShellFooter(): ReactNode {
     <FooterPaint
       view={view}
       onStatusAction={(action) => {
-        if (action === 'health') {
-          void presentHealthAlerts(healthAlerts);
-          return;
-        }
-        if (action === 'error' && status.text) {
-          void Modal.info({
-            title: t('footer.errorTitle'),
-            content: [status.text],
-          });
-        }
+        if (action !== 'health') return;
+        void presentHealthAlerts(healthAlerts);
       }}
     />
   );

@@ -4,7 +4,6 @@ export const zh = {
   'common.confirm': '确认',
   'common.cancel': '取消',
   'common.close': '关闭',
-  'common.clear': '清空',
   'common.none': '无',
   'common.noneIndented': '  无',
   'common.help': '帮助',
@@ -23,7 +22,6 @@ export const zh = {
   'common.detail': '详情',
   'common.view': '查看',
   'common.collect': '收藏',
-  'common.openSource': '打开来源',
   'common.more': '更多',
   'common.tags': '标签',
   'common.jumpTag': '跳转',
@@ -55,7 +53,6 @@ export const zh = {
   'common.location': '位置',
   'common.path': '路径',
   'common.collectionStatus': '收藏状态',
-  'common.reference': '引用',
   'common.relatedLocations': '关联位置',
   'common.all': '全部',
   'common.untagged': '未标签',
@@ -131,9 +128,31 @@ export const zh = {
   'help.config': `用法：
   iskills config
 
-打开配置界面，设置 UI 语言与收藏夹远程 Git 地址。
+打开配置界面，设置 UI 语言（跟随系统 / 中文 / English）。
 
 选项：
+  -h, --help         显示帮助
+`,
+  'help.mcp': `用法：
+  iskills mcp
+  iskills mcp create [名称]
+  iskills mcp import [选项]
+  iskills mcp add [名称...] [选项]
+
+管理 MCP 配置收藏夹。无子命令时打开项目 / 全局 / 收藏夹浏览器。
+
+create 选项：
+  --transport <stdio|http|sse>  传输
+  --command <命令>              stdio 启动命令
+  --url <URL>                   http/sse 地址
+  --args <参数>                 可重复
+
+import / add 选项：
+  -g, --global       全局作用域（默认当前项目）
+  --agent <名称>     限定 Agent，可重复
+  --all              导入全部发现项
+  --replace          替换同名收藏
+  -y, --yes          跳过确认
   -h, --help         显示帮助
 `,
   'help.root': `Skill 收藏夹
@@ -147,7 +166,8 @@ export const zh = {
   create [名称]      在收藏夹新建技能并打开目录
   import [来源]      导入本地路径或 Git 来源
   init               初始化收藏夹 Git
-  config             打开配置界面（UI 语言、远程 Git 等）
+  config             打开配置界面（UI 语言等）
+  mcp                MCP 配置收藏夹
 
 选项：
   -h, --help         显示帮助（可用 iskills help <命令>）
@@ -158,12 +178,9 @@ export const zh = {
   'config.localeSystem': '跟随系统',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
-  'config.remoteTitle': '收藏夹远程',
-  'config.remoteUnset': '未设置',
   'config.settingsTitle': ' 设置 ',
   'config.settingsFooter': '←→ 切换 · Esc 关闭',
   'config.changeValue': '切换',
-  'config.editValue': '编辑',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': '不安全的技能名称：{name}',
@@ -202,6 +219,63 @@ export const zh = {
   'domain.mergeNotValidSkill': '合并结果不是有效技能：{name}',
   'domain.opDelete': '删除',
   'domain.opMaterialize': '转换',
+  'mcp.unsafeName': '不安全的 MCP 名称：{name}',
+  'mcp.sameNameExistsReplace': '收藏夹已存在同名 MCP：{name}；请确认后使用 --replace',
+  'mcp.missingInCollection': '收藏夹中不存在 MCP：{name}',
+  'mcp.unknownAgent': '未知 Agent：{name}',
+  'mcp.notWritable': '无法写入 Agent {name} 的 MCP 配置',
+  'mcp.borrowedNotMutable': '不能从借来的位置改源配置：{name}',
+  'mcp.probeUnsupported': '只有 http 传输支持试探：{name}',
+  'mcp.noEntries': '没有可导入的 MCP 配置',
+  'mcp.specifyNames': '请指定 MCP 名称',
+  'mcp.useYesToConfirm': '请使用 --yes 确认',
+  'mcp.useAllOrInteractive': '请使用 --all 或交互选择要导入的 MCP',
+  'mcp.createNeedsFields': '创建 MCP 需要传输和启动方式',
+  'mcp.ttyRequired': 'MCP 界面需要 stdin 和 stdout TTY；当前终端不支持。',
+  'cli.unknownMcpCommand': '未知 mcp 子命令：{command}',
+  'mcp.namePrompt': 'MCP 名称：',
+  'mcp.transportPrompt': '传输',
+  'mcp.commandPrompt': '命令（含参数）',
+  'mcp.urlPrompt': 'URL',
+  'mcp.keysPrompt': '密钥键名（可选，逗号分隔）',
+  'mcp.created': '已创建 MCP：{name}',
+  'mcp.selectImport': '选择要导入的 MCP',
+  'mcp.importConfirm': '导入 {count} 条到收藏夹？',
+  'mcp.replaceConfirm': '替换同名收藏 {name} 吗？',
+  'mcp.alreadyCollectedAs': '已收藏为 {name}，未重复导入。',
+  'mcp.importedCount': '已导入 {count} 条 MCP。',
+  'mcp.selectAdd': '选择要安装的 MCP',
+  'mcp.selectAgents': '选择目标 Agent',
+  'mcp.addConfirm': '安装 {count} 条 MCP？',
+  'mcp.addedCount': '已安装 {count} 处。',
+  'mcp.borrowedMark': '↪',
+  'mcp.fromSource': '来自 {source}',
+  'mcp.toggle': '开关',
+  'mcp.login': '登录',
+  'mcp.rename': '改名',
+  'mcp.enabled': '启用',
+  'mcp.disabled': '停用',
+  'mcp.owned': '自有',
+  'mcp.borrowed': '借来',
+  'mcp.transport': '传输',
+  'mcp.endpoint': '端点',
+  'mcp.nativeKey': '位置键',
+  'mcp.probe': '试探',
+  'mcp.probeReachable': '可达',
+  'mcp.probeNeedsAuth': '要认证',
+  'mcp.probeFailed': '失败',
+  'mcp.emptyCollection': '收藏夹还没有 MCP',
+  'mcp.emptyLocations': '这里没有 MCP 配置',
+  'mcp.deleteCollectionConfirm': '从收藏夹移除 {name}？已装位置会保留。',
+  'mcp.deleteLocationConfirm': '从 {agent} 删除 {name}？',
+  'mcp.updateDriftConfirm': '{agent} 上的 {name} 与收藏夹不一致，覆盖吗？',
+  'mcp.tokenPrompt': '密钥（如 Bearer token）',
+  'mcp.headerPrompt': 'Header 名',
+  'mcp.loginSaved': '已保存登录凭证',
+  'mcp.renamed': '已改名为 {name}',
+  'config.mcpSecretsTitle': 'MCP 密钥进 Git',
+  'config.mcpSecretsYes': '是',
+  'config.mcpSecretsNo': '否（默认）',
 
   // ── git ─────────────────────────────────────────────────────────────────
   'git.initFailed': '无法初始化收藏夹 Git：{error}',
@@ -320,7 +394,6 @@ export const zh = {
   'footer.checkFailed': '{count} 个检查失败',
   'footer.checkingUpdates': '检查更新中',
   'footer.healthCount': '⚠ {count}',
-  'footer.errorTitle': '错误',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': '收藏夹 Git rebase 未完成',
@@ -387,7 +460,6 @@ export const zh = {
     '收藏夹有已选则添加；无已选：窄屏打开详情，三栏进入详情列（项目/全局三栏右栏仅预览，窄屏 Enter 查看）',
   'browser.helpCollect': '收藏与安装',
   'browser.helpCollectImport': '加入收藏夹（项目 / 全局已选本地技能）',
-  'browser.helpCollectSource': '从 GitHub 来源进入仓库并导入',
   'browser.helpMaintain': '维护',
   'browser.helpMaintainTag': '批量加标签（收藏夹已选）',
   'browser.helpMaintainUpdate': '更新：已选可更新者，否则当前项',

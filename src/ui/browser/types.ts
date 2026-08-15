@@ -8,10 +8,7 @@ export type BrowserTab = 'project' | 'collection' | 'global';
 /** tags/list/detail = 3-column body; detail = right peek field focus. */
 export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
 /** Focusable fields in the master-detail right column (collection only). */
-export type DetailFieldId = 'source' | 'tags' | 'note';
-
-/** In-browser long action shown in the footer right slot. */
-export type BrowserWorkingAction = 'update' | 'materialize' | 'sync' | 'openSource';
+export type DetailFieldId = 'tags' | 'note';
 
 export interface BrowserState {
   tab: BrowserTab;
@@ -44,7 +41,6 @@ export type BrowserResult =
   | { type: 'materialize'; skills: Skill[] }
   | { type: 'installToAgents'; skills: Skill[]; scope: 'project' | 'global' }
   | { type: 'import'; skills: Skill[] }
-  | { type: 'openSource'; skill: Skill }
   | {
       type: 'open';
       skill: Skill;
@@ -72,7 +68,7 @@ export interface BrowserViewInput {
   checkUpdates: BrowserUpdateChecker;
   updatingSkillName?: string | undefined;
   updatingProgress?: { current: number; total: number } | undefined;
-  workingAction?: BrowserWorkingAction;
+  workingAction?: 'update' | 'materialize' | 'sync';
 }
 
 export type BrowserAppPhase = 'browse' | 'detail';
@@ -97,7 +93,7 @@ export interface WorkingProgressSnapshot {
   skillName: string;
   current: number;
   total: number;
-  workingAction: BrowserWorkingAction;
+  workingAction: 'update' | 'materialize' | 'sync';
 }
 
 export interface DetailViewContext {
@@ -132,7 +128,7 @@ export interface BrowserActionHost {
       skillName: string;
       current: number;
       total: number;
-      workingAction: BrowserWorkingAction;
+      workingAction: 'update' | 'materialize' | 'sync';
     } | null
   ) => void;
   setStatus: (text: string, transient: boolean, kind?: 'normal' | 'error') => void;

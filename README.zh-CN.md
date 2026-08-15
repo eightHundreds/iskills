@@ -93,7 +93,7 @@ iskills config
 | `iskills import [来源]` | 导入本地路径或 Git URL |
 | `iskills add [技能…]` | 从收藏夹安装到项目或 Agent 全局目录 |
 | `iskills init` | 初始化收藏夹 Git（可选远程） |
-| `iskills config` | 配置界面偏好（UI 语言、收藏夹远程 Git） |
+| `iskills config` | 配置界面偏好（UI 语言） |
 
 常用参数（完整列表见 `iskills help <命令>`）：
 

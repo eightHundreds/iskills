@@ -8,8 +8,6 @@ import {
   baselinePath,
   clearDirectory,
   collectionPaths,
-  collectionGitAddPaths,
-  collectionGitStatusPaths,
   commitCollection,
   copyDirectoryContents,
   errorMessage,
@@ -117,7 +115,7 @@ export async function initCollectionGit(): Promise<boolean> {
       } catch {}
       if (!value) git(['-C', root, 'config', key, fallback]);
     }
-    git(['-C', root, 'add', '-A', '--', ...(await collectionGitAddPaths(root))]);
+    git(['-C', root, 'add', '-A', '--', 'skills', 'metadata', '.gitignore']);
     git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
     return true;
   } catch (error) {
@@ -126,45 +124,11 @@ export async function initCollectionGit(): Promise<boolean> {
   }
 }
 
-/** Current collection `origin` URL, if configured. */
-export async function getCollectionRemote(): Promise<string | undefined> {
-  const { root } = collectionPaths();
-  if (!(await exists(join(root, '.git')))) return undefined;
-  try {
-    const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
-    if (!remotes.includes('origin')) return undefined;
-    const url = git(['-C', root, 'remote', 'get-url', 'origin']).trim();
-    return url || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Set collection `origin` to a non-empty URL.
- * Initializes the collection Git repo when needed (same as `iskills init` without remote).
- */
 export async function configureCollectionRemote(remote: string): Promise<void> {
-  const url = remote.trim();
-  if (!url) throw new DomainError('git.remoteEmpty');
-  await initCollectionGit();
-  const { root } = collectionPaths();
+  if (!remote.trim()) throw new DomainError('git.remoteEmpty');
+  const { root } = await ensureCollection();
   const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
-  git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', url]);
-}
-
-/** Remove collection `origin` when present. No-op if the repo or remote is missing. */
-export async function clearCollectionRemote(): Promise<void> {
-  const { root } = collectionPaths();
-  if (!(await exists(join(root, '.git')))) return;
-  let remotes: string[] = [];
-  try {
-    remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
-  } catch {
-    return;
-  }
-  if (!remotes.includes('origin')) return;
-  git(['-C', root, 'remote', 'remove', 'origin']);
+  git(['-C', root, 'remote', remotes.includes('origin') ? 'set-url' : 'add', 'origin', remote]);
 }
 
 export async function cloneGitSource(input: string): Promise<GitImportContext> {
@@ -393,7 +357,9 @@ export async function backgroundCollectionSync(): Promise<void> {
       'status',
       '--porcelain',
       '--',
-      ...collectionGitStatusPaths(),
+      'skills',
+      'metadata',
+      '.gitignore',
     ]);
     if (currentHead !== localHead || dirty) return;
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
@@ -624,7 +590,9 @@ async function foregroundCollectionSync(): Promise<void> {
       'status',
       '--porcelain',
       '--',
-      ...collectionGitStatusPaths(),
+      'skills',
+      'metadata',
+      '.gitignore',
     ]);
     if (currentHead !== localHead || dirty) {
       throw new DomainError('git.syncFailed', {

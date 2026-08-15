@@ -38,12 +38,6 @@ export function resolveOptionValues<T>(options: Option<T>[], values: string[]): 
   });
 }
 
-/** Circular list index; works for negative deltas. */
-export function wrapListIndex(index: number, length: number, delta: number): number {
-  if (length <= 0) return 0;
-  return ((index + delta) % length + length) % length;
-}
-
 export function resolveOptionValue<T>(options: Option<T>[], value: string): T | undefined {
   const index = Number(value);
   return options[index]?.value;

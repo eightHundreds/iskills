@@ -6,7 +6,6 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.confirm': 'Confirm',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
-  'common.clear': 'Clear',
   'common.none': 'None',
   'common.noneIndented': '  None',
   'common.help': 'Help',
@@ -25,7 +24,6 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.detail': 'Detail',
   'common.view': 'View',
   'common.collect': 'Collect',
-  'common.openSource': 'Opening source',
   'common.more': 'More',
   'common.tags': 'Tags',
   'common.jumpTag': 'Jump',
@@ -57,7 +55,6 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.location': 'Location',
   'common.path': 'Path',
   'common.collectionStatus': 'Collection status',
-  'common.reference': 'Reference',
   'common.relatedLocations': 'Related locations',
   'common.all': 'All',
   'common.untagged': 'Untagged',
@@ -136,9 +133,31 @@ Options:
   'help.config': `Usage:
   iskills config
 
-Open the config UI to set UI language and the collection Git remote.
+Open the config UI to set UI language (follow system / Chinese / English).
 
 Options:
+  -h, --help         Show help
+`,
+  'help.mcp': `Usage:
+  iskills mcp
+  iskills mcp create [name]
+  iskills mcp import [options]
+  iskills mcp add [names...] [options]
+
+Manage the MCP config collection. With no subcommand, opens the project / global / collection browser.
+
+create options:
+  --transport <stdio|http|sse>  Transport
+  --command <cmd>               stdio command
+  --url <URL>                   http/sse URL
+  --args <arg>                  Repeatable
+
+import / add options:
+  -g, --global       Global scope (default: current project)
+  --agent <name>     Limit to agent(s); repeatable
+  --all              Import every discovered entry
+  --replace          Replace same-name collection entry
+  -y, --yes          Skip confirmation
   -h, --help         Show help
 `,
   'help.root': `Skill collection
@@ -152,7 +171,8 @@ Commands:
   create [name]      Create a new skill in the collection and open it
   import [source]    Import a local path or Git source
   init               Initialize collection Git
-  config             Open config UI (UI language, Git remote, …)
+  config             Open config UI (UI language, …)
+  mcp                MCP config collection
 
 Options:
   -h, --help         Show help (or: iskills help <command>)
@@ -163,12 +183,9 @@ Options:
   'config.localeSystem': 'Follow system',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
-  'config.remoteTitle': 'Collection remote',
-  'config.remoteUnset': 'Not set',
   'config.settingsTitle': ' Settings ',
   'config.settingsFooter': '←→ change · Esc close',
   'config.changeValue': 'Change',
-  'config.editValue': 'Edit',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': 'Unsafe skill name: {name}',
@@ -212,6 +229,64 @@ Options:
   'domain.mergeNotValidSkill': 'Merge result is not a valid skill: {name}',
   'domain.opDelete': 'delete',
   'domain.opMaterialize': 'materialize',
+  'mcp.unsafeName': 'Unsafe MCP name: {name}',
+  'mcp.sameNameExistsReplace':
+    'Collection already has MCP {name}; confirm and use --replace',
+  'mcp.missingInCollection': 'MCP not in collection: {name}',
+  'mcp.unknownAgent': 'Unknown agent: {name}',
+  'mcp.notWritable': 'Cannot write MCP config for agent {name}',
+  'mcp.borrowedNotMutable': 'Cannot change source config from a borrowed row: {name}',
+  'mcp.probeUnsupported': 'Only http transport can be probed: {name}',
+  'mcp.noEntries': 'No importable MCP configs',
+  'mcp.specifyNames': 'Specify an MCP name',
+  'mcp.useYesToConfirm': 'Use --yes to confirm',
+  'mcp.useAllOrInteractive': 'Use --all or choose MCPs interactively',
+  'mcp.createNeedsFields': 'Creating an MCP requires a transport and launch details',
+  'mcp.ttyRequired': 'The MCP UI needs stdin and stdout TTYs; this terminal cannot.',
+  'cli.unknownMcpCommand': 'Unknown mcp subcommand: {command}',
+  'mcp.namePrompt': 'MCP name:',
+  'mcp.transportPrompt': 'Transport',
+  'mcp.commandPrompt': 'Command (with args)',
+  'mcp.urlPrompt': 'URL',
+  'mcp.keysPrompt': 'Secret key names (optional, comma-separated)',
+  'mcp.created': 'Created MCP: {name}',
+  'mcp.selectImport': 'Select MCPs to import',
+  'mcp.importConfirm': 'Import {count} into the collection?',
+  'mcp.replaceConfirm': 'Replace collection MCP {name}?',
+  'mcp.alreadyCollectedAs': 'Already collected as {name}; skipped.',
+  'mcp.importedCount': 'Imported {count} MCP(s).',
+  'mcp.selectAdd': 'Select MCPs to install',
+  'mcp.selectAgents': 'Select target agents',
+  'mcp.addConfirm': 'Install {count} MCP(s)?',
+  'mcp.addedCount': 'Installed at {count} location(s).',
+  'mcp.borrowedMark': '↪',
+  'mcp.fromSource': 'From {source}',
+  'mcp.toggle': 'Toggle',
+  'mcp.login': 'Sign in',
+  'mcp.rename': 'Rename',
+  'mcp.enabled': 'On',
+  'mcp.disabled': 'Off',
+  'mcp.owned': 'Owned',
+  'mcp.borrowed': 'Borrowed',
+  'mcp.transport': 'Transport',
+  'mcp.endpoint': 'Endpoint',
+  'mcp.nativeKey': 'Location key',
+  'mcp.probe': 'Probe',
+  'mcp.probeReachable': 'reachable',
+  'mcp.probeNeedsAuth': 'needs auth',
+  'mcp.probeFailed': 'failed',
+  'mcp.emptyCollection': 'No MCPs in the collection yet',
+  'mcp.emptyLocations': 'No MCP configs here',
+  'mcp.deleteCollectionConfirm': 'Remove {name} from the collection? Installed locations stay.',
+  'mcp.deleteLocationConfirm': 'Delete {name} from {agent}?',
+  'mcp.updateDriftConfirm': '{name} on {agent} differs from the collection. Overwrite?',
+  'mcp.tokenPrompt': 'Secret (e.g. Bearer token)',
+  'mcp.headerPrompt': 'Header name',
+  'mcp.loginSaved': 'Saved sign-in secret',
+  'mcp.renamed': 'Renamed to {name}',
+  'config.mcpSecretsTitle': 'Put MCP secrets in Git',
+  'config.mcpSecretsYes': 'Yes',
+  'config.mcpSecretsNo': 'No (default)',
 
   // ── git ─────────────────────────────────────────────────────────────────
   'git.initFailed': 'Could not initialize collection Git: {error}',
@@ -346,7 +421,6 @@ Options:
   'footer.checkFailed': '{count} check(s) failed',
   'footer.checkingUpdates': 'Checking for updates',
   'footer.healthCount': '⚠ {count}',
-  'footer.errorTitle': 'Error',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': 'Collection Git rebase in progress',
@@ -418,7 +492,6 @@ Options:
   'browser.helpCollect': 'Collect & install',
   'browser.helpCollectImport':
     'Add to collection (project / global selected local skills)',
-  'browser.helpCollectSource': 'Open a GitHub source and import skills',
   'browser.helpMaintain': 'Maintain',
   'browser.helpMaintainTag': 'Batch tag (selected in collection)',
   'browser.helpMaintainUpdate':

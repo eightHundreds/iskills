@@ -11,7 +11,7 @@ import {
   visibleAgentGroups,
   TAG_FILTER_ALL,
 } from './format.js';
-import type { BrowserDataSnapshot, BrowserFocus, BrowserTab, DetailFieldId } from './types.js';
+import type { BrowserDataSnapshot, BrowserFocus, BrowserTab } from './types.js';
 
 export function enterActionFor(
   tab: BrowserTab,
@@ -78,8 +78,7 @@ export function computeBrowseCapabilities(
   updateCheck: { checking: boolean; updates: Set<string>; failed: number },
   masterDetail: boolean,
   /** Must match Browser `tagFilter` (default all). */
-  tagFilter: string = TAG_FILTER_ALL,
-  detailField?: DetailFieldId
+  tagFilter: string = TAG_FILTER_ALL
 ): FooterBrowseCapabilities {
   const tab = navigation.tab;
   const focus = navigation.focus;
@@ -181,12 +180,8 @@ export function computeBrowseCapabilities(
     masterDetail &&
     tab === 'collection' &&
     currentRow?.type === 'skill';
-  const detailEnterAction: FooterBrowseCapabilities['detailEnterAction'] =
-    focus === 'detail' && tab === 'collection' && currentSkill
-      ? detailField === 'source'
-        ? 'open'
-        : 'edit'
-      : null;
+  // Collection only: tags + note are editable from the right column.
+  const canEditDetailField = focus === 'detail' && tab === 'collection' && Boolean(currentSkill);
 
   // Tag jump (`g`): only when current tab has at least one group header (non-all filter source).
   const hasTagGroups = groupedRows(tabSkills, '').some((row) => row.type === 'group');
@@ -209,7 +204,7 @@ export function computeBrowseCapabilities(
     updateIsSelection,
     selectionCount: focus === 'list' ? selectionCount : 0,
     canFocusDetail,
-    detailEnterAction,
+    canEditDetailField,
     canJumpTag,
     canSync,
   };

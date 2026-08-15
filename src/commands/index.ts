@@ -63,6 +63,7 @@ function commandHelp(): Record<string, () => string> {
     import: () => t('help.import', { agents }),
     init: () => t('help.init'),
     config: () => t('help.config'),
+    mcp: () => t('help.mcp'),
   };
 }
 

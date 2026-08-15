@@ -58,10 +58,8 @@ import type {
 import {
   addSkillsToProject,
   confirmCollectionReplace,
-  importGitUrlToCollection,
   importSkillsToCollection,
   installSkillsAcrossAgents,
-  type ImportToCollectionResult,
 } from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
 
@@ -197,9 +195,6 @@ export async function handleBrowserResult(
       break;
     case 'import':
       await handleImport(host, result.skills);
-      break;
-    case 'openSource':
-      await handleOpenCollectedGitHubSource(host, result.skill);
       break;
     default:
       break;
@@ -494,58 +489,18 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
   }
 }
 
-function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionResult): void {
-  if (result.commitFailed) {
-    host.setStatus(
-      t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''),
-      false,
-      'error'
-    );
-    return;
-  }
-  if (result.count > 0) {
-    host.setStatus(t('cmd.importedShort', { count: result.count }), true, 'normal');
-  }
-}
-
-export async function handleOpenCollectedGitHubSource(
-  host: BrowserActionHost,
-  skill: Skill
-): Promise<number> {
-  const url = skill.source?.url?.trim();
-  if (!url) return 0;
-  host.setStatus('', false);
-  host.setWorkingProgress({
-    skillName: '',
-    current: 1,
-    total: 1,
-    workingAction: 'openSource',
-  });
+async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<void> {
   try {
-    const result = await importGitUrlToCollection(url, {
+    const { count, commitFailed } = await importSkillsToCollection(skills, {
       quiet: true,
       confirmReplace: confirmCollectionReplace,
     });
-    applyImportStatus(host, result);
-    return result.count;
-  } catch (error) {
-    if (error instanceof InterruptError) throw error;
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
-    return 0;
-  } finally {
-    host.setWorkingProgress(null);
-  }
-}
-
-async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<void> {
-  try {
-    applyImportStatus(
-      host,
-      await importSkillsToCollection(skills, {
-        quiet: true,
-        confirmReplace: confirmCollectionReplace,
-      })
-    );
+    if (commitFailed) {
+      // domainNotify already printed full warning to stderr; surface in TUI without 已导入.
+      host.setStatus(t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''), false, 'error');
+    } else if (count > 0) {
+      host.setStatus(t('cmd.importedShort', { count }), true, 'normal');
+    }
   } catch (error) {
     host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
   }

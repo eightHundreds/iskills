@@ -7,8 +7,8 @@ export interface FooterItem {
 
 export type FooterStatusKind = 'normal' | 'error' | 'progress';
 
-/** Right-slot status that can open a panel (health ⚠, truncated error). */
-export type FooterStatusAction = 'health' | 'error';
+/** Right-slot status that can open a panel (e.g. health ⚠). */
+export type FooterStatusAction = 'health';
 
 export type FooterView =
   | {
@@ -48,8 +48,8 @@ export interface FooterBrowseCapabilities {
   selectionCount: number;
   /** Master-detail: list can move → into the right detail column. */
   canFocusDetail?: boolean;
-  /** Detail-column Enter: edit tags/note, or open a GitHub source. */
-  detailEnterAction?: 'edit' | 'open' | null;
+  /** Detail column has an editable field under the cursor (Enter 编辑). */
+  canEditDetailField?: boolean;
   /** List: `g` jump to tag when groups exist. */
   canJumpTag?: boolean;
   /** List: `s` sync collection git when available. */
@@ -57,7 +57,7 @@ export interface FooterBrowseCapabilities {
 }
 
 export interface FooterWorkingState {
-  action: 'update' | 'materialize' | 'sync' | 'openSource';
+  action: 'update' | 'materialize' | 'sync';
   current: number;
   total: number;
 }

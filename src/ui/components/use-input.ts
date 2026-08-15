@@ -76,10 +76,9 @@ function mapKey(event: KeyEvent): { input: string; key: Key } {
 /**
  * App-level keyboard hook over OpenTUI `useKeyboard`.
  * Filters terminal mouse reports; keeps handler in a ref so listeners stay stable.
- * Third argument is the raw KeyEvent (preventDefault / stopPropagation / repeated).
  */
 export function useInput(
-  inputHandler: (input: string, key: Key, event: KeyEvent) => void,
+  inputHandler: (input: string, key: Key) => void,
   options?: { isActive?: boolean }
 ): void {
   const handlerRef = useRef(inputHandler);
@@ -93,7 +92,7 @@ export function useInput(
     if (event.eventType === 'release') return;
     const { input, key } = mapKey(event);
     if (input && isMouseInput(input)) return;
-    handlerRef.current(input, key, event);
+    handlerRef.current(input, key);
   }, []);
 
   useKeyboard(stableHandler);

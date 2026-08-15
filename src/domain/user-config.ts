@@ -1,6 +1,6 @@
 /**
- * Collection preferences at `config.json` (JSON5) in the collection root.
- * Tracked by collection Git; first-class field is UI locale preference.
+ * User preferences at `~/.config/iskills/config.json` (JSON5).
+ * First-class field: UI locale preference.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -13,10 +13,13 @@ export type LocalePreference = 'system' | 'zh' | 'en';
 export interface UserConfig {
   /** UI language: follow system locale, or force zh/en. */
   locale: LocalePreference;
+  /** When true, collection Git may track MCP secret overlay. Default false. */
+  mcpSecretsInGit?: boolean;
 }
 
 const DEFAULT_CONFIG: UserConfig = {
   locale: 'system',
+  mcpSecretsInGit: false,
 };
 
 /** Absolute path: `$XDG_CONFIG_HOME/iskills/config.json` (default `~/.config/iskills/config.json`). */
@@ -34,6 +37,7 @@ function normalizeUserConfig(raw: unknown): UserConfig {
   const record = raw as Record<string, unknown>;
   return {
     locale: normalizeLocalePreference(record.locale),
+    mcpSecretsInGit: record.mcpSecretsInGit === true,
   };
 }
 
@@ -55,6 +59,7 @@ export async function readUserConfig(): Promise<UserConfig> {
 export async function writeUserConfig(config: UserConfig): Promise<void> {
   const normalized: UserConfig = {
     locale: normalizeLocalePreference(config.locale),
+    mcpSecretsInGit: config.mcpSecretsInGit === true,
   };
   const path = userConfigPath();
   await mkdir(dirname(path), { recursive: true });

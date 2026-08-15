@@ -2,7 +2,7 @@
  * Pure footer view resolver (issue #7).
  * Priority: overlay → filter → (suppressed) → working → browse.
  */
-import { ellipsizeColumns, textWidth } from '../components/terminal-layout.js';
+import { textWidth, sliceColumns } from '../components/terminal-layout.js';
 import type {
   FooterBrowseCapabilities,
   FooterItem,
@@ -83,8 +83,7 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   }
   if (browse.focus === 'detail') {
     const items: FooterItem[] = [{ key: '↑↓', label: t('common.move') }];
-    if (browse.detailEnterAction === 'open') items.push({ key: 'Enter', label: t('common.enter') });
-    else if (browse.detailEnterAction === 'edit') items.push({ key: 'Enter', label: t('common.edit') });
+    if (browse.canEditDetailField) items.push({ key: 'Enter', label: t('common.edit') });
     items.push({ key: '←', label: t('common.list') }, ...filterHelp(), ...helpQuit());
     return items;
   }
@@ -121,7 +120,6 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
 function workingActionLabel(action: FooterWorkingState['action']): string {
   if (action === 'materialize') return t('common.materialize');
   if (action === 'sync') return t('common.sync');
-  if (action === 'openSource') return t('common.openSource');
   return t('common.update');
 }
 
@@ -159,28 +157,6 @@ function rightStatus(
     }
   }
   return undefined;
-}
-
-/** Right-slot budget: leftover after keys, but at most ~40% of the row. */
-export function footerStatusBudget(columns: number, leftWidth: number): number {
-  const remaining = Math.max(0, columns - leftWidth - 2);
-  const cap = Math.max(12, Math.floor(columns * 0.4));
-  return Math.max(4, Math.min(remaining, cap));
-}
-
-function fitStatus(
-  status: { text: string; kind: FooterStatusKind; action?: FooterStatusAction },
-  columns: number | undefined,
-  leftWidth: number
-): { text: string; action?: FooterStatusAction } {
-  if (!columns || columns <= 0) return { text: status.text, ...(status.action ? { action: status.action } : {}) };
-  const budget = footerStatusBudget(columns, leftWidth);
-  const text = ellipsizeColumns(status.text, budget);
-  const truncated = text !== status.text;
-  const action =
-    status.action ??
-    (truncated && status.kind === 'error' ? 'error' : undefined);
-  return { text, ...(action ? { action } : {}) };
 }
 
 /** Drop secondary items first; keep help/quit/selection/primary when possible. */
@@ -221,17 +197,14 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
   if (input.working) {
     const items = input.workingItems ?? [];
     const status = rightStatus(input);
-    const fitted = status
-      ? fitStatus(status, input.columns, textWidth(joinFooterItems(items)))
-      : undefined;
     return {
       mode: 'keys',
       items,
-      ...(status && fitted
+      ...(status
         ? {
-            status: fitted.text,
+            status: status.text,
             statusKind: status.kind,
-            ...(fitted.action ? { statusAction: fitted.action } : {}),
+            ...(status.action ? { statusAction: status.action } : {}),
           }
         : {}),
     };
@@ -241,22 +214,26 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
     let items = browseItems(input.browse);
     const status = rightStatus(input);
     if (input.columns && input.columns > 0) {
-      const reserve = status
-        ? Math.min(textWidth(status.text) + 2, footerStatusBudget(input.columns, 0) + 2)
-        : 0;
-      items = truncateFooterItems(items, Math.max(8, input.columns - reserve));
+      const statusWidth = status ? textWidth(status.text) + 2 : 0;
+      const leftMax = Math.max(8, input.columns - statusWidth);
+      items = truncateFooterItems(items, leftMax);
     }
-    const fitted = status
-      ? fitStatus(status, input.columns, textWidth(joinFooterItems(items)))
-      : undefined;
+    let statusText = status?.text;
+    if (statusText && input.columns && input.columns > 0) {
+      const leftWidth = textWidth(joinFooterItems(items));
+      const budget = Math.max(4, input.columns - leftWidth - 2);
+      if (textWidth(statusText) > budget) {
+        statusText = sliceColumns(statusText, 0, budget);
+      }
+    }
     return {
       mode: 'keys',
       items,
-      ...(status && fitted
+      ...(statusText && status
         ? {
-            status: fitted.text,
+            status: statusText,
             statusKind: status.kind,
-            ...(fitted.action ? { statusAction: fitted.action } : {}),
+            ...(status.action ? { statusAction: status.action } : {}),
           }
         : {}),
     };
