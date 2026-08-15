@@ -23,6 +23,7 @@ export const zh = {
   'common.detail': '详情',
   'common.view': '查看',
   'common.collect': '收藏',
+  'common.openSource': '打开来源',
   'common.more': '更多',
   'common.tags': '标签',
   'common.jumpTag': '跳转',
@@ -54,6 +55,7 @@ export const zh = {
   'common.location': '位置',
   'common.path': '路径',
   'common.collectionStatus': '收藏状态',
+  'common.reference': '引用',
   'common.relatedLocations': '关联位置',
   'common.all': '全部',
   'common.untagged': '未标签',
@@ -129,7 +131,7 @@ export const zh = {
   'help.config': `用法：
   iskills config
 
-打开配置界面，设置 UI 语言（跟随系统 / 中文 / English）。
+打开配置界面，设置 UI 语言与收藏夹远程 Git 地址。
 
 选项：
   -h, --help         显示帮助
@@ -167,7 +169,7 @@ import / add 选项：
   create [名称]      在收藏夹新建技能并打开目录
   import [来源]      导入本地路径或 Git 来源
   init               初始化收藏夹 Git
-  config             打开配置界面（UI 语言等）
+  config             打开配置界面（UI 语言、远程 Git、MCP 密钥）
   mcp                MCP 配置收藏夹
 
 选项：
@@ -179,12 +181,12 @@ import / add 选项：
   'config.localeSystem': '跟随系统',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
+  'config.remoteTitle': '收藏夹远程',
+  'config.remoteUnset': '未设置',
   'config.settingsTitle': ' 设置 ',
   'config.settingsFooter': '←→ 切换 · Esc 关闭',
   'config.changeValue': '切换',
   'config.editValue': '编辑',
-  'config.remoteTitle': '收藏夹远程',
-  'config.remoteUnset': '未设置',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': '不安全的技能名称：{name}',
@@ -406,6 +408,7 @@ import / add 选项：
   'footer.checkFailed': '{count} 个检查失败',
   'footer.checkingUpdates': '检查更新中',
   'footer.healthCount': '⚠ {count}',
+  'footer.errorTitle': '错误',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': '收藏夹 Git rebase 未完成',
@@ -472,6 +475,7 @@ import / add 选项：
     '收藏夹有已选则添加；无已选：窄屏打开详情，三栏进入详情列（项目/全局三栏右栏仅预览，窄屏 Enter 查看）',
   'browser.helpCollect': '收藏与安装',
   'browser.helpCollectImport': '加入收藏夹（项目 / 全局已选本地技能）',
+  'browser.helpCollectSource': '从 GitHub 来源进入仓库并导入',
   'browser.helpMaintain': '维护',
   'browser.helpMaintainTag': '批量加标签（收藏夹已选）',
   'browser.helpMaintainUpdate': '更新：已选可更新者，否则当前项',

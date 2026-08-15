@@ -6,6 +6,7 @@ import type {
   BrowserState,
   BrowserStatusSnapshot,
   BrowserTab,
+  DetailFieldId,
   DetailViewContext,
   WorkingProgressSnapshot,
 } from './types.js';
@@ -50,6 +51,8 @@ export const browserPhaseAtom = atom<BrowserAppPhase>('browse');
 /** Single owner for tab/query/cursor/agent/focus across the browser app tree. */
 export const browserNavigationAtom = atom<BrowserNavigationState | null>(null);
 export const browserSelectionAtom = atom<Set<string>>(new Set<string>());
+/** Focused peek field while navigation.focus === 'detail' (footer + chrome). */
+export const browserDetailFieldAtom = atom<DetailFieldId | undefined>(undefined);
 export const detailContextAtom = atom<DetailViewContext | null>(null);
 export const workingProgressAtom = atom<WorkingProgressSnapshot | null>(null);
 export const activeAbortAtom = atom<AbortController | null>(null);

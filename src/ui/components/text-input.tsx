@@ -5,7 +5,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
-import { registerTextInputFocus } from './text-input-ctrl-c.js';
+import {
+  consumeFocusedTextInputCtrlC,
+  interruptFromTextInputCtrlC,
+  registerTextInputFocus,
+} from './text-input-ctrl-c.js';
 import { useInput } from './use-input.js';
 
 export function TextInput({
@@ -60,7 +64,11 @@ export function TextInput({
       if (clearOnCtrlC && key.ctrl && input === 'c') {
         event.preventDefault();
         if (event.eventType === 'repeat' || event.repeated) return;
-        if (value !== '') handleInput('');
+        if (consumeFocusedTextInputCtrlC()) {
+          handleInput('');
+          return;
+        }
+        interruptFromTextInputCtrlC();
         return;
       }
       if (key.escape) onCancel?.();

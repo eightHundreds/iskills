@@ -45,6 +45,8 @@ export interface BrowseSessionContext {
   currentIsItem: boolean;
   allowNarrowGroupJump: boolean;
   detailFieldCount: number;
+  /** Land on tags (not GitHub source) when entering the detail column. */
+  detailEntryFieldIndex?: number;
 }
 
 function agentNamesFor(tab: BrowserTab, ctx: BrowseSessionContext): string[] {
@@ -284,14 +286,20 @@ export function reduceBrowseSessionKey<T extends BrowseSessionNav>(
   if (key.rightArrow && ctx.currentIsItem && nav.tab === 'collection' && ctx.masterDetail) {
     return {
       handled: true,
-      patch: { nav: { ...nav, focus: 'detail' }, detailFieldIndex: 0 },
+      patch: {
+        nav: { ...nav, focus: 'detail' },
+        detailFieldIndex: ctx.detailEntryFieldIndex ?? 0,
+      },
     };
   }
   if (isEnter(input, key) && ctx.masterDetail) {
     if (nav.tab === 'collection' && ctx.currentIsItem) {
       return {
         handled: true,
-        patch: { nav: { ...nav, focus: 'detail' }, detailFieldIndex: 0 },
+        patch: {
+          nav: { ...nav, focus: 'detail' },
+          detailFieldIndex: ctx.detailEntryFieldIndex ?? 0,
+        },
       };
     }
     return { handled: true, patch: {} };

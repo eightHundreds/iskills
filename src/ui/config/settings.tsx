@@ -1,5 +1,6 @@
 /**
- * Settings list UI — preference rows (label left, value right, ←→ cycle).
+ * Settings list UI — preference rows (label left, value right).
+ * Enum: ←→ cycle. Free-text (remote): Enter / ←→ open prompt.
  * Changes persist immediately (no separate save step).
  */
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -26,19 +27,8 @@ interface SettingRow {
   label: string;
   options: EnumOption<string>[];
   value: string;
+  /** Display string (may truncate / use unset label). */
   display: string;
-}
-
-/** Prefer keeping the end of long paths/URLs (repo name stays visible). */
-function truncateDisplay(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return '';
-  if (textWidth(text) <= maxWidth) return text;
-  if (maxWidth <= 1) return '…';
-  let out = text;
-  while (out.length > 1 && textWidth(`…${out}`) > maxWidth) {
-    out = out.slice(1);
-  }
-  return `…${out}`;
 }
 
 function localeOptions(): EnumOption<LocalePreference>[] {
@@ -52,6 +42,18 @@ function localeOptions(): EnumOption<LocalePreference>[] {
 function cycleIndex(length: number, index: number, delta: number): number {
   if (length <= 0) return 0;
   return (index + delta + length * 8) % length;
+}
+
+/** Prefer keeping the end of long paths/URLs (repo name stays visible). */
+function truncateDisplay(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (textWidth(text) <= maxWidth) return text;
+  if (maxWidth <= 1) return '…';
+  let out = text;
+  while (out.length > 1 && textWidth(`…${out}`) > maxWidth) {
+    out = out.slice(1);
+  }
+  return `…${out}`;
 }
 
 function formatSettingLine(
@@ -80,8 +82,8 @@ function formatSettingLine(
 }
 
 /**
- * Framed settings list: one row per preference, value cycles with ←→.
- * Each change writes config immediately.
+ * Framed settings list: one row per preference.
+ * Enum values cycle with ←→; text values open a prompt via Enter / ←→.
  */
 export function SettingsPanel({
   initial,
@@ -102,6 +104,7 @@ export function SettingsPanel({
 }): ReactNode {
   const { stdout } = useStdout();
   const panel = usePanelColors();
+  // Layer content stays mounted under Modal; freeze keys while a modal is on top.
   const { isOpen: modalOpen } = useModal();
   const [config, setConfig] = useState<UserConfig>(initial);
   const [remote, setRemote] = useState(initialRemote);
@@ -234,13 +237,7 @@ export function SettingsPanel({
       const row = rows[cursor];
       if (!row) return;
       if (row.kind === 'text') {
-        if (
-          key.return ||
-          key.leftArrow ||
-          key.rightArrow ||
-          input === 'h' ||
-          input === 'l'
-        ) {
+        if (key.return || key.leftArrow || key.rightArrow || input === 'h' || input === 'l') {
           void editRemote();
         }
         return;
@@ -266,65 +263,74 @@ export function SettingsPanel({
   const muted = panel.muted;
 
   return (
-    <box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
-      <Text color={termcnColors.primary} backgroundColor={panelBg} bold>
-        {top}
-      </Text>
-      <box flexDirection="row" backgroundColor={panelBg}>
-        <Text color={termcnColors.primary} backgroundColor={panelBg}>
-          │{' '}
+    <box
+      flexDirection="column"
+      flexGrow={1}
+      width="100%"
+      height="100%"
+      justifyContent="center"
+      alignItems="center"
+    >
+      <box flexDirection="column" backgroundColor={panelBg} paddingX={0}>
+        <Text color={termcnColors.primary} backgroundColor={panelBg} bold>
+          {top}
         </Text>
-        <Text color={muted} backgroundColor={panelBg}>
-          {padColumns('', inner)}
-        </Text>
-        <Text color={termcnColors.primary} backgroundColor={panelBg}>
-          {' '}
-          │
-        </Text>
-      </box>
-      {rows.map((row, index) => {
-        const focused = index === cursor;
-        const line = formatSettingLine(focused, row.label, row.display, inner);
-        return (
-          <box
-            key={row.id}
-            flexDirection="row"
-            backgroundColor={panelBg}
-          >
-            <Text color={termcnColors.primary} backgroundColor={panelBg}>
-              │{' '}
-            </Text>
-            <Text
-              color={focused ? termcnColors.selectionFg : bodyFg}
-              backgroundColor={
-                focused ? termcnColors.selectionBg : panelBg
-              }
-              bold={focused}
+        <box flexDirection="row" backgroundColor={panelBg}>
+          <Text color={termcnColors.primary} backgroundColor={panelBg}>
+            │{' '}
+          </Text>
+          <Text color={muted} backgroundColor={panelBg}>
+            {padColumns('', inner)}
+          </Text>
+          <Text color={termcnColors.primary} backgroundColor={panelBg}>
+            {' '}
+            │
+          </Text>
+        </box>
+        {rows.map((row, index) => {
+          const focused = index === cursor;
+          const line = formatSettingLine(focused, row.label, row.display, inner);
+          return (
+            <box
+              key={row.id}
+              flexDirection="row"
+              backgroundColor={panelBg}
             >
-              {line}
-            </Text>
-            <Text color={termcnColors.primary} backgroundColor={panelBg}>
-              {' '}
-              │
-            </Text>
-          </box>
-        );
-      })}
-      <box flexDirection="row" backgroundColor={panelBg}>
+              <Text color={termcnColors.primary} backgroundColor={panelBg}>
+                │{' '}
+              </Text>
+              <Text
+                color={focused ? termcnColors.selectionFg : bodyFg}
+                backgroundColor={
+                  focused ? termcnColors.selectionBg : panelBg
+                }
+                bold={focused}
+              >
+                {line}
+              </Text>
+              <Text color={termcnColors.primary} backgroundColor={panelBg}>
+                {' '}
+                │
+              </Text>
+            </box>
+          );
+        })}
+        <box flexDirection="row" backgroundColor={panelBg}>
+          <Text color={termcnColors.primary} backgroundColor={panelBg}>
+            │{' '}
+          </Text>
+          <Text color={muted} backgroundColor={panelBg}>
+            {padColumns('', inner)}
+          </Text>
+          <Text color={termcnColors.primary} backgroundColor={panelBg}>
+            {' '}
+            │
+          </Text>
+        </box>
         <Text color={termcnColors.primary} backgroundColor={panelBg}>
-          │{' '}
-        </Text>
-        <Text color={muted} backgroundColor={panelBg}>
-          {padColumns('', inner)}
-        </Text>
-        <Text color={termcnColors.primary} backgroundColor={panelBg}>
-          {' '}
-          │
+          {bottom}
         </Text>
       </box>
-      <Text color={termcnColors.primary} backgroundColor={panelBg}>
-        {bottom}
-      </Text>
     </box>
   );
 }

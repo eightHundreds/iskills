@@ -1,6 +1,6 @@
 import { useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { useAtom, useAtomValue, useStore } from 'jotai';
+import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import {
   useEffect,
   useMemo,
@@ -18,6 +18,7 @@ import type {
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import { presentHealthAlerts } from './health.js';
 import {
+  browserDetailFieldAtom,
   browserFilterAtom,
   browserGroupJumpAtom,
   browserHealthAtom,
@@ -41,6 +42,7 @@ import {
   browseDetailRows,
   collectionListColumnLines,
   detailEditableFields,
+  detailEntryFieldIndex,
   flatRows,
   groupedRows,
   selectableSkills,
@@ -161,11 +163,12 @@ export function Browser({
   const shellBusy = useOverlayBusy();
   const store = useStore();
   // Block list input while a long action runs (update/materialize skill row or collection sync).
-  const actionBusy = Boolean(updatingSkillName) || workingAction === 'sync';
+  const actionBusy = Boolean(updatingSkillName) || Boolean(workingAction);
   // Local braille spinner only while a skill is updating (not a global busy overlay).
   const updatingFrame = useSpinnerFrame(Boolean(updatingSkillName));
   const [navigation, setNavigationState] = useAtom(browserNavigationAtom);
   const [selected, setSelected] = useAtom(browserSelectionAtom);
+  const setDetailField = useSetAtom(browserDetailFieldAtom);
   const navigationRef = useRef(navigation);
   navigationRef.current = navigation;
   /** Keep ref in lockstep so multi-key stdin never reads a stale focus/tab. */
@@ -437,11 +440,26 @@ export function Browser({
     (focus === 'list' || focus === 'detail') && currentRow?.type === 'skill'
       ? currentRow.skill
       : undefined;
-  const detailFields = detailEditableFields(tab === 'collection');
+  const detailSkill =
+    currentRow?.type === 'skill' ? currentRow.skill : undefined;
+  const detailFields = detailEditableFields(tab === 'collection', detailSkill);
   const activeDetailField =
     focus === 'detail' && detailFields.length
       ? detailFields[Math.max(0, Math.min(detailFieldIndex, detailFields.length - 1))]
       : undefined;
+  useEffect(() => {
+    setDetailField(focus === 'detail' ? activeDetailField : undefined);
+  }, [focus, activeDetailField, setDetailField]);
+  useEffect(() => {
+    if ((focus === 'detail' || focus === 'tags') && !useMasterDetail) setFocus('list');
+  }, [focus, useMasterDetail, setFocus]);
+  useEffect(() => {
+    if (focus === 'detail' && currentRow?.type !== 'skill') setFocus('list');
+  }, [focus, currentRow, setFocus]);
+  // Project / global never own detail-column focus (preview only).
+  useEffect(() => {
+    if (focus === 'detail' && tab !== 'collection') setFocus('list');
+  }, [focus, tab, setFocus]);
   useEffect(() => {
     if (detailFieldIndex >= detailFields.length && detailFields.length > 0) {
       setDetailFieldIndex(detailFields.length - 1);
@@ -519,7 +537,16 @@ export function Browser({
           currentItemIds: liveRow ? selectableSkills(liveRow).map((skill) => skill.path) : [],
           currentIsItem: liveRow?.type === 'skill',
           allowNarrowGroupJump: groups.length > 0,
-          detailFieldCount: detailEditableFields(liveNav.tab === 'collection').length,
+          detailFieldCount: detailEditableFields(
+            liveNav.tab === 'collection',
+            liveRow?.type === 'skill' ? liveRow.skill : undefined
+          ).length,
+          detailEntryFieldIndex: detailEntryFieldIndex(
+            detailEditableFields(
+              liveNav.tab === 'collection',
+              liveRow?.type === 'skill' ? liveRow.skill : undefined
+            )
+          ),
         }
       );
       if (session.handled) {
@@ -529,9 +556,10 @@ export function Browser({
       if (liveNav.focus === 'detail') {
         const detailRow = listRows[cursorRef.current];
         const skill = detailRow?.type === 'skill' ? detailRow.skill : undefined;
-        const fields = detailEditableFields(liveNav.tab === 'collection');
+        const fields = detailEditableFields(liveNav.tab === 'collection', skill);
         const field = fields[detailFieldIndexRef.current] ?? fields[0];
         if (skill && field && (key.return || input.includes('\r') || input.includes('\n'))) {
+          if (field === 'source') return finish({ type: 'openSource', skill });
           if (field === 'tags') return finish({ type: 'editTags', skill });
           if (field === 'note') return finish({ type: 'editNote', skill });
         }
@@ -685,6 +713,9 @@ export function Browser({
         return openDetail(row.skill, true);
       }
       if (key.return || input.includes('\r') || input.includes('\n')) {
+        if (tab === 'collection' && selectedCollection.length) {
+          return finish({ type: 'add', skills: selectedCollection });
+        }
         if (row?.type === 'skill') {
           return openDetail(row.skill, tab === 'collection');
         }
@@ -801,6 +832,10 @@ export function Browser({
             if (!row?.field) return;
             const index = detailFields.indexOf(row.field);
             if (index < 0) return;
+            if (row.field === 'source' && peekSkill) {
+              finish({ type: 'openSource', skill: peekSkill });
+              return;
+            }
             const liveNav = navigationRef.current;
             if (!liveNav) return;
             applySession(browseSessionClickDetail(liveNav, index));

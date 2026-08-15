@@ -1,7 +1,7 @@
 
 import { useInput } from '../components/use-input.js';
 import {
-  consumeFocusedTextInputCtrlC,
+  setTextInputCtrlCInterrupt,
   textInputHasFocus,
 } from '../components/text-input-ctrl-c.js';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -21,8 +21,8 @@ import { InterruptError } from './terminal.js';
  * Hosts may pass `onCtrlC` to abort in-flight work before tearing down.
  * If omitted, Ctrl+C still interrupts the session (`InterruptError` → exit 130).
  *
- * - Ctrl+C → interrupt, except an opt-in text field (collection remote) may
- *   consume the first press to clear; a second press within 1s still interrupts
+ * - Ctrl+C → interrupt, except a focused text input may consume the first
+ *   press to clear; a second press within 1s still interrupts
  * - Esc → `onCancel` when `cancelOnEscape` and overlay is not busy
  * - bottomBar defaults to overlay-only footer (outside Layer replace region)
  */
@@ -104,15 +104,27 @@ function AppShellBody({
 }): ReactNode {
   const busy = useOverlayBusy();
   const { exit } = useApp();
+  const interrupt = (): void => {
+    if (onCtrlC) onCtrlC();
+    else exit(new InterruptError());
+  };
+
+  useEffect(() => {
+    return setTextInputCtrlCInterrupt(() => {
+      if (onCtrlC) onCtrlC();
+      else exit(new InterruptError());
+    });
+  }, [onCtrlC, exit]);
 
   useInput((input, key, event) => {
     if (key.ctrl && input === 'c') {
-      if (textInputHasFocus()) {
-        if (event.eventType === 'repeat' || event.repeated) return;
-        if (consumeFocusedTextInputCtrlC()) return;
-      }
-      if (onCtrlC) onCtrlC();
-      else exit(new InterruptError());
+      event.preventDefault();
+      // Auto-repeat must not count as the second press.
+      if (event.eventType === 'repeat' || event.repeated) return;
+      // Focused clear-on-Ctrl+C fields own the two-press protocol (modal
+      // inputs may swallow the key before this listener).
+      if (textInputHasFocus()) return;
+      interrupt();
       return;
     }
     if (!busy && cancelOnEscape && key.escape) {

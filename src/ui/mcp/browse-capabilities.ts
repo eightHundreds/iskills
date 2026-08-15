@@ -40,7 +40,7 @@ export function computeMcpBrowseCapabilities(input: {
       updateIsSelection: false,
       selectionCount: input.selectionCount,
       canFocusDetail: false,
-      canEditDetailField: false,
+      detailEnterAction: null,
       canJumpTag: false,
     },
     extraListItems,

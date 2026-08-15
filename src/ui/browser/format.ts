@@ -20,9 +20,44 @@ export {
 import type { BrowserFocus } from './types.js';
 export type BrowseFocusLevel = BrowserFocus;
 
-/** Editable fields in the right peek column (collection only). */
-export function detailEditableFields(collection: boolean): DetailFieldId[] {
-  return collection ? ['tags', 'note'] : [];
+/** Activatable fields in the right peek column (collection only). */
+export function detailEditableFields(
+  collection: boolean,
+  skill?: Pick<Skill, 'source'>
+): DetailFieldId[] {
+  if (!collection) return [];
+  if (isGitHubSourceUrl(skill?.source?.url)) return ['source', 'tags', 'note'];
+  return ['tags', 'note'];
+}
+
+/** Index to land on when `→` / list Enter enters the detail column (tags, not source). */
+export function detailEntryFieldIndex(fields: readonly DetailFieldId[]): number {
+  const index = fields.indexOf('tags');
+  return index >= 0 ? index : 0;
+}
+
+function parseGitRemote(url: string): { host: string; path: string } | undefined {
+  const scp = !url.includes('://') ? url.match(/^(?:[^@]+@)?([^:]+):(.+)$/) : null;
+  const candidate = scp ? `ssh://${scp[1]}/${scp[2]}` : url;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === 'file:') {
+      const filePath = decodeURIComponent(parsed.pathname).replace(/\.git\/?$/i, '').replace(/\/$/, '');
+      return { host: 'file', path: filePath };
+    }
+    let host = parsed.hostname.toLowerCase();
+    if (host.startsWith('www.')) host = host.slice(4);
+    const path = parsed.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '');
+    if (!host) return undefined;
+    return { host, path };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Interaction affordance: only github.com (not gist / Enterprise / other git hosts). */
+export function isGitHubSourceUrl(url: string | undefined): boolean {
+  return Boolean(url?.trim() && parseGitRemote(url)?.host === 'github.com');
 }
 
 // ─── list / column formatting ───────────────────────────────────────────────
@@ -169,6 +204,7 @@ export interface DetailContentLine {
   label?: string;
   value: string;
   muted?: boolean;
+  field?: DetailFieldId;
 }
 
 export function detailFieldLines(
@@ -210,10 +246,13 @@ export function detailContentLines(
     ];
   }
 
+  const sourceLines = detailFieldLines(skillFieldLabels().source, source, width);
   lines.push(
     ...detailFieldLines(skillFieldLabels().tags, metadata.tags.length ? metadata.tags.join(', ') : t('common.none'), width),
     ...detailFieldLines(skillFieldLabels().note, metadata.note || t('common.none'), width),
-    ...detailFieldLines(skillFieldLabels().source, source, width)
+    ...(isGitHubSourceUrl(metadata.source.url)
+      ? sourceLines.map((line) => ({ ...line, field: 'source' as const }))
+      : sourceLines)
   );
   if (metadata.source.path) {
     lines.push(...detailFieldLines(skillFieldLabels().path, metadata.source.path, width));
@@ -274,6 +313,7 @@ export function shortcutHelpSections(): ShortcutHelpSection[] {
       title: t('browser.helpCollect'),
       items: [
         { label: t('browser.helpCollectImport'), keys: 'i' },
+        { label: t('browser.helpCollectSource'), keys: 'Enter' },
       ],
     },
     {
@@ -328,10 +368,39 @@ export function categorySidebarLine(
   return padColumns(`${labelPart}${' '.repeat(gap)}${countText}`, width);
 }
 
+const GIT_HOST_BRANDS: Readonly<Record<string, string>> = {
+  'github.com': 'GitHub',
+  'gitlab.com': 'GitLab',
+  'bitbucket.org': 'Bitbucket',
+  'codeberg.org': 'Codeberg',
+  'gitee.com': 'Gitee',
+};
+
+/**
+ * Compact git origin for peek panel, e.g. `GitHub: mattpocock/skills`.
+ * Falls back to plain `Git` when the URL cannot be parsed into host + path.
+ */
+export function formatGitSourceLabel(url: string): string {
+  const parsed = parseGitRemote(url);
+  if (!parsed) return t('common.git');
+  if (parsed.host === 'file') {
+    return parsed.path ? `file: ${parsed.path}` : t('common.git');
+  }
+  let path = parsed.path;
+  if (!parsed.host || !path) return t('common.git');
+  // GitHub repos are always owner/repo; drop tree/blob/extra segments if present.
+  if (parsed.host === 'github.com') {
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length >= 2) path = `${parts[0]}/${parts[1]}`;
+  }
+  const brand = GIT_HOST_BRANDS[parsed.host] ?? parsed.host;
+  return `${brand}: ${path}`;
+}
+
 export function collectionSourceLabel(skill: CollectedSkill): string {
   const source = skill.source;
   if (!source) return t('common.unknown');
-  if (source.type === 'git' && source.url) return t('common.git');
+  if (source.type === 'git' && source.url) return formatGitSourceLabel(source.url);
   if (source.type === 'local' || source.path) return t('common.local');
   if (source.type === 'unknown' && source.path) return t('common.local');
   if (source.type === 'unknown') return t('common.local');
@@ -556,6 +625,8 @@ export function detailLabelWidth(): number {
     t('common.note'),
     t('common.location'),
     t('common.collectionStatus'),
+    t('common.reference'),
+    t('common.local'),
     t('common.description'),
   ];
   return Math.max(6, ...labels.map((label) => textWidth(label))) + 1;
@@ -591,20 +662,26 @@ export function browseDetailRows(
   if (!skill) {
     return [{ text: t('browser.selectSkillToView'), muted: true }];
   }
-  const title = skill.isReference ? t('browser.referenceName', { name: skill.name }) : skill.name;
-  const rows: CollectionDetailRow[] = [
-    {
-      text: `${title}${
-        updatingSkillName === skill.name
-          ? ` ${updatingFrame}`
-          : updates.has(skill.name)
-            ? ' ↑'
-            : ''
-      }`,
-      bold: true,
-      ...(updatingSkillName === skill.name ? { primary: true } : {}),
-    },
-  ];
+  const badge =
+    updatingSkillName === skill.name
+      ? ` ${updatingFrame}`
+      : updates.has(skill.name)
+        ? ' ↑'
+        : '';
+  const nameText = `${skill.name}${badge}`;
+  const title: CollectionDetailRow = collection
+    ? {
+        text: nameText,
+        bold: true,
+        ...(updatingSkillName === skill.name ? { primary: true } : {}),
+      }
+    : {
+        label: skill.isReference ? t('common.reference') : t('common.local'),
+        text: nameText,
+        bold: true,
+        ...(updatingSkillName === skill.name ? { primary: true } : {}),
+      };
+  const rows: CollectionDetailRow[] = [title];
   if (collection) {
     const collected = skill as CollectedSkill;
     const version = collectionVersionLabel(collected) ?? '--';
@@ -614,7 +691,13 @@ export function browseDetailRows(
     const note = collected.note?.trim() || t('common.none');
     // Compact metadata block: no interstitial blanks so fields share one visual group.
     rows.push(
-      ...peekFieldRows(t('common.source'), collectionSourceLabel(collected), width, 1),
+      ...peekFieldRows(
+        t('common.source'),
+        collectionSourceLabel(collected),
+        width,
+        1,
+        isGitHubSourceUrl(collected.source?.url) ? { field: 'source' } : {}
+      ),
       ...peekFieldRows(t('common.version'), version, width, 1),
       ...peekFieldRows(t('common.tags'), triggerTags, width, 2, { field: 'tags' }),
       ...peekFieldRows(t('common.note'), note, width, 2, { field: 'note' })

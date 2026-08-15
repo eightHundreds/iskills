@@ -25,6 +25,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.detail': 'Detail',
   'common.view': 'View',
   'common.collect': 'Collect',
+  'common.openSource': 'Opening source',
   'common.more': 'More',
   'common.tags': 'Tags',
   'common.jumpTag': 'Jump',
@@ -56,6 +57,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.location': 'Location',
   'common.path': 'Path',
   'common.collectionStatus': 'Collection status',
+  'common.reference': 'Reference',
   'common.relatedLocations': 'Related locations',
   'common.all': 'All',
   'common.untagged': 'Untagged',
@@ -134,7 +136,7 @@ Options:
   'help.config': `Usage:
   iskills config
 
-Open the config UI to set UI language (follow system / Chinese / English).
+Open the config UI to set UI language and the collection Git remote.
 
 Options:
   -h, --help         Show help
@@ -172,7 +174,7 @@ Commands:
   create [name]      Create a new skill in the collection and open it
   import [source]    Import a local path or Git source
   init               Initialize collection Git
-  config             Open config UI (UI language, …)
+  config             Open config UI (UI language, Git remote, MCP secrets)
   mcp                MCP config collection
 
 Options:
@@ -184,12 +186,12 @@ Options:
   'config.localeSystem': 'Follow system',
   'config.localeZh': '中文',
   'config.localeEn': 'English',
+  'config.remoteTitle': 'Collection remote',
+  'config.remoteUnset': 'Not set',
   'config.settingsTitle': ' Settings ',
   'config.settingsFooter': '←→ change · Esc close',
   'config.changeValue': 'Change',
   'config.editValue': 'Edit',
-  'config.remoteTitle': 'Collection remote',
-  'config.remoteUnset': 'Not set',
 
   // ── domain core ─────────────────────────────────────────────────────────
   'domain.unsafeSkillName': 'Unsafe skill name: {name}',
@@ -433,6 +435,7 @@ Options:
   'footer.checkFailed': '{count} check(s) failed',
   'footer.checkingUpdates': 'Checking for updates',
   'footer.healthCount': '⚠ {count}',
+  'footer.errorTitle': 'Error',
 
   // ── health ──────────────────────────────────────────────────────────────
   'health.gitRebase': 'Collection Git rebase in progress',
@@ -504,6 +507,7 @@ Options:
   'browser.helpCollect': 'Collect & install',
   'browser.helpCollectImport':
     'Add to collection (project / global selected local skills)',
+  'browser.helpCollectSource': 'Open a GitHub source and import skills',
   'browser.helpMaintain': 'Maintain',
   'browser.helpMaintainTag': 'Batch tag (selected in collection)',
   'browser.helpMaintainUpdate':

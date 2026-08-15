@@ -1,6 +1,6 @@
 /**
- * User preferences at `~/.config/iskills/config.json` (JSON5).
- * First-class field: UI locale preference.
+ * Collection preferences at `config.json` (JSON5) in the collection root.
+ * Tracked by collection Git; first-class field is UI locale preference.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

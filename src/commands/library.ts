@@ -248,6 +248,23 @@ export async function importRemoteSkillToCollection(
   }
 }
 
+function skillOutsideCollection(skill: Skill): boolean {
+  const paths = collectionPaths();
+  return (
+    skill.path !== join(paths.skills, skill.name) &&
+    !skill.path.startsWith(`${paths.root}${sep}`)
+  );
+}
+
+async function loadGitImportSkills(gitContext: GitImportContext): Promise<Skill[]> {
+  const collection = await listCollection().catch(() => []);
+  return annotateGitCollectionStatus(
+    (await discoverSkills(gitContext.repository)).filter(skillOutsideCollection),
+    gitContext,
+    collection
+  );
+}
+
 interface ImportToCollectionOptions {
   replace?: boolean;
   yes?: boolean;
@@ -379,6 +396,47 @@ export async function importSkillsToCollection(
   return { count: installed.length };
 }
 
+/**
+ * Clone a Git URL at its default remote HEAD, then run the interactive
+ * import picker + review + write. Same path as `iskills import <url>`.
+ */
+export async function importGitUrlToCollection(
+  url: string,
+  options: ImportToCollectionOptions = {}
+): Promise<ImportToCollectionResult> {
+  const gitContext = await cloneGitSource(url);
+  try {
+    const skills = await loadGitImportSkills(gitContext);
+    if (!skills.length) throw new DomainError('cmd.noSkillMd');
+
+    if (!process.stdin.isTTY) throw new DomainError('cmd.useAllOrInteractive');
+    const selected = await (await present()).promptSkillGroups(
+      [{ agent: t('common.git'), skills }],
+      t('cmd.foundSkills')
+    );
+    if (!selected.length) return { count: 0 };
+
+    const existingTags = [...new Set((await listCollection().catch(() => []))
+      .flatMap((skill) => skill.tags))]
+      .sort((a, b) => a.localeCompare(b));
+    const review = await (await present()).promptImportReview(
+      selected.map((skill) => ({
+        skill,
+        detail: gitSkillDisplayPath(skill, gitContext),
+      })),
+      existingTags
+    );
+    if (!review) return { count: 0 };
+
+    return await importGitSkillsToCollection(selected, gitContext, {
+      ...options,
+      tags: review.tags,
+    });
+  } finally {
+    await rm(gitContext.temporary, { recursive: true, force: true });
+  }
+}
+
 export async function importGitSkillsToCollection(
   skills: Skill[],
   gitContext: GitImportContext,
@@ -422,20 +480,10 @@ export async function commandImport(argv: string[]): Promise<void> {
     ? await cloneGitSource(input)
     : undefined;
   try {
-    const paths = collectionPaths();
-    const isCollected = (skill: Skill) =>
-      skill.path !== join(paths.skills, skill.name) &&
-      !skill.path.startsWith(`${paths.root}${sep}`);
-
     let skills: Skill[];
     let globalGroups: { agent: string; skills: Skill[] }[] | undefined;
     if (gitContext) {
-      const collection = await listCollection().catch(() => []);
-      skills = await annotateGitCollectionStatus(
-        (await discoverSkills(gitContext.repository)).filter(isCollected),
-        gitContext,
-        collection
-      );
+      skills = await loadGitImportSkills(gitContext);
     } else if (values.global) {
       if (!(values.agent?.length) && !(await listPresentAgents()).length) {
         throw noPresentAgentsError();
@@ -444,12 +492,12 @@ export async function commandImport(argv: string[]): Promise<void> {
       globalGroups = groups
         .map((group) => ({
           agent: group.agent,
-          skills: group.skills.filter((skill) => !skill.fromCollection && isCollected(skill)),
+          skills: group.skills.filter((skill) => !skill.fromCollection && skillOutsideCollection(skill)),
         }))
         .filter((group) => group.skills.length > 0);
       skills = globalGroups.flatMap((group) => group.skills);
     } else {
-      skills = (await discoverSkills(localInput || resolve('.'))).filter(isCollected);
+      skills = (await discoverSkills(localInput || resolve('.'))).filter(skillOutsideCollection);
     }
     if (!skills.length) throw new DomainError('cmd.noSkillMd');
 

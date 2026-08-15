@@ -47,7 +47,11 @@ export function FooterPaint({
           {left}
         </Text>
       </box>
-      {clickable}
+      {clickable ? (
+        <box flexShrink={0}>
+          {clickable}
+        </box>
+      ) : null}
     </box>
   );
 }
