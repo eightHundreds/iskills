@@ -1,6 +1,6 @@
 import { Text, useApp, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   CollectedMcp,
   HttpProbeStatus,
@@ -54,7 +54,7 @@ export function McpBrowser({
   const rows = stdout.rows ?? 24;
   const master = masterDetailLayout(width, rows);
   const [tab, setTab] = useState<TabId>('collection');
-  const [agent, setAgent] = useState(mcpAgentIds()[0] ?? 'claude');
+  const [agent, setAgent] = useState('claude');
   const [cursor, setCursor] = useState(0);
   const [query, setQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -68,9 +68,14 @@ export function McpBrowser({
     return ordered.length ? ordered : mcpAgentIds();
   }, [locationRows]);
 
-  const activeAgent = agents.includes(agent as (typeof agents)[number]) ? agent : agents[0];
+  const activeAgent = agents.includes(agent as (typeof agents)[number])
+    ? agent
+    : (agents[0] ?? 'claude');
+  useEffect(() => {
+    if (agent !== activeAgent) setAgent(activeAgent);
+  }, [agent, activeAgent]);
   const visibleLocations = locationRows
-    .filter((entry) => !activeAgent || entry.agent === activeAgent)
+    .filter((entry) => entry.agent === activeAgent)
     .filter((entry) => matchesQuery(`${entry.nativeKey} ${entry.agent}`, query));
 
   const visibleCollection = data.collection.filter((item) =>
@@ -202,66 +207,100 @@ export function McpBrowser({
     }
   });
 
-  const listWidth = master ? Math.max(24, Math.floor(width * 0.58)) : width;
-  const detailWidth = Math.max(20, width - listWidth - 1);
+  const listWidth = master ? Math.max(24, Math.floor(width * 0.58)) : Math.max(20, width - 2);
+  const detailWidth = Math.max(20, width - listWidth - 3);
+
+  const listPane = (
+    <box flexDirection="column" width={listWidth}>
+      {listCount === 0 ? (
+        <Text color={termcnColors.muted}>
+          {tab === 'collection' ? t('mcp.emptyCollection') : t('mcp.emptyLocations')}
+        </Text>
+      ) : tab === 'collection' ? (
+        visibleCollection.map((item, index) => (
+          <Text
+            key={item.name}
+            {...(index === currentIndex
+              ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
+              : {})}
+          >
+            {`${index === currentIndex ? '›' : ' '} ${selected.has(item.name) ? '•' : ' '} ${sliceColumns(item.name, 0, listWidth - 6)}`}
+          </Text>
+        ))
+      ) : (
+        visibleLocations.map((entry, index) => (
+          <Text
+            key={locationKey(entry)}
+            {...(index === currentIndex
+              ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
+              : {})}
+          >
+            {formatLocationLine(
+              entry,
+              selected.has(locationKey(entry)),
+              index === currentIndex,
+              listWidth
+            )}
+          </Text>
+        ))
+      )}
+    </box>
+  );
+
+  const detailPane = master ? (
+    <box flexDirection="column" width={detailWidth}>
+      {detailLines(currentCollected, currentLocation, probe).map((line) => (
+        <Text key={line} color={termcnColors.muted}>
+          {sliceColumns(line, 0, detailWidth)}
+        </Text>
+      ))}
+    </box>
+  ) : null;
+
+  const body = (
+    <box flexDirection="column" minHeight={Math.max(8, rows - 4)}>
+      {tab !== 'collection' ? (
+        <Text color={termcnColors.muted}>
+          {agents.map((id) => (id === activeAgent ? `‹${id}›` : id)).join('  ')}
+        </Text>
+      ) : null}
+      <box flexDirection="row" flexGrow={1}>
+        {listPane}
+        {detailPane}
+      </box>
+    </box>
+  );
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <Tabs
         tabs={[
-          { key: 'project', label: t('common.project'), content: <Text /> },
-          { key: 'global', label: t('common.global'), content: <Text /> },
-          { key: 'collection', label: t('common.collect'), content: <Text /> },
+          {
+            key: 'project',
+            label: t('browser.tabProject', { count: data.project.length }),
+            content: tab === 'project' ? body : <Text />,
+          },
+          {
+            key: 'global',
+            label: t('browser.tabGlobal', { count: data.global.length }),
+            content: tab === 'global' ? body : <Text />,
+          },
+          {
+            key: 'collection',
+            label: t('browser.tabCollection', { count: data.collection.length }),
+            content: tab === 'collection' ? body : <Text />,
+          },
         ]}
         activeTab={tab}
         onTabChange={(key) => {
           setTab(key as TabId);
           setCursor(0);
+          setSelected(new Set());
         }}
         enableArrowNav={false}
+        bordered={false}
         width={width}
       />
-      {tab !== 'collection' ? (
-        <Text color={termcnColors.muted}>
-          {agents.map((id) => (id === agent ? `‹${id}›` : id)).join('  ')}
-        </Text>
-      ) : null}
-      <box flexDirection="row" flexGrow={1}>
-        <box flexDirection="column" width={listWidth}>
-          {listCount === 0 ? (
-            <Text color={termcnColors.muted}>
-              {tab === 'collection' ? t('mcp.emptyCollection') : t('mcp.emptyLocations')}
-            </Text>
-          ) : tab === 'collection' ? (
-            visibleCollection.map((item, index) => (
-              <Text
-                key={item.name}
-                {...(index === currentIndex
-                  ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
-                  : {})}
-              >
-                {`${selected.has(item.name) ? '• ' : '  '}${sliceColumns(item.name, 0, listWidth - 2)}`}
-              </Text>
-            ))
-          ) : (
-            visibleLocations.map((entry, index) => (
-              <Text
-                key={locationKey(entry)}
-                {...(index === currentIndex
-                  ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
-                  : {})}
-              >
-                {formatLocationLine(entry, selected.has(locationKey(entry)), listWidth)}
-              </Text>
-            ))
-          )}
-        </box>
-        {master ? (
-          <box flexDirection="column" width={detailWidth}>
-            <Text color={termcnColors.muted}>{detailLines(currentCollected, currentLocation, probe).join('\n')}</Text>
-          </box>
-        ) : null}
-      </box>
       <Text color={termcnColors.muted}>
         {filterOpen
           ? `${t('common.filterLabel')}${filterDraft}`
@@ -283,10 +322,19 @@ function locationKey(entry: McpLocationEntry): string {
   return `${entry.agent}|${entry.scope}|${entry.ownership}|${entry.nativeKey}|${entry.filePath}`;
 }
 
-function formatLocationLine(entry: McpLocationEntry, selected: boolean, width: number): string {
+function formatLocationLine(
+  entry: McpLocationEntry,
+  selected: boolean,
+  current: boolean,
+  width: number
+): string {
   const mark = entry.ownership === 'borrowed' ? `${t('mcp.borrowedMark')} ` : '';
   const on = entry.enabled ? '' : ` ${t('mcp.disabled')}`;
-  return sliceColumns(`${selected ? '• ' : '  '}${mark}${entry.nativeKey}${on}`, 0, width);
+  return sliceColumns(
+    `${current ? '›' : ' '} ${selected ? '•' : ' '} ${mark}${entry.nativeKey}${on}`,
+    0,
+    width
+  );
 }
 
 function selectedLocations(
