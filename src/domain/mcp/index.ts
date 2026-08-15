@@ -30,6 +30,7 @@ export { listCollectedMcps, readCollectedMcp, ensureMcpCollection } from './coll
 export {
   deleteMcpSecrets,
   emptySecrets,
+  isEmptySecrets,
   readMcpSecrets,
   readMcpSecretsInGit,
   setMcpSecretsInGit,
@@ -37,6 +38,12 @@ export {
 } from './secrets.js';
 
 export { probeHttp } from './probe.js';
+
+export {
+  isSecretHeaderName,
+  parseColonPairs,
+  secretsFromPairs,
+} from './headers.js';
 
 export { isMcpAgentId, mcpAgentIds, agentMcpWritable } from './dialects.js';
 

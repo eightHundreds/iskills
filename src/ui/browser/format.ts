@@ -2,56 +2,27 @@
  * Pure view formatting + focus ladder (no React TUI components).
  * Column/row strings, filters, modal copy, detail text model.
  */
-import type { BrowserFocus, BrowserTab, DetailFieldId, SkillGroup } from './types.js';
+import type { DetailFieldId, SkillGroup } from './types.js';
 import { matchesSkill } from '../../domain/skill-query.js';
 import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
 import { t } from '../../i18n/index.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
 
-
-// ─── focus ladder (was browser-intent) ──────────────────────────────────────
-
+export {
+  focusAfterDownFromAgents,
+  focusAfterDownFromTabs,
+  focusAfterUpFromList,
+  focusAfterUpFromTags,
+  nextAgent,
+  nextMainTab,
+} from './browse-nav.js';
+import type { BrowserFocus } from './types.js';
 export type BrowseFocusLevel = BrowserFocus;
-
-export function focusAfterDownFromTabs(hasAgentTabs: boolean, useMasterDetail: boolean): BrowserFocus {
-  if (hasAgentTabs) return 'agents';
-  if (useMasterDetail) return 'tags';
-  return 'list';
-}
-
-export function focusAfterUpFromList(useMasterDetail: boolean, hasAgentTabs: boolean): BrowserFocus {
-  if (useMasterDetail) return 'tags';
-  return hasAgentTabs ? 'agents' : 'tabs';
-}
-
-export function focusAfterUpFromTags(hasAgentTabs: boolean): BrowserFocus {
-  return hasAgentTabs ? 'agents' : 'tabs';
-}
-
-export function focusAfterDownFromAgents(useMasterDetail: boolean): BrowserFocus {
-  return useMasterDetail ? 'tags' : 'list';
-}
 
 /** Editable fields in the right peek column (collection only). */
 export function detailEditableFields(collection: boolean): DetailFieldId[] {
   return collection ? ['tags', 'note'] : [];
-}
-
-export function nextMainTab(tab: BrowserTab, direction: -1 | 1): BrowserTab | undefined {
-  const order: BrowserTab[] = ['project', 'global', 'collection'];
-  const index = order.indexOf(tab);
-  return order[index + direction];
-}
-
-export function nextAgent(
-  agents: string[],
-  current: string,
-  direction: -1 | 1
-): string | undefined {
-  const index = agents.indexOf(current);
-  if (index < 0) return agents[0];
-  return agents[index + direction];
 }
 
 // ─── list / column formatting ───────────────────────────────────────────────
@@ -104,6 +75,55 @@ export function flatRows(skills: Skill[], query: string): SkillRow[] {
 
 export const TAG_FILTER_ALL = '__all__';
 
+/** Tag-sidebar option shared by skill and MCP browse. */
+export interface BrowseTagOption {
+  key: string;
+  label: string;
+  ids: string[];
+}
+
+export interface TaggedBrowseItem {
+  id: string;
+  tags: string[];
+}
+
+export function taggedItemGroups(items: TaggedBrowseItem[]): { name: string; ids: string[] }[] {
+  const untagged = untaggedLabel();
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    const tags = item.tags.length ? [...new Set(item.tags)] : [untagged];
+    for (const tag of tags) {
+      const list = groups.get(tag) ?? [];
+      list.push(item.id);
+      groups.set(tag, list);
+    }
+  }
+  return [...groups]
+    .sort(([left], [right]) => {
+      if (left === right) return 0;
+      return left === untagged ? 1 : right === untagged ? -1 : left.localeCompare(right);
+    })
+    .filter(([name]) => !(name === untagged && groups.size === 1))
+    .map(([name, ids]) => ({ name, ids }));
+}
+
+export function taggedTagOptions(items: TaggedBrowseItem[]): BrowseTagOption[] {
+  return [
+    { key: TAG_FILTER_ALL, label: t('common.all'), ids: items.map((item) => item.id) },
+    ...taggedItemGroups(items).map((group) => ({
+      key: group.name,
+      label: group.name,
+      ids: group.ids,
+    })),
+  ];
+}
+
+export function filterTaggedItems<T extends TaggedBrowseItem>(items: T[], tag: string): T[] {
+  if (tag === TAG_FILTER_ALL) return items;
+  if (tag === untaggedLabel()) return items.filter((item) => item.tags.length === 0);
+  return items.filter((item) => item.tags.includes(tag));
+}
+
 export function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
   if (tag === TAG_FILTER_ALL) return skills;
   if (tag === untaggedLabel()) {
@@ -118,13 +138,19 @@ export function skillsForTagFilter(skills: Skill[], tag: string): Skill[] {
 export function tagFilterOptions(
   skills: Skill[],
   groups: Extract<SkillRow, { type: 'group' }>[]
-): { key: string; label: string; skills: Skill[] }[] {
+): { key: string; label: string; skills: Skill[]; ids: string[] }[] {
   return [
-    { key: TAG_FILTER_ALL, label: t('common.all'), skills },
+    {
+      key: TAG_FILTER_ALL,
+      label: t('common.all'),
+      skills,
+      ids: skills.map((skill) => skill.path),
+    },
     ...groups.map((group) => ({
       key: group.name,
       label: group.name,
       skills: group.skills,
+      ids: group.skills.map((skill) => skill.path),
     })),
   ];
 }
@@ -273,7 +299,7 @@ export function shortcutHelpSections(): ShortcutHelpSection[] {
   ];
 }
 
-/** Flat lines for simple info panels / tests (expanded, no tree chrome). */
+/** Flat lines for simple info panels / tests (expanded, no tree marks). */
 export function shortcutModalContent(): string[] {
   const lines: string[] = [];
   for (const section of shortcutHelpSections()) {
@@ -318,7 +344,7 @@ export function collectionVersionLabel(skill: CollectedSkill): string | undefine
 }
 
 export function collectionCategoryLines(
-  options: { key: string; label: string; skills: Skill[] }[],
+  options: { label: string; count: number }[],
   cursor: number,
   isActive: boolean,
   width: number,
@@ -332,7 +358,7 @@ export function collectionCategoryLines(
   const visible = options.slice(offset, offset + viewportHeight);
   const lines = visible.map((option, visibleIndex) => {
     const index = offset + visibleIndex;
-    return categorySidebarLine(isActive && index === active, option.label, option.skills.length, width);
+    return categorySidebarLine(isActive && index === active, option.label, option.count, width);
   });
   while (lines.length < viewportHeight) lines.push('');
   return lines.slice(0, viewportHeight);
@@ -340,8 +366,77 @@ export function collectionCategoryLines(
 
 export const COLLECTION_SKILL_PREFIX_WIDTH = 4;
 
+export interface BrowseListItem {
+  id: string;
+  name: string;
+  summary: string;
+  mark?: string;
+  badge?: string;
+}
+
 export function collectionSkillPrefix(current: boolean, picked: boolean): string {
   return `${current ? '›' : ' '} ${picked ? '▣' : ' '} `;
+}
+
+export function browseListColumnLines(
+  items: BrowseListItem[],
+  cursor: number,
+  isActive: boolean,
+  listWidth: number,
+  viewportHeight: number,
+  selected: Set<string>
+): {
+  lines: string[];
+  skillOffset: number;
+  activeLineIndexes: Set<number>;
+  selectedLineIndexes: Set<number>;
+} {
+  const activeLineIndexes = new Set<number>();
+  const selectedLineIndexes = new Set<number>();
+  if (items.length === 0) {
+    const lines = [padColumns(t('browser.noMatchingSkills'), listWidth)];
+    while (lines.length < viewportHeight) lines.push('');
+    return {
+      lines: lines.slice(0, viewportHeight),
+      skillOffset: 0,
+      activeLineIndexes,
+      selectedLineIndexes,
+    };
+  }
+  const skillViewport = Math.max(1, Math.floor(viewportHeight / 2));
+  const active = Math.max(0, Math.min(cursor, items.length - 1));
+  const skillOffset = Math.max(
+    0,
+    Math.min(active - Math.floor(skillViewport / 2), Math.max(0, items.length - skillViewport))
+  );
+  const visible = items.slice(skillOffset, skillOffset + skillViewport);
+  const lines: string[] = [];
+  for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
+    const item = visible[visibleIndex];
+    if (!item) continue;
+    const index = skillOffset + visibleIndex;
+    const current = isActive && index === active;
+    const picked = selected.has(item.id);
+    const prefix = collectionSkillPrefix(current, picked);
+    const badgeText = item.badge ? ` ${item.badge}` : '';
+    const nameLineIndex = lines.length;
+    lines.push(padColumns(`${prefix}${item.mark ?? ''}${item.name}${badgeText}`, listWidth));
+    const summaryPrefix = ' '.repeat(COLLECTION_SKILL_PREFIX_WIDTH);
+    lines.push(item.summary ? `${summaryPrefix}${item.summary}` : summaryPrefix);
+    if (current) {
+      activeLineIndexes.add(nameLineIndex);
+      activeLineIndexes.add(nameLineIndex + 1);
+    } else if (picked) {
+      selectedLineIndexes.add(nameLineIndex);
+    }
+  }
+  while (lines.length < viewportHeight) lines.push('');
+  return {
+    lines: lines.slice(0, viewportHeight),
+    skillOffset,
+    activeLineIndexes,
+    selectedLineIndexes,
+  };
 }
 
 export function collectionSkillNameLine(
@@ -363,7 +458,8 @@ export function collectionSkillNameLine(
     updatingSkillName === skill.name ? updatingFrame : updates.has(skill.name) ? '↑' : '',
   ].filter(Boolean);
   const badgeText = badges.length ? ` ${badges.join(' ')}` : '';
-  return padColumns(`${prefix}${skill.name}${badgeText}`, listWidth);
+  const mark = skill.isReference ? `${t('browser.referencePrefix')} ` : '';
+  return padColumns(`${prefix}${mark}${skill.name}${badgeText}`, listWidth);
 }
 
 export function collectionListColumnLines(

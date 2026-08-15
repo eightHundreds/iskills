@@ -1,4 +1,4 @@
-import { Text, useModalChrome } from '../tui/index.js';
+import { Text, usePanelColors } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
@@ -22,11 +22,11 @@ export function InstallReview({
 }): ReactNode {
   type Destination = InstallReviewResult['destination'];
   type TabKey = 'destination' | 'mode' | 'targets' | 'confirm';
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const colors = {
     primary: termcnColors.primary,
-    muted: chrome.muted,
-    body: chrome.body,
+    muted: panel.muted,
+    body: panel.body,
   };
   const [activeTab, setActiveTab] = useState<TabKey>('destination');
   const [destination, setDestination] = useState<Destination>('project');

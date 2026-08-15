@@ -82,7 +82,7 @@ function installReviewFooterItems(): FooterItem[] {
 export function promptText(
   label: string,
   initialValue = '',
-  /** Optional top-left border title (same chrome as tag editor). */
+  /** Optional top-left border title (same panel as tag editor). */
   title?: string
 ): Promise<string | undefined> {
   return Modal.open<string | undefined>({

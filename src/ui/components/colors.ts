@@ -2,15 +2,15 @@
 //
 // Main canvas: inherit terminal bg; body text without `color` uses
 // RGBA.defaultForeground() (see Text adapter).
-// Modal / secondary chrome: solid tokens from light|dark themeMode.
+// Modal / secondary panel: solid tokens from light|dark themeMode.
 
 export type ThemeModeName = 'light' | 'dark';
 
 /**
- * Theme-aware UI chrome (modal panels, hover wash, secondary labels).
+ * Theme-aware panel colors (modal panels, hover wash, secondary labels).
  * Neutral surfaces — brand purple only on selection / primary accents.
  */
-export const modalChromeByMode = {
+export const panelColorsByMode = {
   light: {
     surface: '#F8FAFC',
     body: '#1F2937',
@@ -26,11 +26,11 @@ export const modalChromeByMode = {
   },
 } as const;
 
-export type ModalChrome = (typeof modalChromeByMode)[ThemeModeName];
+export type PanelColors = (typeof panelColorsByMode)[ThemeModeName];
 
-/** Resolve chrome; null/unknown → dark (common terminal default). */
-export function modalChrome(mode: ThemeModeName | null | undefined): ModalChrome {
-  return mode === 'light' ? modalChromeByMode.light : modalChromeByMode.dark;
+/** Resolve panel colors; null/unknown → dark (common terminal default). */
+export function panelColors(mode: ThemeModeName | null | undefined): PanelColors {
+  return mode === 'light' ? panelColorsByMode.light : panelColorsByMode.dark;
 }
 
 export const termcnColors = {
@@ -41,10 +41,10 @@ export const termcnColors = {
    */
   foreground: '#E5E7EB',
   /**
-   * Secondary labels — light-theme mid gray. Prefer `modalChrome(mode).muted`
+   * Secondary labels — light-theme mid gray. Prefer `panelColors(mode).muted`
    * so dark terminals get a lighter secondary.
    */
-  muted: modalChromeByMode.light.muted,
+  muted: panelColorsByMode.light.muted,
   border: '#A78BFA',
   error: '#DC2626',
   /** @deprecated Do not full-paint the app. */
@@ -52,17 +52,17 @@ export const termcnColors = {
   /** @deprecated Modal host does not paint full-viewport scrim. */
   modalScrim: '#EDE9FE',
   /**
-   * Light modal panel fill. Prefer `modalChrome(themeMode).surface`.
+   * Light modal panel fill. Prefer `panelColors(themeMode).surface`.
    */
-  modalSurface: modalChromeByMode.light.surface,
+  modalSurface: panelColorsByMode.light.surface,
   /**
-   * Body text on light modalSurface. Prefer `modalChrome(themeMode).body`.
+   * Body text on light modalSurface. Prefer `panelColors(themeMode).body`.
    */
-  panelBody: modalChromeByMode.light.body,
+  panelBody: panelColorsByMode.light.body,
   /**
-   * Light-theme hover wash. Prefer `modalChrome(themeMode).hover` (solid).
+   * Light-theme hover wash. Prefer `panelColors(themeMode).hover` (solid).
    */
-  hover: modalChromeByMode.light.hover,
+  hover: panelColorsByMode.light.hover,
   selectionBg: '#7C3AED',
   selectionFg: '#FFFFFF',
 } as const;

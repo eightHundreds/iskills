@@ -112,10 +112,10 @@ export async function importLocationToCollection(
     }
   }
   const committed = await writeCollectedMcp(incoming, `mcp: import ${incoming.name}`);
+  if (!committed) throw new DomainError('domain.gitCommitFailed', { error: incoming.name });
   if (options.keepSecrets !== false && !isEmptySecrets(entry.secrets)) {
     await writeMcpSecrets(incoming.name, entry.secrets);
   }
-  if (!committed) throw new DomainError('domain.gitCommitFailed', { error: incoming.name });
   return { result: 'imported', name: incoming.name };
 }
 

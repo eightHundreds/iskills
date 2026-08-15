@@ -12,7 +12,7 @@ import { deflateSync } from 'node:zlib';
 import { act } from 'react';
 import { testRender } from '@opentui/react/test-utils';
 import {
-  modalChromeByMode,
+  panelColorsByMode,
   termcnColors,
 } from '../../src/ui/components/colors.js';
 import { ExitProvider } from '../../src/ui/tui/hooks.js';
@@ -159,8 +159,8 @@ const bgCounts = new Map<string, number>();
 let totalCells = 0;
 let panelCells = 0;
 let scrimCells = 0;
-const lightRgb = parseHex(modalChromeByMode.light.surface);
-const darkRgb = parseHex(modalChromeByMode.dark.surface);
+const lightRgb = parseHex(panelColorsByMode.light.surface);
+const darkRgb = parseHex(panelColorsByMode.dark.surface);
 const scrimRgb = parseHex(termcnColors.modalScrim);
 
 for (let y = 0; y < rows; y++) {

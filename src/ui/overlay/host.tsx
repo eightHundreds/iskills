@@ -70,14 +70,14 @@ export function useOverlayFooterItems(): FooterItem[] | null {
  * Independent overlay root: Layer + Modal promise slots.
  * Does not own process lifecycle, Ctrl+C, or first-frame gating — compose under AppShell (or any host).
  *
- * @param bottomChrome — rendered below the Layer replace region (always visible).
+ * @param bottomBar — rendered below the Layer replace region (always visible).
  */
 export function OverlayHost({
   children,
-  bottomChrome,
+  bottomBar,
 }: {
   children: ReactNode;
-  bottomChrome?: ReactNode;
+  bottomBar?: ReactNode;
 }): ReactNode {
   const { stdout } = useStdout();
   const cols = stdout.columns ?? 80;
@@ -243,7 +243,7 @@ export function OverlayHost({
 
   // Keep `children` mounted while a layer is open so AppShell (Ctrl+C,
   // first-frame gating) and long-lived trees (Browser) stay alive. Layer content
-  // is a full-page visual replace of the *main* region only — bottomChrome stays.
+  // is a full-page visual replace of the *main* region only — bottomBar stays.
   return (
     <LayerContext.Provider value={layerApi}>
       <ModalContext.Provider value={modalApi}>
@@ -274,12 +274,12 @@ export function OverlayHost({
                   <PointerSurface id="layer">{layerSlot.node}</PointerSurface>
                 ) : null}
               </box>
-              {bottomChrome}
+              {bottomBar}
               {modalOpen ? (
                 <PointerSurface id="modal">
                   {/*
                     Transparent full-screen host (no scrim wash). Dialogs paint
-                    their own theme-aware solid panel via useModalChrome().
+                    their own theme-aware solid panel via usePanelColors().
                   */}
                   <box
                     position="absolute"

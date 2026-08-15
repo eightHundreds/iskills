@@ -166,7 +166,7 @@ for (const r of results) {
   const lines = r.frame.split('\n');
   report += `--- stats: lines=${lines.length} nonEmpty=${lines.filter((l) => l.trim()).length} width=${Math.max(...lines.map((l) => l.length), 0)}\n`;
   const issues: string[] = [];
-  if (!/收藏夹|当前项目|全局|加载/.test(r.frame)) issues.push('missing tab chrome');
+  if (!/收藏夹|当前项目|全局|加载/.test(r.frame)) issues.push('missing tab bar');
   if (
     r.label === 'browser-default' &&
     !/alpha-skill|beta-helper|gamma/.test(r.frame)
@@ -174,7 +174,7 @@ for (const r of results) {
     issues.push('missing skill names');
   }
   if (r.label === 'browser-filter' && !/筛选/.test(r.frame)) {
-    issues.push('filter chrome missing after /');
+    issues.push('filter bar missing after /');
   }
   if (r.label === 'browser-help' && !/快捷键|帮助/.test(r.frame)) {
     issues.push('help overlay missing after ?');

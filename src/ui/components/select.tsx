@@ -3,7 +3,7 @@
  * Esc cancel + optional 1–9 shortcuts stay product-side.
  */
 import { useMemo, type ReactNode } from 'react';
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
 import {
   resolveOptionValue,
@@ -26,7 +26,7 @@ export function Select<T>({
   numbered?: boolean;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const rows = stdout.rows ?? 24;
   const visible = visibleOptionCount(rows, label);
   const height = Math.max(3, Math.min(visible, Math.max(1, options.length)));
@@ -56,7 +56,7 @@ export function Select<T>({
   return (
     <box flexDirection="column">
       {label ? (
-        <Text bold color={chrome.body}>
+        <Text bold color={panel.body}>
           {label}
         </Text>
       ) : null}
@@ -70,9 +70,9 @@ export function Select<T>({
           selectedTextColor={termcnColors.selectionFg}
           selectedBackgroundColor={termcnColors.selectionBg}
           // Theme-aware idle text (not forced white / fixed mid-gray only).
-          textColor={chrome.body}
-          focusedTextColor={chrome.body}
-          descriptionColor={chrome.muted}
+          textColor={panel.body}
+          focusedTextColor={panel.body}
+          descriptionColor={panel.muted}
           selectedDescriptionColor={termcnColors.selectionFg}
           backgroundColor="transparent"
           focusedBackgroundColor="transparent"

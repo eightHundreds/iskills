@@ -1,7 +1,8 @@
-import { Text } from '../tui/index.js';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import {
   addCollectedMcp,
+  agentMcpWritable,
+  isMcpAgentId,
   listCollectedMcps,
   listMcpLocations,
   probeHttp,
@@ -25,7 +26,10 @@ import { promptText } from '../prompts/present.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
 import { InterruptError } from '../shell/terminal.js';
+import { useApp } from '../tui/index.js';
+import type { McpFooterSnapshot } from './browse-capabilities.js';
 import { McpBrowser } from './browser.js';
+import { McpShellFooter } from './footer.js';
 
 export interface McpBrowserData {
   collection: CollectedMcp[];
@@ -45,199 +49,220 @@ async function loadMcpData(): Promise<McpBrowserData> {
 
 export async function runMcpBrowserApp(): Promise<void> {
   const data = await loadMcpData();
-  const app = await startApp(
-    <AppShell cancelOnEscape={false}>
-      <McpApp initial={data} />
-    </AppShell>,
-    { alternateScreen: true }
-  );
+  const app = await startApp(<McpApp initial={data} />, { alternateScreen: true });
   await app.waitUntilExit();
 }
 
 function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
+  const { exit } = useApp();
+  const handleCtrlC = useCallback(() => {
+    exit(new InterruptError());
+  }, [exit]);
   const [data, setData] = useState(initial);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<{ kind: 'normal' | 'error'; text: string } | null>(
+    null
+  );
   const [probe, setProbe] = useState<HttpProbeStatus | undefined>(undefined);
+  const [snapshot, setSnapshot] = useState<McpFooterSnapshot | null>(null);
+  const [query, setQuery] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState('');
+  const [queryBefore, setQueryBefore] = useState('');
 
   const reload = useCallback(async () => {
     setData(await loadMcpData());
   }, []);
-
-  const onImport = useCallback(
-    async (entries: McpLocationEntry[]) => {
-      const { importLocationToCollection } = await import('../../domain/mcp/index.js');
-      let count = 0;
-      for (const entry of entries) {
-        const result = await importLocationToCollection(entry, {
-          confirmReplace: async ({ name }) =>
-            Modal.confirm({
-              title: t('common.confirm'),
-              message: t('mcp.replaceConfirm', { name }),
-              defaultValue: false,
-            }),
-        });
-        if (result.result === 'imported') count += 1;
-        if (result.result === 'collected-as') {
-          setStatus(t('mcp.alreadyCollectedAs', { name: result.name }));
-        }
-      }
-      await reload();
-      setStatus(t('mcp.importedCount', { count }));
-    },
-    [reload]
-  );
-
-  const onAdd = useCallback(
-    async (names: string[], scope: McpScope, agents: string[]) => {
-      let added = 0;
-      for (const name of names) {
-        const result = await addCollectedMcp(
-          name,
-          agents.map((agent) => ({ agent, scope }))
-        );
-        added += result.added;
-      }
-      await reload();
-      setStatus(t('mcp.addedCount', { count: added }));
-    },
-    [reload]
-  );
-
-  const onDelete = useCallback(
-    async (target: { collection?: CollectedMcp[]; locations?: McpLocationEntry[] }) => {
-      if (target.collection?.length) {
-        for (const item of target.collection) {
-          const ok = await Modal.confirm({
-            title: t('common.confirm'),
-            message: t('mcp.deleteCollectionConfirm', { name: item.name }),
-            defaultValue: false,
-          });
-          if (!ok) return;
-          await removeCollectedMcp(item.name);
-        }
-      }
-      if (target.locations?.length) {
-        const ctx = scanContext();
-        for (const entry of target.locations) {
-          const ok = await Modal.confirm({
-            title: t('common.confirm'),
-            message: t('mcp.deleteLocationConfirm', { name: entry.nativeKey, agent: entry.agent }),
-            defaultValue: false,
-          });
-          if (!ok) return;
-          await removeMcpLocation(entry, ctx);
-        }
-      }
-      await reload();
-    },
-    [reload]
-  );
-
-  const onToggle = useCallback(
-    async (entry: McpLocationEntry) => {
-      await toggleMcpLocation(entry, scanContext());
-      await reload();
-    },
-    [reload]
-  );
-
-  const onUpdate = useCallback(
-    async (items: CollectedMcp[]) => {
-      for (const item of items) {
-        await updateLocationsFromCollection(item.name, {
-          confirmDrift: async ({ entry }) =>
-            Modal.confirm({
-              title: t('common.confirm'),
-              message: t('mcp.updateDriftConfirm', {
-                name: item.name,
-                agent: entry.agent,
-              }),
-              defaultValue: false,
-            }),
-        });
-      }
-      await reload();
-    },
-    [reload]
-  );
-
-  const onRename = useCallback(
-    async (item: CollectedMcp) => {
-      const next = await promptText(t('mcp.namePrompt'));
-      if (!next?.trim()) return;
-      await renameCollectedMcp(item.name, next.trim());
-      await reload();
-      setStatus(t('mcp.renamed', { name: next.trim() }));
-    },
-    [reload]
-  );
-
-  const onTags = useCallback(
-    async (item: CollectedMcp) => {
-      const { promptTags } = await import('../prompts/present.js');
-      const known = [...new Set(data.collection.flatMap((entry) => entry.tags))];
-      const tags = await promptTags(known, item.tags, t('common.tags'));
-      if (!tags) return;
-      await updateCollectedMeta(item.name, { tags });
-      await reload();
-    },
-    [reload]
-  );
-
-  const onNote = useCallback(
-    async (item: CollectedMcp) => {
-      const note = await promptText(t('common.note'));
-      if (note === undefined) return;
-      await updateCollectedMeta(item.name, { note });
-      await reload();
-    },
-    [reload]
-  );
-
-  const onLogin = useCallback(
-    async (item: CollectedMcp) => {
-      const header = (await promptText(t('mcp.headerPrompt')))?.trim() || 'Authorization';
-      const token = await promptText(t('mcp.tokenPrompt'));
-      if (!token?.trim()) return;
-      await storeCollectedLoginSecret(item.name, header, token.trim());
-      setStatus(t('mcp.loginSaved'));
-    },
-    []
-  );
-
-  const onProbe = useCallback(async (item: CollectedMcp) => {
-    if (item.recipe.transport !== 'http') {
-      setProbe(undefined);
-      return;
-    }
-    const secrets = await readMcpSecrets(item.name);
-    setProbe(await probeHttp(item.recipe, secrets));
+  const onCapabilities = useCallback((next: McpFooterSnapshot) => {
+    setSnapshot((current) =>
+      current && JSON.stringify(current) === JSON.stringify(next) ? current : next
+    );
+  }, []);
+  const flash = useCallback((text: string, kind: 'normal' | 'error' = 'normal') => {
+    setStatus({ kind, text });
+    setTimeout(() => setStatus(null), 3500);
   }, []);
 
-  useEffect(() => {
-    if (!status) return;
-    const timer = setTimeout(() => setStatus(''), 2400);
-    return () => clearTimeout(timer);
-  }, [status]);
-
-  if (!data) return <Text>{t('ui.loading')}</Text>;
-
   return (
-    <McpBrowser
-      data={data}
-      status={status}
-      {...(probe ? { probe } : {})}
-      onImport={onImport}
-      onAdd={onAdd}
-      onDelete={onDelete}
-      onToggle={onToggle}
-      onUpdate={onUpdate}
-      onRename={onRename}
-      onTags={onTags}
-      onNote={onNote}
-      onLogin={onLogin}
-      onProbe={onProbe}
-    />
+    <AppShell
+      cancelOnEscape={false}
+      onCtrlC={handleCtrlC}
+      bottomBar={
+        <McpShellFooter
+          snapshot={snapshot}
+          filterOpen={filterOpen}
+          filterDraft={filterDraft}
+          status={status}
+          onFilterChange={(draft) => {
+            setFilterDraft(draft);
+            setQuery(draft);
+          }}
+          onFilterCancel={() => {
+            setFilterOpen(false);
+            setFilterDraft('');
+            setQuery(queryBefore);
+          }}
+          onFilterSubmit={(value) => {
+            setFilterOpen(false);
+            setQuery(value);
+            setFilterDraft(value);
+          }}
+        />
+      }
+    >
+      <McpBrowser
+        data={data}
+        {...(probe ? { probe } : {})}
+        query={query}
+        filterOpen={filterOpen}
+        onOpenFilter={() => {
+          setQueryBefore(query);
+          setFilterDraft(query);
+          setFilterOpen(true);
+        }}
+        onCapabilities={onCapabilities}
+        onImport={async (entries) => {
+          try {
+            const { importLocationToCollection } = await import('../../domain/mcp/index.js');
+            let count = 0;
+            for (const entry of entries) {
+              const result = await importLocationToCollection(entry, {
+                confirmReplace: async ({ name }) =>
+                  Modal.confirm({
+                    title: t('common.confirm'),
+                    message: t('mcp.replaceConfirm', { name }),
+                    defaultValue: false,
+                  }),
+              });
+              if (result.result === 'imported') count += 1;
+              if (result.result === 'collected-as') {
+                flash(t('mcp.alreadyCollectedAs', { name: result.name }));
+              }
+            }
+            await reload();
+            flash(t('mcp.importedCount', { count }));
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onAdd={async (names, scope: McpScope, agents: string[]) => {
+          try {
+            const ctx = scanContext();
+            const writable: { agent: string; scope: McpScope }[] = [];
+            for (const agent of agents) {
+              if (isMcpAgentId(agent) && (await agentMcpWritable(agent, scope, ctx))) {
+                writable.push({ agent, scope });
+              }
+            }
+            let added = 0;
+            for (const name of names) {
+              added += (await addCollectedMcp(name, writable, ctx)).added;
+            }
+            await reload();
+            flash(t('mcp.addedCount', { count: added }));
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onDelete={async (target) => {
+          try {
+            if (target.collection?.length) {
+              for (const item of target.collection) {
+                const ok = await Modal.confirm({
+                  title: t('common.confirm'),
+                  message: t('mcp.deleteCollectionConfirm', { name: item.name }),
+                  defaultValue: false,
+                });
+                if (!ok) return;
+                await removeCollectedMcp(item.name);
+              }
+            }
+            if (target.locations?.length) {
+              const ctx = scanContext();
+              for (const entry of target.locations) {
+                const ok = await Modal.confirm({
+                  title: t('common.confirm'),
+                  message: t('mcp.deleteLocationConfirm', {
+                    name: entry.nativeKey,
+                    agent: entry.agent,
+                  }),
+                  defaultValue: false,
+                });
+                if (!ok) return;
+                await removeMcpLocation(entry, ctx);
+              }
+            }
+            await reload();
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onToggle={async (entry) => {
+          try {
+            await toggleMcpLocation(entry, scanContext());
+            await reload();
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onUpdate={async (items) => {
+          try {
+            for (const item of items) {
+              await updateLocationsFromCollection(item.name, {
+                confirmDrift: async ({ entry }) =>
+                  Modal.confirm({
+                    title: t('common.confirm'),
+                    message: t('mcp.updateDriftConfirm', {
+                      name: item.name,
+                      agent: entry.agent,
+                    }),
+                    defaultValue: false,
+                  }),
+              });
+            }
+            await reload();
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onRename={async (item) => {
+          const next = await promptText(t('mcp.namePrompt'), item.name);
+          if (!next?.trim()) return;
+          try {
+            await renameCollectedMcp(item.name, next.trim());
+            await reload();
+            flash(t('mcp.renamed', { name: next.trim() }));
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
+        onTags={async (item) => {
+          const { promptTags } = await import('../prompts/present.js');
+          const known = [...new Set(data.collection.flatMap((entry) => entry.tags))];
+          const tags = await promptTags(known, item.tags, t('common.tags'));
+          if (!tags) return;
+          await updateCollectedMeta(item.name, { tags });
+          await reload();
+        }}
+        onNote={async (item) => {
+          const note = await promptText(t('common.note'), item.note);
+          if (note === undefined) return;
+          await updateCollectedMeta(item.name, { note });
+          await reload();
+        }}
+        onLogin={async (item) => {
+          const header = (await promptText(t('mcp.headerPrompt'), 'Authorization'))?.trim();
+          if (!header) return;
+          const token = await promptText(t('mcp.tokenPrompt'));
+          if (!token?.trim()) return;
+          await storeCollectedLoginSecret(item.name, header, token.trim());
+          flash(t('mcp.loginSaved'));
+        }}
+        onProbe={async (item) => {
+          if (item.recipe.transport !== 'http') return;
+          setProbe(await probeHttp(item.recipe, await readMcpSecrets(item.name)));
+        }}
+      />
+    </AppShell>
   );
 }
 

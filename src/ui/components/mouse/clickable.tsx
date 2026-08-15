@@ -4,7 +4,7 @@
  */
 import { useState, type ReactNode } from 'react';
 
-import { useModalChrome } from '../../tui/hooks.js';
+import { usePanelColors } from '../../tui/hooks.js';
 import {
   useMouseRegistry,
   usePointerSurfaceId,
@@ -24,7 +24,7 @@ export function Clickable({
 }): ReactNode {
   const surface = usePointerSurfaceId();
   const registry = useMouseRegistry();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const [hovered, setHovered] = useState(false);
 
   const active = !disabled && (registry?.isTopSurface(surface) ?? true);
@@ -35,7 +35,7 @@ export function Clickable({
   }
 
   // Solid theme hover — low-alpha purple composites against black clear to #1b0d34.
-  const hoverBg = showHover ? { backgroundColor: chrome.hover } : {};
+  const hoverBg = showHover ? { backgroundColor: panel.hover } : {};
 
   return (
     <box flexDirection="row"

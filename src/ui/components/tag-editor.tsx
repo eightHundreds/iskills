@@ -1,4 +1,4 @@
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -18,7 +18,7 @@ export function TagEditor({
   onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialValues));
   const [focus, setFocus] = useState<'list' | 'input'>(tags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
@@ -58,17 +58,17 @@ export function TagEditor({
 
   return (
     <box flexDirection="column">
-      <Text bold color={chrome.body}>
+      <Text bold color={panel.body}>
         {t('ui.selectedCount', { count: selected.size })}
       </Text>
-      <Text bold color={chrome.body}>
+      <Text bold color={panel.body}>
         {t('ui.existingTags')}
       </Text>
       <box border
         flexDirection="column"
         borderStyle="rounded"
         borderColor={termcnColors.border}
-        backgroundColor={chrome.surface}
+        backgroundColor={panel.surface}
         paddingX={1}
       >
         {visible.length ? visible.map((tag, index) => {
@@ -79,15 +79,15 @@ export function TagEditor({
               color={
                 active && focus === 'list'
                   ? termcnColors.primary
-                  : chrome.body
+                  : panel.body
               }
-              backgroundColor={chrome.surface}
+              backgroundColor={panel.surface}
             >
               {`${active ? '›' : ' '} ${selected.has(tag) ? '●' : '○'} ${tag}`}
             </Text>
           );
         }) : (
-          <Text color={chrome.muted} backgroundColor={chrome.surface}>
+          <Text color={panel.muted} backgroundColor={panel.surface}>
             {t('ui.noExistingTags')}
           </Text>
         )}

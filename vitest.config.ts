@@ -17,11 +17,13 @@ export default defineConfig({
           include: [
             'test/agents.test.ts',
             'test/browser.test.ts',
+            'test/browse-nav.test.ts',
             'test/browser-ui.test.tsx',
             'test/cli.test.ts',
             'test/create.test.ts',
             'test/library.test.ts',
             'test/mcp-collection.test.ts',
+            'test/mcp-ui.test.tsx',
             'test/collection-match.test.ts',
             'test/mouse.test.ts',
             'test/ui.test.tsx',

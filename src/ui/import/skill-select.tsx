@@ -1,4 +1,4 @@
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
@@ -82,13 +82,13 @@ function SkillDetailPreview<T extends Skill>({
   frameHeight: number;
   frameWidth: number;
 }): ReactNode {
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const colors = {
     primary: termcnColors.primary,
     border: termcnColors.border,
-    muted: chrome.muted,
-    body: chrome.body,
-    surface: chrome.surface,
+    muted: panel.muted,
+    body: panel.body,
+    surface: panel.surface,
   };
   const [detailOffset, setDetailOffset] = useState(0);
   const lines = detailPreviewLines(skill, agent, Math.max(12, frameWidth - 4));
@@ -149,13 +149,13 @@ export function SkillMultiSelect<T extends Skill>({
   onSubmit: (values: T[]) => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const colors = {
     primary: termcnColors.primary,
     border: termcnColors.border,
-    muted: chrome.muted,
-    body: chrome.body,
-    surface: chrome.surface,
+    muted: panel.muted,
+    body: panel.body,
+    surface: panel.surface,
   };
   const agentNames = useMemo(() => groups.map((group) => group.agent), [groups]);
   const [activeAgent, setActiveAgent] = useState(agentNames[0] ?? '');

@@ -1,5 +1,5 @@
 import type { MouseEvent } from '@opentui/core';
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useCallback, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -53,13 +53,13 @@ export function FramedPanel({
   ) => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const viewportWidth = stdout.columns ?? 80;
   const viewportRows = stdout.rows ?? 24;
   const width = Math.min(preferredWidth ?? 76, Math.max(36, viewportWidth - 6));
   const inner = Math.max(1, width - 4);
   const allBody = bodyLines(content, inner);
-  // Leave room for modal chrome / shell footer around the absolute frame.
+  // Leave room for modal panel / shell footer around the absolute frame.
   const frameBudget = Math.max(
     6,
     Math.min(maxHeight ?? viewportRows - 6, viewportRows - 4)
@@ -114,7 +114,7 @@ export function FramedPanel({
 
   const top = framedBorderTop(title, width);
   const bottom = framedBorderBottom(width);
-  const panelBg = chrome.surface;
+  const panelBg = panel.surface;
 
   return (
     <box
@@ -138,11 +138,11 @@ export function FramedPanel({
               │{' '}
             </Text>
             {mute ? (
-              <Text color={chrome.muted} backgroundColor={panelBg}>
+              <Text color={panel.muted} backgroundColor={panelBg}>
                 {body}
               </Text>
             ) : (
-              <Text color={chrome.body} backgroundColor={panelBg}>
+              <Text color={panel.body} backgroundColor={panelBg}>
                 {body}
               </Text>
             )}
@@ -157,7 +157,7 @@ export function FramedPanel({
         {bottom}
       </Text>
       {maxOffset > 0 ? (
-        <Text color={chrome.muted} backgroundColor={panelBg}>
+        <Text color={panel.muted} backgroundColor={panelBg}>
           {t('comp.scrollRange', { from: scroll + 1, to: Math.min(scroll + maxBody, allBody.length), total: allBody.length })}
         </Text>
       ) : null}

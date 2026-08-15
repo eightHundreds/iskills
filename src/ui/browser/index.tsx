@@ -107,7 +107,7 @@ export function BrowserApp({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
   }, [exit, store]);
 
   return (
-    <AppShell onCtrlC={handleCtrlC} bottomChrome={<BrowserShellFooter />}>
+    <AppShell onCtrlC={handleCtrlC} bottomBar={<BrowserShellFooter />}>
       <BrowserAppScreens lifecycle={lifecycle} />
     </AppShell>
   );

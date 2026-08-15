@@ -17,8 +17,8 @@ import {
 } from '@opentui/react';
 import type { ThemeMode } from '@opentui/core';
 import {
-  modalChrome,
-  type ModalChrome,
+  panelColors,
+  type PanelColors,
   type ThemeModeName,
 } from '../components/colors.js';
 
@@ -109,7 +109,7 @@ export function useThemeMode(): ThemeModeName {
 }
 
 /** Modal panel fill/body/muted for the current terminal theme. */
-export function useModalChrome(): ModalChrome & { mode: ThemeModeName } {
+export function usePanelColors(): PanelColors & { mode: ThemeModeName } {
   const mode = useThemeMode();
-  return useMemo(() => ({ mode, ...modalChrome(mode) }), [mode]);
+  return useMemo(() => ({ mode, ...panelColors(mode) }), [mode]);
 }

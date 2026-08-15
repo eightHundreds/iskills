@@ -101,16 +101,10 @@ export function computeBrowseCapabilities(
         : globalGroup?.skills ?? [];
   // Same list model as Browser: tag filter then query (master-detail flat / else grouped).
   const filteredSkills = skillsForTagFilter(tabSkills, tagFilter);
-  const projectRows = groupedRows(filteredSkills, query);
-  const collectionRows = groupedRows(filteredSkills, query);
-  const globalRows = flatRows(filteredSkills, query);
-  const rows = masterDetail
-    ? flatRows(filteredSkills, query)
-    : tab === 'project'
-      ? projectRows
-      : tab === 'global'
-        ? globalRows
-        : collectionRows;
+  const rows =
+    masterDetail || tab === 'global'
+      ? flatRows(filteredSkills, query)
+      : groupedRows(filteredSkills, query);
   const currentRow = rows[navigation.cursor];
   const currentSkill =
     currentRow?.type === 'skill' ? currentRow.skill : undefined;
@@ -184,7 +178,7 @@ export function computeBrowseCapabilities(
   const canEditDetailField = focus === 'detail' && tab === 'collection' && Boolean(currentSkill);
 
   // Tag jump (`g`): only when current tab has at least one group header (non-all filter source).
-  const hasTagGroups = groupedRows(tabSkills, '').some((row) => row.type === 'group');
+  const hasTagGroups = tabSkills.some((skill) => (skill.tags?.length ?? 0) > 0);
   const canJumpTag = focus === 'list' && hasTagGroups;
   const canSync =
     focus === 'list' && tab === 'collection' && data.canSync;

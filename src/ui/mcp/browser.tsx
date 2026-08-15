@@ -1,25 +1,58 @@
-import { Text, useApp, useStdout } from '../tui/index.js';
+import { useApp, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import type {
   CollectedMcp,
   HttpProbeStatus,
   McpLocationEntry,
   McpScope,
 } from '../../domain/mcp/index.js';
-import { mcpAgentIds, recipeEndpoint } from '../../domain/mcp/index.js';
+import { findCollectedByEndpoint, mcpAgentIds } from '../../domain/mcp/index.js';
 import { t } from '../../i18n/index.js';
-import { Tabs, termcnColors } from '../components/termcn.js';
-import { padColumns, sliceColumns } from '../components/terminal-layout.js';
-import { masterDetailLayout } from '../browser/layout.js';
+import { Tabs } from '../components/termcn.js';
+import { useModal, useOverlayBusy } from '../overlay/host.js';
+import { ShortcutHelpPanel } from '../browser/shortcut-help.js';
+import { AgentTabs, BrowseHomePane, BrowseListPane } from '../browser/panes.js';
+import type { BrowserFocus, BrowserTab } from '../browser/types.js';
+import { TAG_FILTER_ALL, browseListColumnLines } from '../browser/format.js';
+import {
+  applyBrowseSessionPatch,
+  browseSessionClickList,
+  browseSessionClickTag,
+  browseSessionScrollList,
+  reduceBrowseSessionKey,
+  useBrowseSessionEffects,
+  type BrowseSessionNav,
+  type BrowseSessionPatch,
+} from '../browser/browse-session.js';
+import { wrapAgent } from '../browser/browse-nav.js';
+import {
+  browserFrameDimensions,
+  masterDetailLayout,
+  masterDetailViewportHeight,
+  masterDetailWidths,
+} from '../browser/layout.js';
+import { computeMcpBrowseCapabilities, selectedOrCurrent } from './browse-capabilities.js';
+import type { McpFooterSnapshot } from './browse-capabilities.js';
+import {
+  collectedListItem,
+  collectedTagOptions,
+  filterCollected,
+  filterLocations,
+  groupLocationsByAgent,
+  locationKey,
+  locationListItem,
+  locationTagOptions,
+  mcpCollectionDetailRows,
+  mcpLocationDetailRows,
+  mcpShortcutHelpSections,
+} from './format.js';
 import type { McpBrowserData } from './index.js';
-
-type TabId = 'project' | 'global' | 'collection';
 
 export function McpBrowser({
   data,
-  status,
   probe,
+  onCapabilities,
   onImport,
   onAdd,
   onDelete,
@@ -30,10 +63,13 @@ export function McpBrowser({
   onNote,
   onLogin,
   onProbe,
+  filterOpen,
+  query,
+  onOpenFilter,
 }: {
   data: McpBrowserData;
-  status: string;
   probe?: HttpProbeStatus;
+  onCapabilities: (snapshot: McpFooterSnapshot) => void;
   onImport: (entries: McpLocationEntry[]) => Promise<void>;
   onAdd: (names: string[], scope: McpScope, agents: string[]) => Promise<void>;
   onDelete: (target: {
@@ -47,371 +83,433 @@ export function McpBrowser({
   onNote: (item: CollectedMcp) => Promise<void>;
   onLogin: (item: CollectedMcp) => Promise<void>;
   onProbe: (item: CollectedMcp) => Promise<void>;
+  filterOpen: boolean;
+  query: string;
+  onOpenFilter: () => void;
 }): ReactNode {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const width = stdout.columns ?? 80;
-  const rows = stdout.rows ?? 24;
-  const master = masterDetailLayout(width, rows);
-  const [tab, setTab] = useState<TabId>('collection');
-  const [agent, setAgent] = useState('claude');
-  const [cursor, setCursor] = useState(0);
-  const [query, setQuery] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filterDraft, setFilterDraft] = useState('');
+  const modal = useModal();
+  const overlayBusy = useOverlayBusy();
+  const [nav, setNavState] = useState<BrowseSessionNav>({
+    tab: 'collection',
+    focus: 'list',
+    agent: '',
+    cursor: 0,
+  });
+  const navRef = useRef(nav);
+  const setNav = (value: SetStateAction<BrowseSessionNav>): void => {
+    setNavState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      navRef.current = next;
+      return next;
+    });
+  };
+  const tab = nav.tab;
+  const focus = nav.focus;
+  const agent = nav.agent;
+  const cursor = nav.cursor;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tagFilter, setTagFilter] = useState(TAG_FILTER_ALL);
+  const [tagCursor, setTagCursor] = useState(0);
+  const tagCursorRef = useRef(0);
+  tagCursorRef.current = tagCursor;
+  const [detailFieldIndex, setDetailFieldIndex] = useState(0);
+  const detailFieldIndexRef = useRef(0);
 
-  const locationRows = tab === 'project' ? data.project : tab === 'global' ? data.global : [];
-  const agents = useMemo(() => {
-    const present = new Set(locationRows.map((entry) => entry.agent));
-    const ordered = mcpAgentIds().filter((id) => present.has(id));
-    return ordered.length ? ordered : mcpAgentIds();
-  }, [locationRows]);
+  const setTab = (value: BrowserTab): void => {
+    setNav((current) => ({ ...current, tab: value }));
+  };
+  const setFocus = (value: BrowserFocus): void => {
+    setNav((current) => ({ ...current, focus: value }));
+  };
+  const setAgent = (value: string): void => {
+    setNav((current) => ({ ...current, agent: value }));
+  };
+  const setCursor = (value: SetStateAction<number>): void => {
+    setNav((current) => {
+      const nextCursor = typeof value === 'function' ? value(current.cursor) : value;
+      cursorRef.current = nextCursor;
+      return { ...current, cursor: nextCursor };
+    });
+  };
 
-  const activeAgent = agents.includes(agent as (typeof agents)[number])
-    ? agent
-    : (agents[0] ?? 'claude');
+  const projectGroups = useMemo(() => groupLocationsByAgent(data.project), [data.project]);
+  const globalGroups = useMemo(() => groupLocationsByAgent(data.global), [data.global]);
+  const currentAgentGroups =
+    tab === 'project' ? projectGroups : tab === 'global' ? globalGroups : [];
+  const agentNames = currentAgentGroups.map((group) => group.agent);
+  const activeAgent = agentNames.includes(agent) ? agent : agentNames[0] ?? '';
+  const currentLocations =
+    currentAgentGroups.find((group) => group.agent === activeAgent)?.entries ?? [];
+  const visibleCollected = useMemo(
+    () => filterCollected(data.collection, tagFilter, query),
+    [data.collection, tagFilter, query]
+  );
+  const visibleLocations = useMemo(
+    () => filterLocations(currentLocations, query),
+    [currentLocations, query]
+  );
+  const listItems = useMemo(
+    () =>
+      tab === 'collection'
+        ? visibleCollected.map(collectedListItem)
+        : visibleLocations.map(locationListItem),
+    [tab, visibleCollected, visibleLocations]
+  );
+  const listCount = listItems.length;
+  const currentCollected = tab === 'collection' ? visibleCollected[cursor] : undefined;
+  const currentLocation = tab !== 'collection' ? visibleLocations[cursor] : undefined;
+  const selectedCollected = selectedOrCurrent(
+    data.collection.filter((item) => selected.has(`mcp:${item.name}`)),
+    currentCollected
+  );
+  const selectedLocations = selectedOrCurrent(
+    currentLocations.filter((entry) => selected.has(locationKey(entry))),
+    currentLocation
+  );
+  const selectedImportable = selectedLocations.filter(
+    (entry) => !findCollectedByEndpoint(data.collection, entry.recipe)
+  );
+  const useBrowseHome = masterDetailLayout(stdout.columns, stdout.rows);
+  const tagOptions =
+    tab === 'collection' ? collectedTagOptions(data.collection) : locationTagOptions(currentLocations);
+
+  useBrowseSessionEffects({
+    tab,
+    agent,
+    focus,
+    cursor,
+    listLength: listCount,
+    hasAgents: agentNames.length > 0,
+    masterDetail: useBrowseHome,
+    currentIsItem: Boolean(listItems[cursor]),
+    setFocus,
+    setCursor,
+    setSelected,
+    setTagFilter,
+    setTagCursor,
+  });
+
   useEffect(() => {
     if (agent !== activeAgent) setAgent(activeAgent);
   }, [agent, activeAgent]);
-  const visibleLocations = locationRows
-    .filter((entry) => entry.agent === activeAgent)
-    .filter((entry) => matchesQuery(`${entry.nativeKey} ${entry.agent}`, query));
 
-  const visibleCollection = data.collection.filter((item) =>
-    matchesQuery(`${item.name} ${item.recipe.url ?? ''} ${item.tags.join(' ')}`, query)
-  );
+  const applySession = (patch: BrowseSessionPatch<BrowseSessionNav>): void => {
+    applyBrowseSessionPatch(patch, {
+      setNav,
+      setTagFilter,
+      setTagCursor,
+      setSelected,
+      setDetailFieldIndex,
+      tagCursorRef,
+      detailFieldIndexRef,
+      cursorRef,
+    });
+  };
 
-  const listCount = tab === 'collection' ? visibleCollection.length : visibleLocations.length;
-  const currentIndex = Math.min(cursor, Math.max(0, listCount - 1));
-  const currentLocation = tab === 'collection' ? undefined : visibleLocations[currentIndex];
-  const currentCollected = tab === 'collection' ? visibleCollection[currentIndex] : undefined;
-
-  useInput((input, key) => {
-    if (filterOpen) {
-      if (key.escape) {
-        setFilterOpen(false);
-        setFilterDraft(query);
-        return;
-      }
-      if (key.return) {
-        setQuery(filterDraft);
-        setFilterOpen(false);
-        setCursor(0);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setFilterDraft((value) => value.slice(0, -1));
-        return;
-      }
-      if (input && !key.ctrl && !key.meta) setFilterDraft((value) => value + input);
-      return;
-    }
-    if (input === 'q') {
-      exit();
-      return;
-    }
-    if (input === '/') {
-      setFilterOpen(true);
-      setFilterDraft(query);
-      return;
-    }
-    if (key.leftArrow || key.rightArrow) {
-      const order: TabId[] = ['project', 'global', 'collection'];
-      const index = order.indexOf(tab);
-      const next = order[(index + (key.rightArrow ? 1 : order.length - 1)) % order.length];
-      if (next) {
-        setTab(next);
-        setCursor(0);
-        setSelected(new Set());
-      }
-      return;
-    }
-    if (input === '[' || input === ']') {
-      const index = Math.max(0, agents.indexOf(agent as typeof agents[number]));
-      const next = agents[(index + (input === ']' ? 1 : agents.length - 1)) % agents.length];
-      if (next) {
-        setAgent(next);
-        setCursor(0);
-      }
-      return;
-    }
-    if (key.upArrow) {
-      setCursor((value) => Math.max(0, value - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setCursor((value) => Math.min(Math.max(0, listCount - 1), value + 1));
-      return;
-    }
-    if (input === ' ') {
-      const id =
-        tab === 'collection' ? currentCollected?.name : currentLocation ? locationKey(currentLocation) : undefined;
-      if (!id) return;
-      setSelected((current) => {
-        const next = new Set(current);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-      return;
-    }
-    if (input === 'i' && tab !== 'collection') {
-      const picked = selectedLocations(visibleLocations, selected, currentLocation);
-      if (picked.length) void onImport(picked);
-      return;
-    }
-    if (key.return && tab === 'collection') {
-      const names = selectedCollection(visibleCollection, selected, currentCollected).map((item) => item.name);
-      if (names.length) void onAdd(names, 'project', [...mcpAgentIds()]);
-      return;
-    }
-    if (input === 'd') {
-      if (tab === 'collection') {
-        void onDelete({
-          collection: selectedCollection(visibleCollection, selected, currentCollected),
-        });
-      } else {
-        void onDelete({
-          locations: selectedLocations(visibleLocations, selected, currentLocation),
-        });
-      }
-      return;
-    }
-    if (input === 'x' && currentLocation) {
-      void onToggle(currentLocation);
-      return;
-    }
-    if (input === 'u' && tab === 'collection') {
-      void onUpdate(selectedCollection(visibleCollection, selected, currentCollected));
-      return;
-    }
-    if (input === 'r' && currentCollected) {
-      void onRename(currentCollected);
-      return;
-    }
-    if (input === 't' && currentCollected) {
-      void onTags(currentCollected);
-      return;
-    }
-    if (input === 'n' && currentCollected) {
-      void onNote(currentCollected);
-      return;
-    }
-    if (input === 'l' && currentCollected) {
-      void onLogin(currentCollected);
-      return;
-    }
-    if (input === 'p' && currentCollected) {
-      void onProbe(currentCollected);
-    }
+  const footerSnapshot = computeMcpBrowseCapabilities({
+    tab,
+    focus,
+    masterDetail: useBrowseHome,
+    selectionCount: selected.size,
+    currentIsItem: Boolean(listItems[cursor]),
+    canDelete: selectedCollected.length + selectedLocations.length > 0,
+    canImport: tab !== 'collection' && selectedImportable.length > 0,
+    canToggle: Boolean(currentLocation),
+    canUpdate: tab === 'collection' && selectedCollected.length > 0,
+    canTag: tab === 'collection' && Boolean(currentCollected),
+    canLogin: tab === 'collection' && Boolean(currentCollected),
+    canRename: tab === 'collection' && Boolean(currentCollected),
+    hasTagGroups: false,
   });
+  const browseKey = JSON.stringify(footerSnapshot);
+  useEffect(() => {
+    onCapabilities(footerSnapshot);
+  }, [browseKey, onCapabilities]);
 
-  const listWidth = master ? Math.max(24, Math.floor(width * 0.58)) : Math.max(20, width - 2);
-  const detailWidth = Math.max(20, width - listWidth - 3);
+  const frame = browserFrameDimensions({
+    rows: stdout.rows,
+    columns: stdout.columns,
+    projectRows: data.project.length,
+    globalRows: data.global.length,
+    collectionRows: data.collection.length,
+    hasProjectAgents: projectGroups.length > 0,
+    hasGlobalAgents: globalGroups.length > 0,
+  });
+  const masterDetailColumns = masterDetailWidths(Math.max(40, frame.frameWidth - 2), useBrowseHome);
+  const browseViewportHeight = (withAgents: boolean): number =>
+    useBrowseHome
+      ? masterDetailViewportHeight(stdout.rows, 1 + 2 + 3 + (withAgents ? 1 : 0))
+      : Math.max(3, frame.frameHeight - (withAgents ? 3 : 2));
+  const tabBodyMinHeight = useBrowseHome
+    ? Math.max(8, (stdout.rows ?? 24) - 2)
+    : frame.frameHeight - 1;
 
-  const listPane = (
-    <box flexDirection="column" width={listWidth}>
-      {listCount === 0 ? (
-        <Text color={termcnColors.muted}>
-          {tab === 'collection' ? t('mcp.emptyCollection') : t('mcp.emptyLocations')}
-        </Text>
-      ) : tab === 'collection' ? (
-        visibleCollection.map((item, index) => (
-          <Text
-            key={item.name}
-            {...(index === currentIndex
-              ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
-              : {})}
-          >
-            {`${index === currentIndex ? '›' : ' '} ${selected.has(item.name) ? '•' : ' '} ${sliceColumns(item.name, 0, listWidth - 6)}`}
-          </Text>
-        ))
-      ) : (
-        visibleLocations.map((entry, index) => (
-          <Text
-            key={locationKey(entry)}
-            {...(index === currentIndex
-              ? { color: termcnColors.selectionFg, backgroundColor: termcnColors.selectionBg }
-              : {})}
-          >
-            {formatLocationLine(
-              entry,
-              selected.has(locationKey(entry)),
-              index === currentIndex,
-              listWidth
-            )}
-          </Text>
-        ))
-      )}
-    </box>
+  useInput(
+    (input, key) => {
+      if (key.escape || input === 'q') {
+        exit();
+        return;
+      }
+      if (input === '?') {
+        void modal.open({
+          footerItems: [
+            { key: '↑↓', label: t('common.move') },
+            { key: 'e', label: t('common.expand') },
+            { key: 'Esc', label: t('common.close') },
+          ],
+          content: (close) => (
+            <ShortcutHelpPanel
+              onClose={() => close(undefined)}
+              maxBodyRows={14}
+              sections={mcpShortcutHelpSections()}
+            />
+          ),
+        });
+        return;
+      }
+      if (input === '/') {
+        onOpenFilter();
+        return;
+      }
+      const live = navRef.current;
+      if (input === '[' || input === ']') {
+        const next = wrapAgent(agentNames, activeAgent || agentNames[0] || '', input === ']' ? 1 : -1);
+        if (next) {
+          setAgent(next);
+          setCursor(0);
+          setFocus('agents');
+        }
+        return;
+      }
+      if (
+        (key.return || input.includes('\r') || input.includes('\n')) &&
+        live.focus === 'list' &&
+        tab === 'collection' &&
+        selectedCollected.length
+      ) {
+        void onAdd(
+          selectedCollected.map((item) => item.name),
+          'project',
+          [...mcpAgentIds()]
+        );
+        return;
+      }
+      if (key.rightArrow && live.focus === 'list' && tab === 'collection' && useBrowseHome) {
+        return;
+      }
+      const currentId = listItems[live.cursor]?.id;
+      const session = reduceBrowseSessionKey(
+        {
+          nav: live,
+          tagFilter,
+          tagCursor: tagCursorRef.current,
+          selected,
+          detailFieldIndex: detailFieldIndexRef.current,
+        },
+        input,
+        key,
+        {
+          hasAgents: agentNames.length > 0,
+          masterDetail: useBrowseHome,
+          projectAgentNames: projectGroups.map((group) => group.agent),
+          globalAgentNames: globalGroups.map((group) => group.agent),
+          tagOptions,
+          listLength: listItems.length,
+          currentItemIds: currentId ? [currentId] : [],
+          currentIsItem: Boolean(currentId),
+          allowNarrowGroupJump: false,
+          detailFieldCount: 0,
+        }
+      );
+      if (session.handled) {
+        applySession(session.patch);
+        return;
+      }
+      if (live.focus !== 'list') return;
+      if (input === 'i' && tab !== 'collection' && selectedImportable.length) {
+        void onImport(selectedImportable);
+        return;
+      }
+      if (input === 'd') {
+        if (tab === 'collection') {
+          if (selectedCollected.length) void onDelete({ collection: selectedCollected });
+        } else if (selectedLocations.length) {
+          void onDelete({ locations: selectedLocations });
+        }
+        return;
+      }
+      if (input === 'x' && currentLocation) {
+        void onToggle(currentLocation);
+        return;
+      }
+      if (input === 'u' && tab === 'collection' && selectedCollected.length) {
+        void onUpdate(selectedCollected);
+        return;
+      }
+      if (input === 'r' && currentCollected) {
+        void onRename(currentCollected);
+        return;
+      }
+      if (input === 't' && currentCollected) {
+        void onTags(currentCollected);
+        return;
+      }
+      if (input === 'n' && currentCollected) {
+        void onNote(currentCollected);
+        return;
+      }
+      if (input === 'l' && currentCollected) {
+        void onLogin(currentCollected);
+        return;
+      }
+      if (input === 'p' && currentCollected) {
+        void onProbe(currentCollected);
+      }
+    },
+    { isActive: !overlayBusy && !filterOpen }
   );
 
-  const detailPane = master ? (
-    <box flexDirection="column" width={detailWidth}>
-      {detailLines(currentCollected, currentLocation, probe).map((line) => (
-        <Text key={line} color={termcnColors.muted}>
-          {sliceColumns(line, 0, detailWidth)}
-        </Text>
-      ))}
-    </box>
-  ) : null;
+  const renderBrowsePane = (viewportHeight: number, collection: boolean): ReactNode => {
+    if (useBrowseHome) {
+      const { tagWidth, listWidth, peekWidth } = masterDetailColumns;
+      const {
+        lines: listLines,
+        skillOffset,
+        activeLineIndexes: listActiveLineIndexes,
+        selectedLineIndexes: listSelectedLineIndexes,
+      } = browseListColumnLines(
+        listItems,
+        cursor,
+        focus === 'list',
+        listWidth,
+        viewportHeight,
+        selected
+      );
+      const detailRows = collection
+        ? mcpCollectionDetailRows(currentCollected, peekWidth, viewportHeight, probe)
+        : mcpLocationDetailRows(currentLocation, data.collection, peekWidth, viewportHeight);
+      return (
+        <BrowseHomePane
+          tagOptions={tagOptions}
+          tagCursor={tagCursor}
+          listLines={listLines}
+          skillOffset={skillOffset}
+          listLength={listItems.length}
+          {...(listActiveLineIndexes ? { listActiveLineIndexes } : {})}
+          {...(listSelectedLineIndexes ? { listSelectedLineIndexes } : {})}
+          detailRows={detailRows}
+          tagWidth={tagWidth}
+          listWidth={listWidth}
+          peekWidth={peekWidth}
+          viewportHeight={viewportHeight}
+          tagActive={focus === 'tags'}
+          listActive={focus === 'list'}
+          detailActive={focus === 'detail'}
+          onTagIndex={(index) => {
+            const patch = browseSessionClickTag(navRef.current, tagOptions, index);
+            if (patch) applySession(patch);
+          }}
+          onListIndex={(index) => applySession(browseSessionClickList(navRef.current, index))}
+          onDetailLine={() => undefined}
+          onListScroll={(delta) =>
+            applySession(browseSessionScrollList(navRef.current, delta, listItems.length))
+          }
+        />
+      );
+    }
+    return (
+      <BrowseListPane
+        items={listItems}
+        cursor={cursor}
+        isActive={focus === 'list'}
+        selected={selected}
+        viewportHeight={viewportHeight}
+        onRowClick={(index) => applySession(browseSessionClickList(navRef.current, index))}
+        onCursorDelta={(delta) =>
+          applySession(browseSessionScrollList(navRef.current, delta, listItems.length))
+        }
+      />
+    );
+  };
 
-  const body = (
-    <box flexDirection="column" minHeight={Math.max(8, rows - 4)}>
-      {tab !== 'collection' ? (
-        <Text color={termcnColors.muted}>
-          {agents.map((id) => (id === activeAgent ? `‹${id}›` : id)).join('  ')}
-        </Text>
-      ) : null}
-      <box flexDirection="row" flexGrow={1}>
-        {listPane}
-        {detailPane}
-      </box>
-    </box>
-  );
+  const tabs = [
+    {
+      key: 'project',
+      label: t('browser.tabProject', { count: data.project.length }),
+      content: (
+        <box flexDirection="column" minHeight={tabBodyMinHeight}>
+          <AgentTabs
+            groups={projectGroups.map((group) => ({
+              agent: group.agent,
+              count: group.entries.length,
+            }))}
+            agent={tab === 'project' ? activeAgent : projectGroups[0]?.agent ?? ''}
+            focused={!overlayBusy && !filterOpen && focus === 'agents'}
+            onSelect={(name) => {
+              setAgent(name);
+              setCursor(0);
+              setFocus('agents');
+            }}
+          />
+          {renderBrowsePane(browseViewportHeight(true), false)}
+        </box>
+      ),
+    },
+    {
+      key: 'global',
+      label: t('browser.tabGlobal', { count: data.global.length }),
+      content: (
+        <box flexDirection="column" minHeight={tabBodyMinHeight}>
+          <AgentTabs
+            groups={globalGroups.map((group) => ({
+              agent: group.agent,
+              count: group.entries.length,
+            }))}
+            agent={tab === 'global' ? activeAgent : globalGroups[0]?.agent ?? ''}
+            focused={!overlayBusy && !filterOpen && focus === 'agents'}
+            onSelect={(name) => {
+              setAgent(name);
+              setCursor(0);
+              setFocus('agents');
+            }}
+          />
+          {renderBrowsePane(browseViewportHeight(true), false)}
+        </box>
+      ),
+    },
+    {
+      key: 'collection',
+      label: t('browser.tabCollection', { count: data.collection.length }),
+      content: (
+        <box flexDirection="column" minHeight={tabBodyMinHeight}>
+          {renderBrowsePane(browseViewportHeight(false), true)}
+        </box>
+      ),
+    },
+  ];
 
   return (
-    <box flexDirection="column" flexGrow={1}>
+    <box flexDirection="column">
       <Tabs
-        tabs={[
-          {
-            key: 'project',
-            label: t('browser.tabProject', { count: data.project.length }),
-            content: tab === 'project' ? body : <Text />,
-          },
-          {
-            key: 'global',
-            label: t('browser.tabGlobal', { count: data.global.length }),
-            content: tab === 'global' ? body : <Text />,
-          },
-          {
-            key: 'collection',
-            label: t('browser.tabCollection', { count: data.collection.length }),
-            content: tab === 'collection' ? body : <Text />,
-          },
-        ]}
+        tabs={tabs}
         activeTab={tab}
         onTabChange={(key) => {
-          setTab(key as TabId);
+          setTab(key as BrowserTab);
           setCursor(0);
           setSelected(new Set());
+          setFocus('tabs');
         }}
+        isActive={!overlayBusy && !filterOpen && focus === 'tabs'}
         enableArrowNav={false}
+        focused={!overlayBusy && !filterOpen && focus === 'tabs'}
+        width={frame.frameWidth}
         bordered={false}
-        width={width}
+        chip={useBrowseHome}
       />
-      <Text color={termcnColors.muted}>
-        {filterOpen
-          ? `${t('common.filterLabel')}${filterDraft}`
-          : padColumns(
-              `${footerKeys(tab, Boolean(currentLocation), Boolean(currentCollected))}  ${status}`,
-              width
-            )}
-      </Text>
     </box>
   );
-}
-
-function matchesQuery(text: string, query: string): boolean {
-  if (!query.trim()) return true;
-  return text.toLowerCase().includes(query.trim().toLowerCase());
-}
-
-function locationKey(entry: McpLocationEntry): string {
-  return `${entry.agent}|${entry.scope}|${entry.ownership}|${entry.nativeKey}|${entry.filePath}`;
-}
-
-function formatLocationLine(
-  entry: McpLocationEntry,
-  selected: boolean,
-  current: boolean,
-  width: number
-): string {
-  const mark = entry.ownership === 'borrowed' ? `${t('mcp.borrowedMark')} ` : '';
-  const on = entry.enabled ? '' : ` ${t('mcp.disabled')}`;
-  return sliceColumns(
-    `${current ? '›' : ' '} ${selected ? '•' : ' '} ${mark}${entry.nativeKey}${on}`,
-    0,
-    width
-  );
-}
-
-function selectedLocations(
-  rows: McpLocationEntry[],
-  selected: Set<string>,
-  current: McpLocationEntry | undefined
-): McpLocationEntry[] {
-  const picked = rows.filter((row) => selected.has(locationKey(row)));
-  if (picked.length) return picked;
-  return current ? [current] : [];
-}
-
-function selectedCollection(
-  rows: CollectedMcp[],
-  selected: Set<string>,
-  current: CollectedMcp | undefined
-): CollectedMcp[] {
-  const picked = rows.filter((row) => selected.has(row.name));
-  if (picked.length) return picked;
-  return current ? [current] : [];
-}
-
-function detailLines(
-  collected: CollectedMcp | undefined,
-  location: McpLocationEntry | undefined,
-  probe?: HttpProbeStatus
-): string[] {
-  if (collected) {
-    const lines = [
-      collected.name,
-      `${t('mcp.transport')}  ${collected.recipe.transport}`,
-      `${t('mcp.endpoint')}  ${recipeEndpoint(collected.recipe)}`,
-      `${t('common.tags')}  ${collected.tags.join(', ') || t('common.none')}`,
-      `${t('common.note')}  ${collected.note || t('common.none')}`,
-    ];
-    if (probe) {
-      const label =
-        probe === 'reachable'
-          ? t('mcp.probeReachable')
-          : probe === 'needs-auth'
-            ? t('mcp.probeNeedsAuth')
-            : t('mcp.probeFailed');
-      lines.push(`${t('mcp.probe')}  ${label}`);
-    }
-    return lines;
-  }
-  if (location) {
-    const lines = [
-      `${location.ownership === 'borrowed' ? t('mcp.borrowedMark') + ' ' : ''}${location.nativeKey}`,
-      `${t('mcp.nativeKey')}  ${location.nativeKey}`,
-      `${t('mcp.transport')}  ${location.recipe.transport}`,
-      `${t('mcp.endpoint')}  ${recipeEndpoint(location.recipe)}`,
-      location.enabled ? t('mcp.enabled') : t('mcp.disabled'),
-    ];
-    if (location.borrowedFrom) {
-      lines.push(t('mcp.fromSource', { source: location.borrowedFrom }));
-    }
-    return lines;
-  }
-  return [];
-}
-
-function footerKeys(tab: TabId, hasLocation: boolean, hasCollected: boolean): string {
-  const items = ['q ' + t('common.quit'), '/ ' + t('common.filter')];
-  if (tab !== 'collection') {
-    items.push('i ' + t('common.collect'));
-    if (hasLocation) items.push('x ' + t('mcp.toggle'));
-    items.push('d ' + t('common.delete'));
-  } else {
-    items.push('Enter ' + t('common.add'));
-    items.push('u ' + t('common.update'));
-    items.push('d ' + t('common.delete'));
-    if (hasCollected) {
-      items.push('t ' + t('common.tags'));
-      items.push('r ' + t('mcp.rename'));
-      items.push('l ' + t('mcp.login'));
-    }
-  }
-  return items.join('  ');
 }

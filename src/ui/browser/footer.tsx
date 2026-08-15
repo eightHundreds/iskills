@@ -31,7 +31,7 @@ import {
 
 /**
  * Browser session footer: overlay + browse/filter/working from jotai.
- * Mount as AppShell bottomChrome under the browser Provider.
+ * Mount as AppShell bottomBar under the browser Provider.
  */
 export function BrowserShellFooter(): ReactNode {
   const overlayItems = useOverlayFooterItems();
@@ -60,7 +60,7 @@ export function BrowserShellFooter(): ReactNode {
   }, [status.text, status.transient, status.kind, store]);
 
   // Avoid painting browse keys before Browser data/main content is ready
-  // (footer chrome is outside the list tree and would race empty-frame waits).
+  // (footer is outside the list tree and would race empty-frame waits).
   if (!navigation || !data) {
     if (overlayItems) {
       return (
@@ -150,7 +150,7 @@ export function BrowserShellFooter(): ReactNode {
   const view = resolveFooter(input);
 
   if (view.mode === 'input') {
-    // Exclusive pointer surface: mute base chrome (tabs) while filter owns input.
+    // Exclusive pointer surface: mute base tabs while filter owns input.
     // Inline single-row field (spec: full footer becomes `筛选: ` + draft).
     return (
       <PointerSurface id="filter">

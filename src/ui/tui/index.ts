@@ -4,6 +4,6 @@ export {
   useApp,
   useStdout,
   useThemeMode,
-  useModalChrome,
+  usePanelColors,
   type AppExit,
 } from './hooks.js';

@@ -88,6 +88,8 @@ export interface FooterResolveInput {
   /** Live bindings during working — typically empty (conservative). */
   workingItems?: FooterItem[];
   browse: FooterBrowseCapabilities | null;
+  extraListItems?: FooterItem[];
+  extraDetailItems?: FooterItem[];
   status: FooterStatusState | null;
   updateCheck: FooterUpdateCheckState | null;
   /** Sticky health (footer ⚠ N); below action status, above update-check text. */

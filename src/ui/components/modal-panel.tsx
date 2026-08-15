@@ -1,10 +1,10 @@
 /**
  * Solid themed panel for Modal.open content (forms that are not FramedPanel).
- * Matches light/dark terminal themeMode via useModalChrome.
+ * Matches light/dark terminal themeMode via usePanelColors.
  * Optional `title` uses OpenTUI box border title (top-left by default).
  */
 import type { ReactNode } from 'react';
-import { useModalChrome } from '../tui/index.js';
+import { usePanelColors } from '../tui/index.js';
 import { termcnColors } from './colors.js';
 
 export function ModalPanel({
@@ -17,12 +17,12 @@ export function ModalPanel({
   /** Drawn into the top border (left-aligned), same corner as confirm frames. */
   title?: string;
 }): ReactNode {
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   return (
     <box
       border
       flexDirection="column"
-      backgroundColor={chrome.surface}
+      backgroundColor={panel.surface}
       borderStyle="rounded"
       borderColor={termcnColors.primary}
       paddingX={1}

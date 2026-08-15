@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createCollectedMcp } from '../../src/domain/mcp/index.js';
 import {
   makeContext,
+  navigateToProjectTabSteps,
   renderTerminalScreen,
   runInteractive,
   withCollectionEnvironment,
@@ -117,7 +118,7 @@ try {
     context,
     ['mcp'],
     [
-      { wait: 'filesystem', delay: 200 },
+      { wait: '技能', delay: 250 },
       { capture: 'collection', done: true },
     ],
     context.project,
@@ -125,31 +126,13 @@ try {
   );
   frames.collection = await dump('01-collection', collection.screens?.collection, size);
 
-  const piView = await runInteractive(
-    context,
-    ['mcp'],
-    [
-      { wait: 'filesystem', delay: 150 },
-      { send: '\x1b[D', enter: false },
-      { wait: 'github', delay: 150 },
-      { send: ']', enter: false },
-      { delay: 80 },
-      { send: ']', enter: false },
-      { delay: 200 },
-      { capture: 'pi', done: true },
-    ],
-    context.project,
-    size
-  );
-  frames.pi = await dump('04-global-pi', piView.screens?.pi, size);
-
+  // Same ladder as the skill collection (list ← tags ← tabs ← 全局).
   const globalView = await runInteractive(
     context,
     ['mcp'],
     [
-      { wait: 'filesystem', delay: 150 },
-      { send: '\x1b[D', enter: false },
-      { wait: 'github', delay: 200 },
+      ...navigateToProjectTabSteps.slice(0, 3),
+      { wait: 'claude', delay: 250 },
       { capture: 'global', done: true },
     ],
     context.project,
@@ -161,17 +144,33 @@ try {
     context,
     ['mcp'],
     [
-      { wait: 'filesystem', delay: 150 },
-      { send: '\x1b[D', enter: false },
-      { delay: 120 },
-      { send: '\x1b[D', enter: false },
-      { wait: 'docs', delay: 250 },
+      ...navigateToProjectTabSteps,
+      { wait: '当前项目', delay: 250 },
       { capture: 'project', done: true },
     ],
     context.project,
     size
   );
   frames.project = await dump('03-project', projectView.screens?.project, size);
+
+  const piView = await runInteractive(
+    context,
+    ['mcp'],
+    [
+      ...navigateToProjectTabSteps.slice(0, 3),
+      { wait: 'claude', delay: 200 },
+      { send: '\x1b[B', enter: false },
+      { delay: 80 },
+      { send: '\x1b[C', enter: false },
+      { delay: 80 },
+      { send: '\x1b[C', enter: false },
+      { delay: 200 },
+      { capture: 'pi', done: true },
+    ],
+    context.project,
+    size
+  );
+  frames.pi = await dump('04-global-pi', piView.screens?.pi, size);
 } finally {
   const { rm } = await import('node:fs/promises');
   await rm(context.root, { recursive: true, force: true });

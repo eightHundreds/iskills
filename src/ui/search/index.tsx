@@ -2,7 +2,7 @@
  * Remote search package entry: one-shot search screen via static Layer.
  * Protocol types live in `types.ts`.
  */
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteSkillSearch, SearchViewInput } from './types.js';
@@ -97,7 +97,7 @@ function SearchSkills({
     if (selected) finish(selected);
   };
 
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   return (
     <box flexDirection="column">
       <TextInput
@@ -116,13 +116,13 @@ function SearchSkills({
       />
       <box flexDirection="column" marginTop={1}>
         {query.trim().length < 2 ? (
-          <Text color={chrome.muted}>{t('search.minChars')}</Text>
+          <Text color={panel.muted}>{t('search.minChars')}</Text>
         ) : error ? (
           <Text color={termcnColors.error}>{error}</Text>
         ) : !results.length && loading ? (
-          <Text color={chrome.muted}>{t('search.searching')}</Text>
+          <Text color={panel.muted}>{t('search.searching')}</Text>
         ) : !results.length ? (
-          <Text color={chrome.muted}>{t('search.noResults')}</Text>
+          <Text color={panel.muted}>{t('search.noResults')}</Text>
         ) : (
           visible.map((skill, index) => {
             const active = offset + index === cursor;
@@ -131,7 +131,7 @@ function SearchSkills({
             return (
               <Text
                 key={skill.resultId}
-                color={active ? termcnColors.primary : chrome.body}
+                color={active ? termcnColors.primary : panel.body}
                 bold={active}
               >
                 {`${active ? '›' : ' '} ${skill.name}`}

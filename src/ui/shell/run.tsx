@@ -46,7 +46,7 @@ async function loadOpenTui(): Promise<{
     cancelOnEscape?: boolean;
     onCancel?: () => void;
     onCtrlC?: () => void;
-    bottomChrome?: ReactNode;
+    bottomBar?: ReactNode;
     children: ReactNode;
   }) => ReactNode;
   createElement: typeof import('react').createElement;

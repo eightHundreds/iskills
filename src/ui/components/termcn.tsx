@@ -9,8 +9,8 @@ export { TextInput } from './text-input.js';
 export { WorkingSpinner, useSpinnerFrame } from './spinner.js';
 export {
   termcnColors,
-  modalChrome,
-  modalChromeByMode,
+  panelColors,
+  panelColorsByMode,
 } from './colors.js';
 export type { Option } from './options.js';
 export type { Tab } from './tabs.js';

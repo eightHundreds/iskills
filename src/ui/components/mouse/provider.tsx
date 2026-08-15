@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react';
 
-/** Root surface: main chrome (tabs, list hit targets). Always at stack bottom. */
+/** Root surface: main tabs and list hit targets. Always at stack bottom. */
 export const POINTER_SURFACE_BASE = 'base';
 
 type ClickHandler = () => void;
@@ -32,7 +32,7 @@ const PointerSurfaceIdContext = createContext<string>(POINTER_SURFACE_BASE);
 /**
  * Tracks exclusive pointer surfaces (modal / filter). Hit testing itself is
  * OpenTUI-native (`onMouse*` on boxes); this only gates product Clickable so
- * base chrome does not steal clicks while a modal is open.
+ * base tabs/list do not steal clicks while a modal is open.
  */
 export function MouseProvider({
   children,
@@ -86,7 +86,7 @@ export function MouseProvider({
 
 /**
  * Marks an exclusive interaction surface (modal / filter). While mounted,
- * {@link Clickable} under base chrome will not fire.
+ * {@link Clickable} under the base tabs/list will not fire.
  */
 export function PointerSurface({
   id,

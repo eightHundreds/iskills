@@ -1,5 +1,5 @@
 import type { MouseEvent } from '@opentui/core';
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from '../components/colors.js';
@@ -61,14 +61,19 @@ export function ShortcutHelpPanel({
   onClose,
   width: preferredWidth = 72,
   maxBodyRows = 14,
+  sections: sectionOverride,
 }: {
   onClose: () => void;
   width?: number;
   maxBodyRows?: number;
+  sections?: ShortcutHelpSection[];
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
-  const sections = useMemo(() => shortcutHelpSections(), []);
+  const panel = usePanelColors();
+  const sections = useMemo(
+    () => sectionOverride ?? shortcutHelpSections(),
+    [sectionOverride]
+  );
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(sections.map((section) => section.id))
   );
@@ -159,8 +164,8 @@ export function ShortcutHelpPanel({
   const titleWidth = textWidth(title);
   const top = `╭─${title}${'─'.repeat(Math.max(0, width - titleWidth - 3))}╮`;
   const bottom = `╰${'─'.repeat(Math.max(0, width - 2))}╯`;
-  const panelBg = chrome.surface;
-  const bodyFg = chrome.body;
+  const panelBg = panel.surface;
+  const bodyFg = panel.body;
 
   // Manual ╭│╰ frame only — do not also set borderStyle (double border).
   return (

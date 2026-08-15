@@ -54,7 +54,11 @@ function filterHelp(): FooterItem[] {
   return [{ key: '/', label: t('common.filter') }];
 }
 
-function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
+function browseItems(
+  browse: FooterBrowseCapabilities,
+  extraListItems: FooterItem[] = [],
+  extraDetailItems: FooterItem[] = []
+): FooterItem[] {
   if (browse.focus === 'tabs') {
     return [
       { key: '←→', label: t('common.switch') },
@@ -84,7 +88,12 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   if (browse.focus === 'detail') {
     const items: FooterItem[] = [{ key: '↑↓', label: t('common.move') }];
     if (browse.canEditDetailField) items.push({ key: 'Enter', label: t('common.edit') });
-    items.push({ key: '←', label: t('common.list') }, ...filterHelp(), ...helpQuit());
+    items.push(
+      ...extraDetailItems,
+      { key: '←', label: t('common.list') },
+      ...filterHelp(),
+      ...helpQuit()
+    );
     return items;
   }
 
@@ -92,10 +101,19 @@ function browseItems(browse: FooterBrowseCapabilities): FooterItem[] {
   const items: FooterItem[] = [{ key: 'Space', label: t('common.select') }];
   if (browse.canDelete) items.push({ key: 'd', label: t('common.delete') });
   if (browse.enterAction === 'add') items.push({ key: 'Enter', label: t('common.add') });
-  else if (browse.enterAction === 'detail') items.push({ key: 'Enter', label: t('common.detail') });
-  else if (browse.enterAction === 'view') items.push({ key: 'Enter', label: t('common.view') });
-  if (browse.canFocusDetail) items.push({ key: '→', label: t('common.detail') });
+  else if (browse.enterAction === 'detail' && browse.canFocusDetail) {
+    // Wide collection: Enter and → both focus the detail column — one footer item.
+    items.push({ key: 'Enter/→', label: t('common.detail') });
+  } else if (browse.enterAction === 'detail') {
+    items.push({ key: 'Enter', label: t('common.detail') });
+  } else if (browse.enterAction === 'view') {
+    items.push({ key: 'Enter', label: t('common.view') });
+  }
+  if (browse.canFocusDetail && browse.enterAction !== 'detail') {
+    items.push({ key: '→', label: t('common.detail') });
+  }
   if (browse.canImport) items.push({ key: 'i', label: t('common.collect') });
+  items.push(...extraListItems);
   if (browse.canMaterialize || browse.canInstallToAgents) {
     items.push({ key: 'm', label: t('common.more') });
   }
@@ -211,7 +229,11 @@ export function resolveFooter(input: FooterResolveInput): FooterView {
   }
 
   if (input.browse) {
-    let items = browseItems(input.browse);
+    let items = browseItems(
+      input.browse,
+      input.extraListItems ?? [],
+      input.extraDetailItems ?? []
+    );
     const status = rightStatus(input);
     if (input.columns && input.columns > 0) {
       const statusWidth = status ? textWidth(status.text) + 2 : 0;

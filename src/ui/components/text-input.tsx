@@ -3,7 +3,7 @@
  * Prefer native input editing; keep label / variant / Esc cancel for callers.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { termcnColors } from './colors.js';
 import { useInput } from './use-input.js';
 
@@ -29,12 +29,17 @@ export function TextInput({
 }): ReactNode {
   const [value, setValue] = useState(initialValue);
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const resolvedWidth = Math.min(width, Math.max(20, (stdout.columns ?? 80) - 2));
 
   useEffect(() => {
     setValue(initialValue);
   }, [initialValue]);
+
+  const handleInput = (next: string): void => {
+    setValue(next);
+    onChange?.(next);
+  };
 
   // Esc is product-level cancel; OpenTUI input does not own it.
   useInput(
@@ -43,11 +48,6 @@ export function TextInput({
     },
     { isActive }
   );
-
-  const handleInput = (next: string): void => {
-    setValue(next);
-    onChange?.(next);
-  };
 
   const field = (inputWidth: number | `${number}%` | undefined) => (
     <input
@@ -60,10 +60,10 @@ export function TextInput({
       }}
       placeholder=""
       cursorColor={termcnColors.primary}
-      textColor={chrome.body}
-      backgroundColor={chrome.surface}
-      focusedBackgroundColor={chrome.surface}
-      focusedTextColor={chrome.body}
+      textColor={panel.body}
+      backgroundColor={panel.surface}
+      focusedBackgroundColor={panel.surface}
+      focusedTextColor={panel.body}
       {...(inputWidth !== undefined ? { width: inputWidth } : {})}
     />
   );
@@ -74,7 +74,7 @@ export function TextInput({
     const inputCols = Math.max(8, (stdout.columns ?? 80) - Math.min(24, label.length * 2));
     return (
       <box width="100%" flexDirection="row" height={1}>
-        <Text bold color={chrome.body}>
+        <Text bold color={panel.body}>
           {label}
         </Text>
         <input
@@ -87,10 +87,10 @@ export function TextInput({
           }}
           placeholder=""
           cursorColor={termcnColors.primary}
-          textColor={chrome.body}
+          textColor={panel.body}
           backgroundColor="transparent"
           focusedBackgroundColor="transparent"
-          focusedTextColor={chrome.body}
+          focusedTextColor={panel.body}
           width={inputCols}
         />
       </box>
@@ -99,13 +99,13 @@ export function TextInput({
 
   return (
     <box flexDirection="column">
-      <Text bold color={chrome.body}>
+      <Text bold color={panel.body}>
         {label}
       </Text>
       <box border
         borderStyle="rounded"
         borderColor={isActive ? termcnColors.primary : termcnColors.border}
-        backgroundColor={chrome.surface}
+        backgroundColor={panel.surface}
         paddingX={1}
         width={resolvedWidth}
         height={3}

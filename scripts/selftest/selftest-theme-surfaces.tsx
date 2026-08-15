@@ -19,7 +19,7 @@ import { Select } from '../../src/ui/components/select.js';
 import { FramedPanel } from '../../src/ui/components/framed-panel.js';
 import { AppShell } from '../../src/ui/shell/app-shell.js';
 import {
-  modalChromeByMode,
+  panelColorsByMode,
   termcnColors,
 } from '../../src/ui/components/colors.js';
 import { hexClose, spanBgHex, spanFgHex } from '../../test/tui-harness.js';
@@ -32,8 +32,8 @@ function channels(c: { buffer?: ArrayLike<number> }): [number, number, number] {
 
 function isThemedSurface(bg: string): boolean {
   return (
-    hexClose(bg, modalChromeByMode.light.surface, 40) ||
-    hexClose(bg, modalChromeByMode.dark.surface, 40)
+    hexClose(bg, panelColorsByMode.light.surface, 40) ||
+    hexClose(bg, panelColorsByMode.dark.surface, 40)
   );
 }
 
@@ -224,7 +224,7 @@ function analyze(
     const [fr, fgG, fb] = channels(s.fg);
     const bright =
       fr > 240 && fgG > 240 && fb > 240 && !hexClose(bg, '#000000', 30);
-    if (bright && hexClose(bg, modalChromeByMode.light.surface, 40)) {
+    if (bright && hexClose(bg, panelColorsByMode.light.surface, 40)) {
       throw new Error(`select idle light-on-light: fg=${fg} bg=${bg}`);
     }
     idleBodyOk = true;

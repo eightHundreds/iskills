@@ -94,4 +94,5 @@ export type CreateMcpInput = {
   tags?: string[];
   note?: string;
   recipe: McpRecipe;
+  secrets?: McpSecretValues;
 };

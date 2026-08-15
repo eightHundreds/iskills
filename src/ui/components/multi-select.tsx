@@ -1,4 +1,4 @@
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from './use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
 import { termcnColors } from './colors.js';
@@ -26,7 +26,7 @@ function OptionMultiSelect({
   onSubmit: (values: string[]) => void;
   onCancel?: () => void;
 }): ReactNode {
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const { count, focus, from, focusNext, focusPrevious } = useScrollWindow(
     options.length,
     visibleCount
@@ -72,7 +72,7 @@ function OptionMultiSelect({
                   ? termcnColors.selectionFg
                   : isSelected
                     ? termcnColors.primary
-                    : chrome.muted
+                    : panel.muted
               }
               {...(isFocused ? { backgroundColor: termcnColors.selectionBg } : {})}
             >
@@ -87,7 +87,7 @@ function OptionMultiSelect({
                   }
                 : isSelected
                   ? { color: termcnColors.primary, bold: true }
-                  : { color: chrome.body, bold: isSelected })}
+                  : { color: panel.body, bold: isSelected })}
             >
               {option.label}
             </Text>
@@ -112,7 +112,7 @@ export function MultiSelect<T>({
   onCancel?: () => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const listOptions = useMemo(() => toListOptions(options), [options]);
   const defaultValue = options.flatMap((option, index) =>
     defaultValues.includes(option.value) ? [String(index)] : []
@@ -120,7 +120,7 @@ export function MultiSelect<T>({
   return (
     <box flexDirection="column">
       {label && (
-        <Text bold color={chrome.body}>
+        <Text bold color={panel.body}>
           {label}
         </Text>
       )}

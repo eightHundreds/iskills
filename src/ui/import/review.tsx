@@ -1,4 +1,4 @@
-import { Text, useModalChrome, useStdout } from '../tui/index.js';
+import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useState, type ReactNode } from 'react';
 import type { Skill } from '../../domain/types.js';
@@ -20,12 +20,12 @@ export function ImportReview<T extends Skill>({
   onSubmit: (result: ImportReviewResult) => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const chrome = useModalChrome();
+  const panel = usePanelColors();
   const colors = {
     primary: termcnColors.primary,
     border: termcnColors.border,
-    muted: chrome.muted,
-    body: chrome.body,
+    muted: panel.muted,
+    body: panel.body,
   };
   const [activeTab, setActiveTab] = useState<'tags' | 'confirm'>('tags');
   const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
@@ -136,7 +136,7 @@ export function ImportReview<T extends Skill>({
             flexDirection="column"
             borderStyle="rounded"
             borderColor={colors.border}
-            backgroundColor={chrome.surface}
+            backgroundColor={panel.surface}
             paddingX={1}
           >
             {visibleTags.length ? (
@@ -147,14 +147,14 @@ export function ImportReview<T extends Skill>({
                   <Text
                     key={tag}
                     color={active ? colors.primary : colors.body}
-                    backgroundColor={chrome.surface}
+                    backgroundColor={panel.surface}
                   >
                     {`${active ? '›' : ' '} ${selectedTags.has(tag) ? '●' : '○'} ${tag}`}
                   </Text>
                 );
               })
             ) : (
-              <Text color={colors.muted} backgroundColor={chrome.surface}>
+              <Text color={colors.muted} backgroundColor={panel.surface}>
                 {t('import.noExistingGroups')}
               </Text>
             )}

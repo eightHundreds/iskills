@@ -17,7 +17,7 @@ import { OverlayOnlyFooter } from './footer.js';
  *
  * - Ctrl+C → `onCtrlC` only
  * - Esc → `onCancel` when `cancelOnEscape` and overlay is not busy
- * - bottomChrome defaults to overlay-only footer (outside Layer replace region)
+ * - bottomBar defaults to overlay-only footer (outside Layer replace region)
  */
 
 // Re-export overlay hooks for gradual migration (prefer `ui/overlay`).
@@ -42,14 +42,14 @@ export function AppShell({
   cancelOnEscape = false,
   onCancel,
   onCtrlC,
-  bottomChrome,
+  bottomBar,
   children,
 }: {
   cancelOnEscape?: boolean;
   onCancel?: () => void;
   onCtrlC?: () => void;
   /** Footer row outside Layer replace region. Default: overlay-only footer. */
-  bottomChrome?: ReactNode;
+  bottomBar?: ReactNode;
   children: ReactNode;
 }): ReactNode {
   const [ready, setReady] = useState(false);
@@ -64,8 +64,8 @@ export function AppShell({
   return (
     <MouseProvider>
       <OverlayHost
-        bottomChrome={
-          ready ? (bottomChrome ?? <OverlayOnlyFooter />) : null
+        bottomBar={
+          ready ? (bottomBar ?? <OverlayOnlyFooter />) : null
         }
       >
         <AppShellBody
