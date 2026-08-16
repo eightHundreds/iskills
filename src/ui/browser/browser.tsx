@@ -29,6 +29,7 @@ import {
 } from './store.js';
 import {
   browserFrameDimensions,
+  compactLayout,
   masterDetailLayout,
   masterDetailViewportHeight,
   masterDetailWidths,
@@ -262,6 +263,7 @@ export function Browser({
   // list rows still apply `query` inside the skill column.
   const useBrowseHome = masterDetailLayout(stdout.columns, stdout.rows);
   const useMasterDetail = useBrowseHome;
+  const useCompact = compactLayout(stdout.columns, stdout.rows);
   // Scope for list + tag sidebar + g-jump: current agent (or full collection),
   // never the whole project/global flat list.
   const tabSkills =
@@ -411,8 +413,9 @@ export function Browser({
       frameWidth: frame.frameWidth,
     });
   };
-  const agentPaneViewportHeight = Math.max(3, frame.frameHeight - 3);
-  const collectionPaneViewportHeight = Math.max(3, frame.frameHeight - 2);
+  const listFloor = useCompact ? 1 : 3;
+  const agentPaneViewportHeight = Math.max(listFloor, frame.frameHeight - 3);
+  const collectionPaneViewportHeight = Math.max(listFloor, frame.frameHeight - 2);
   const masterDetailInnerWidth = Math.max(40, frame.frameWidth - 2);
   const masterDetailColumns = masterDetailWidths(masterDetailInnerWidth, useBrowseHome);
   const masterDetailBrowseHeight = (withAgents: boolean): number =>
@@ -854,6 +857,8 @@ export function Browser({
         cursor={cursor}
         isActive={focus === 'list'}
         selected={selected}
+        compact={useCompact}
+        showPagination={!useCompact}
         viewportHeight={viewportHeight}
         onRowClick={(index) => {
           // Click focuses the row only; Space toggles multi-select.

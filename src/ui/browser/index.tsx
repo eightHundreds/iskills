@@ -51,6 +51,7 @@ export { Browser } from './browser.js';
 export { Detail, type DetailAction } from './detail.js';
 export {
   browserFrameDimensions,
+  compactLayout,
   detailFrameDimensions,
   masterDetailLayout,
   type BrowserFrameDimensions,

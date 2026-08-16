@@ -16,7 +16,7 @@ import {
   type SkillRow,
 } from './format.js';
 import { browseTagOffset } from './browse-session.js';
-import { masterDetailSeparator } from './layout.js';
+import { listViewportBudget, masterDetailSeparator } from './layout.js';
 import { t } from '../../i18n/index.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { padColumns, sliceColumns } from '../components/terminal-layout.js';
@@ -83,8 +83,13 @@ export function SkillPane({
   onCursorDelta?: (delta: number) => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const paneHeight = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
-  const height = rows.length > paneHeight ? Math.max(3, paneHeight - (showPagination ? 1 : 0)) : paneHeight;
+  const budget = listViewportBudget(stdout.columns, stdout.rows);
+  const useCompact = compact || budget.compact;
+  const paneHeight = viewportHeight ?? Math.max(budget.minVisible, (stdout.rows ?? 24) - budget.reservedRows);
+  const paginate = showPagination && !useCompact;
+  const height = rows.length > paneHeight
+    ? Math.max(budget.minVisible, paneHeight - (paginate ? 1 : 0))
+    : paneHeight;
   const active = Math.max(0, Math.min(cursor, rows.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), rows.length - height));
   const visible = rows.slice(offset, offset + height);
@@ -124,7 +129,7 @@ export function SkillPane({
     }
     const skill = row.skill;
     const current = isActive && index === active;
-    const summary = compact || layout === 'master'
+    const summary = useCompact || layout === 'master'
       ? ''
       : listSkillSummary(skill, preferNote, summaryWidth);
     const inlineSummary = summary;
@@ -186,13 +191,13 @@ export function SkillPane({
     );
   };
   return (
-    <box flexDirection="column" minHeight={3} onMouseScroll={onMouseScroll}>
+    <box flexDirection="column" minHeight={budget.minVisible} onMouseScroll={onMouseScroll}>
       {rows.length ? (
         visible.map((row, visibleIndex) => renderRow(row, offset + visibleIndex))
       ) : (
         <Text color={termcnColors.muted}>{t('browser.noMatchingSkills')}</Text>
       )}
-      {showPagination && rows.length > height && (
+      {paginate && rows.length > height && (
         <Text color={termcnColors.muted}>
           {offset + 1}–{Math.min(offset + height, rows.length)} / {rows.length}
         </Text>
@@ -248,6 +253,7 @@ export function BrowseListPane({
   cursor,
   isActive,
   selected,
+  compact = false,
   viewportHeight,
   onRowClick,
   onCursorDelta,
@@ -256,13 +262,18 @@ export function BrowseListPane({
   cursor: number;
   isActive: boolean;
   selected: Set<string>;
+  compact?: boolean;
   viewportHeight?: number | undefined;
   onRowClick?: (index: number) => void;
   onCursorDelta?: (delta: number) => void;
 }): ReactNode {
   const { stdout } = useStdout();
-  const paneHeight = viewportHeight ?? Math.max(3, (stdout.rows ?? 24) - 8);
-  const height = items.length > paneHeight ? Math.max(3, paneHeight - 1) : paneHeight;
+  const budget = listViewportBudget(stdout.columns, stdout.rows);
+  const useCompact = compact || budget.compact;
+  const paneHeight = viewportHeight ?? Math.max(budget.minVisible, (stdout.rows ?? 24) - budget.reservedRows);
+  const height = items.length > paneHeight
+    ? Math.max(budget.minVisible, paneHeight - (useCompact ? 0 : 1))
+    : paneHeight;
   const active = Math.max(0, Math.min(cursor, items.length - 1));
   const offset = Math.max(0, Math.min(active - Math.floor(height / 2), items.length - height));
   const visible = items.slice(offset, offset + height);
@@ -293,7 +304,7 @@ export function BrowseListPane({
         {`  ${current ? '›' : ' '} ${selected.has(item.id) ? '●' : '○'} `}
         {item.mark ? <Text color={termcnColors.muted}>{item.mark}</Text> : null}
         <Text bold={current}>{item.name}</Text>
-        {item.summary ? <Text color={termcnColors.muted}> — {item.summary}</Text> : null}
+        {!useCompact && item.summary ? <Text color={termcnColors.muted}> — {item.summary}</Text> : null}
       </Text>
     );
     if (!onRowClick) {
@@ -310,13 +321,13 @@ export function BrowseListPane({
     );
   };
   return (
-    <box flexDirection="column" minHeight={3} onMouseScroll={onMouseScroll}>
+    <box flexDirection="column" minHeight={budget.minVisible} onMouseScroll={onMouseScroll}>
       {items.length ? (
         visible.map((item, visibleIndex) => renderRow(item, offset + visibleIndex))
       ) : (
         <Text color={termcnColors.muted}>{t('browser.noMatchingSkills')}</Text>
       )}
-      {items.length > height && (
+      {!useCompact && items.length > height && (
         <Text color={termcnColors.muted}>
           {offset + 1}–{Math.min(offset + height, items.length)} / {items.length}
         </Text>

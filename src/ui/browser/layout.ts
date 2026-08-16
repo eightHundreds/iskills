@@ -10,6 +10,26 @@ export function masterDetailLayout(
   return (columns ?? 80) >= 100 && (rows ?? 24) >= 24;
 }
 
+/** Smaller than the 80×24 working size: name-only lists, 1-row minimum viewport. */
+export function compactLayout(
+  columns: number | undefined,
+  rows: number | undefined
+): boolean {
+  return (columns ?? 80) < 80 || (rows ?? 24) < 16;
+}
+
+export function listViewportBudget(
+  columns: number | undefined,
+  rows: number | undefined
+): { compact: boolean; minVisible: number; reservedRows: number } {
+  const compact = compactLayout(columns, rows);
+  return {
+    compact,
+    minVisible: compact ? 1 : 3,
+    reservedRows: compact ? 5 : 8,
+  };
+}
+
 export function masterDetailWidths(
   totalWidth: number,
   divided = false
@@ -58,7 +78,8 @@ export function masterDetailSeparator(
 }
 
 export function paneHeight(rowCount: number, viewportHeight: number): number {
-  const visibleRows = Math.max(3, Math.min(rowCount, viewportHeight));
+  const floor = Math.min(3, Math.max(1, viewportHeight));
+  const visibleRows = Math.max(floor, Math.min(Math.max(rowCount, 1), viewportHeight));
   return visibleRows + (rowCount > viewportHeight ? 1 : 0);
 }
 
@@ -85,7 +106,8 @@ export function browserFrameDimensions({
   hasProjectAgents: boolean;
   hasGlobalAgents: boolean;
 }): BrowserFrameDimensions {
-  const listViewportHeight = Math.max(3, (rows ?? 24) - 8);
+  const { minVisible, reservedRows } = listViewportBudget(columns, rows);
+  const listViewportHeight = Math.max(minVisible, (rows ?? 24) - reservedRows);
   const tabContentHeight = Math.max(
     paneHeight(projectRows, listViewportHeight) + (hasProjectAgents ? 1 : 0),
     paneHeight(globalRows, listViewportHeight) + (hasGlobalAgents ? 1 : 0),

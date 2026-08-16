@@ -31,7 +31,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   'common.jumpTag': 'Jump',
   'common.sync': 'Sync',
   'common.update': 'Update',
-  'common.materialize': 'Materialize',
+  'common.materialize': 'To copy',
   'common.expand': 'Expand',
   'common.local': 'Local',
   'common.git': 'Git',
@@ -156,7 +156,7 @@ create options:
   --args <arg>                  Repeatable
 
 import / add options:
-  -g, --global       Global scope (default: current project)
+  -g, --global       Global location (default: current project)
   --agent <name>     Limit to agent(s); repeatable
   --all              Import every discovered entry
   --replace          Replace same-name collection entry
@@ -225,16 +225,16 @@ Options:
   'domain.referenceNotDir': 'Skill reference target is not a directory: {path}',
   'domain.copyNameChanged': 'Copied skill name changed: {path}',
   'domain.materializeFailedRollbackItem':
-    'Materialize failed: {error}; rollback failed: {path}: {rollback}',
+    'Convert to copy failed: {error}; rollback failed: {path}: {rollback}',
   'domain.stateRollback': 'State: {error}',
   'domain.materializeFailedRollback':
-    'Materialize failed: {error}; rollback failed: {rollback}',
+    'Convert to copy failed: {error}; rollback failed: {rollback}',
   'domain.warnMaterializeTempCleanup':
-    'Warning: failed to clean materialize temp directory: {error}',
+    'Warning: failed to clean convert-to-copy temp directory: {error}',
   'domain.collectionLinkChanged': 'Collection link changed; not deleted: {path}',
   'domain.mergeNotValidSkill': 'Merge result is not a valid skill: {name}',
   'domain.opDelete': 'delete',
-  'domain.opMaterialize': 'materialize',
+  'domain.opMaterialize': 'convert to copy',
   'mcp.unsafeName': 'Unsafe MCP name: {name}',
   'mcp.sameNameExistsReplace':
     'Collection already has MCP {name}; confirm and use --replace',
@@ -404,8 +404,8 @@ Options:
   'cmd.removedCount': 'Removed {count}',
   'cmd.deletedOne': 'Deleted {name}',
   'cmd.deletedCount': 'Deleted {count} location(s)',
-  'cmd.materializedOne': 'Materialized',
-  'cmd.materializedCount': 'Materialized {count}',
+  'cmd.materializedOne': 'Converted to a copy',
+  'cmd.materializedCount': 'Converted {count} to copies',
   'cmd.replaceCollectionTitle': 'Replace collection entry',
   'cmd.importedShort': 'Imported {count}',
   'cmd.editNoteTitle': 'Edit note',
@@ -485,7 +485,7 @@ Options:
   'browser.referencePrefix': 'Reference · ',
   'browser.spaceSelect': 'Space select',
   'browser.enterViewSpaceSelect': 'Enter view · Space select',
-  'browser.materializeAction': 'Materialize reference to copy',
+  'browser.materializeAction': 'Convert reference to copy',
   'browser.installToAgentsAction': 'Install to other agents',
   'browser.shortcutHelpTitle': ' All shortcuts ',
   'browser.shortcutHelpFooterScroll':
@@ -513,7 +513,7 @@ Options:
   'browser.helpMaintainUpdate':
     'Update: selected updatable skills, else current item',
   'browser.helpMaintainMore':
-    'More · materialize reference / install to other agents',
+    'More · convert reference to copy / install to other agents',
   'browser.helpMaintainSync': 'Sync collection Git (when available)',
   'browser.helpMaintainDelete':
     'Delete selected; if none selected, delete current item',

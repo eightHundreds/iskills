@@ -29,7 +29,7 @@ export const zh = {
   'common.jumpTag': '跳转',
   'common.sync': '同步',
   'common.update': '更新',
-  'common.materialize': '转换',
+  'common.materialize': '转副本',
   'common.expand': '展开',
   'common.local': '本地',
   'common.git': 'Git',
@@ -151,7 +151,7 @@ create 选项：
   --args <参数>                 可重复
 
 import / add 选项：
-  -g, --global       全局作用域（默认当前项目）
+  -g, --global       全局位置（默认当前项目）
   --agent <名称>     限定 Agent，可重复
   --all              导入全部发现项
   --replace          替换同名收藏
@@ -217,14 +217,14 @@ import / add 选项：
   'domain.referenceNotDir': '技能引用目标不是目录：{path}',
   'domain.copyNameChanged': '复制结果中的技能名称已发生变化：{path}',
   'domain.materializeFailedRollbackItem':
-    '转换失败：{error}；回滚失败：{path}: {rollback}',
+    '引用转副本失败：{error}；回滚失败：{path}: {rollback}',
   'domain.stateRollback': '状态：{error}',
-  'domain.materializeFailedRollback': '转换失败：{error}；回滚失败：{rollback}',
-  'domain.warnMaterializeTempCleanup': '警告：转换临时目录清理失败：{error}',
+  'domain.materializeFailedRollback': '引用转副本失败：{error}；回滚失败：{rollback}',
+  'domain.warnMaterializeTempCleanup': '警告：引用转副本临时目录清理失败：{error}',
   'domain.collectionLinkChanged': '收藏夹链接已发生变化，未删除：{path}',
   'domain.mergeNotValidSkill': '合并结果不是有效技能：{name}',
   'domain.opDelete': '删除',
-  'domain.opMaterialize': '转换',
+  'domain.opMaterialize': '引用转副本',
   'mcp.unsafeName': '不安全的 MCP 名称：{name}',
   'mcp.sameNameExistsReplace': '收藏夹已存在同名 MCP：{name}；请确认后使用 --replace',
   'mcp.missingInCollection': '收藏夹中不存在 MCP：{name}',
@@ -457,7 +457,7 @@ import / add 选项：
   'browser.referencePrefix': '引用 · ',
   'browser.spaceSelect': 'Space 选中',
   'browser.enterViewSpaceSelect': 'Enter 查看 · Space 选中',
-  'browser.materializeAction': '将引用转为副本',
+  'browser.materializeAction': '引用转副本',
   'browser.installToAgentsAction': '安装到其他 Agent',
   'browser.shortcutHelpTitle': ' 完整快捷键 ',
   'browser.shortcutHelpFooterScroll':

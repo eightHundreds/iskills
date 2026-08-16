@@ -28,6 +28,7 @@ import {
 import { wrapAgent } from '../browser/browse-nav.js';
 import {
   browserFrameDimensions,
+  compactLayout,
   masterDetailLayout,
   masterDetailViewportHeight,
   masterDetailWidths,
@@ -174,6 +175,7 @@ export function McpBrowser({
     (entry) => !findCollectedByEndpoint(data.collection, entry.recipe)
   );
   const useBrowseHome = masterDetailLayout(stdout.columns, stdout.rows);
+  const useCompact = compactLayout(stdout.columns, stdout.rows);
   const tagOptions =
     tab === 'collection' ? collectedTagOptions(data.collection) : locationTagOptions(currentLocations);
 
@@ -243,7 +245,7 @@ export function McpBrowser({
   const browseViewportHeight = (withAgents: boolean): number =>
     useBrowseHome
       ? masterDetailViewportHeight(stdout.rows, 1 + 2 + 3 + (withAgents ? 1 : 0))
-      : Math.max(3, frame.frameHeight - (withAgents ? 3 : 2));
+      : Math.max(useCompact ? 1 : 3, frame.frameHeight - (withAgents ? 3 : 2));
   const tabBodyMinHeight = useBrowseHome
     ? Math.max(8, (stdout.rows ?? 24) - 2)
     : frame.frameHeight - 1;
@@ -427,6 +429,7 @@ export function McpBrowser({
         cursor={cursor}
         isActive={focus === 'list'}
         selected={selected}
+        compact={useCompact}
         viewportHeight={viewportHeight}
         onRowClick={(index) => applySession(browseSessionClickList(navRef.current, index))}
         onCursorDelta={(delta) =>
