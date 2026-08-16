@@ -483,15 +483,13 @@ export async function removeFromCollection(
   const state = await readState();
   const links = state.links.filter((link) => link.skill === name);
   const origin = links.find((link) => link.kind === 'origin');
+  const originRestorable = Boolean(origin && (await isExactSymlink(origin.path, skillPath)));
 
-  if (origin && !(await isExactSymlink(origin.path, skillPath))) {
-    throw new DomainError('domain.originNotCollectionLink', { path: origin.path });
-  }
   for (const link of links.filter((item) => item.kind === 'usage')) {
     if (await isExactSymlink(link.path, skillPath)) await rm(link.path);
   }
 
-  if (origin) {
+  if (origin && originRestorable) {
     await rm(origin.path);
     await moveDirectory(skillPath, origin.path);
   } else {
@@ -512,8 +510,14 @@ export async function removeFromCollection(
   await writeState(state);
   const commitOk = await commitCollection(`remove ${name}`);
   // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
+  if (origin && !originRestorable) {
+    domainNotify('domain.warnOriginNotRestored', { path: origin.path });
+  }
   if (!quiet && commitOk) {
-    domainNotify(origin ? 'domain.removedWithRestore' : 'domain.removed', origin ? { name, path: origin.path } : { name });
+    domainNotify(
+      originRestorable ? 'domain.removedWithRestore' : 'domain.removed',
+      originRestorable && origin ? { name, path: origin.path } : { name },
+    );
   }
 }
 

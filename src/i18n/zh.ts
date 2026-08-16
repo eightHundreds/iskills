@@ -198,6 +198,7 @@ import / add 选项：
   'domain.importFailedRollback': '导入失败：{error}；回滚失败：{rollback}',
   'domain.warnConflictCleanup': '警告：旧冲突目录清理失败：{error}',
   'domain.warnReplaceBackupCleanup': '警告：替换备份清理失败：{error}',
+  'domain.warnOriginNotRestored': '警告：原始位置已不是指向收藏夹的软链，已保留未改：{path}',
   'domain.noUsageInScope': '当前范围没有使用技能：{name}',
   'domain.usageNotExpectedLink': '使用位置已不是预期软链，未删除：{path}',
   'domain.notInCollection': '收藏夹中不存在：{name}',

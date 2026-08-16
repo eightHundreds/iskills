@@ -204,6 +204,8 @@ Options:
   'domain.importFailedRollback': 'Import failed: {error}; rollback failed: {rollback}',
   'domain.warnConflictCleanup': 'Warning: failed to clean old conflict directory: {error}',
   'domain.warnReplaceBackupCleanup': 'Warning: failed to clean replace backup: {error}',
+  'domain.warnOriginNotRestored':
+    'Warning: origin is no longer a symlink into the collection; left unchanged: {path}',
   'domain.noUsageInScope': 'No usage of skill in current scope: {name}',
   'domain.usageNotExpectedLink':
     'Usage path is not the expected symlink; not deleted: {path}',
