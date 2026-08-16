@@ -79,6 +79,9 @@ iskills init --remote git@github.com:you/my-skills.git
 
 # Configure UI language (follow system / Chinese / English)
 iskills config
+
+# MCP collection TUI (project / global / collection)
+iskills mcp
 ```
 
 In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) lives on the keyboard-driven browser. With a remote configured, press **`s`** on the Collection tab to sync.
@@ -94,6 +97,7 @@ In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) liv
 | `iskills add [skill…]` | Install from the collection into a project or global agent dir |
 | `iskills init` | Initialize Git for the collection (optional remote) |
 | `iskills config` | Configure UI preferences (language, collection Git remote) |
+| `iskills mcp` | MCP collection TUI — project / global / collection |
 
 Common flags (see `iskills help <command>` for the full set):
 
@@ -101,6 +105,7 @@ Common flags (see `iskills help <command>` for the full set):
 - **`add`:** `-g` / `--global`, `--agent <name>`, `--to <dir>`, `--copy`, `--replace`, `-y`
 - **`init`:** `--remote <git-url>`
 - **`search`:** `--replace`
+- **`mcp import` / `mcp add`:** `-g` / `--global`, `--agent <name>`, `-y`
 
 Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `pi`, `zcode`, `trae`, `qoder`, `grok`.
 

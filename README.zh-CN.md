@@ -79,6 +79,9 @@ iskills init --remote git@github.com:you/my-skills.git
 
 # 配置 UI 语言（跟随系统 / 中文 / English）
 iskills config
+
+# MCP 配置收藏夹 TUI（项目 / 全局 / 收藏夹）
+iskills mcp
 ```
 
 日常操作（浏览、删除、更新、备注、标签、同步）在主 TUI 的键盘浏览中完成。配置远程后，在收藏夹 Tab 按 **`s`** 同步。
@@ -94,6 +97,7 @@ iskills config
 | `iskills add [技能…]` | 从收藏夹安装到项目或 Agent 全局目录 |
 | `iskills init` | 初始化收藏夹 Git（可选远程） |
 | `iskills config` | 配置界面偏好（UI 语言、收藏夹远程 Git） |
+| `iskills mcp` | MCP 配置收藏夹 TUI — 项目 / 全局 / 收藏夹 |
 
 常用参数（完整列表见 `iskills help <命令>`）：
 
@@ -101,6 +105,7 @@ iskills config
 - **`add`：** `-g` / `--global`、`--agent <名称>`、`--to <目录>`、`--copy`、`--replace`、`-y`
 - **`init`：** `--remote <git-url>`
 - **`search`：** `--replace`
+- **`mcp import` / `mcp add`：** `-g` / `--global`、`--agent <名称>`、`-y`
 
 `--agent` 可选：`agents`、`codex`、`claude`、`cursor`、`opencode`、`pi`、`zcode`、`trae`、`qoder`、`grok`。
 
