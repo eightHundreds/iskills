@@ -6,9 +6,28 @@
 
 ## [未发布]
 
+## [0.2.50] - 2026-08-16
+
+### 新增
+
+- `iskills mcp`：MCP 配置收藏夹 TUI（当前项目 / 全局 / 收藏夹），以及 `mcp create` / `mcp import` / `mcp add`。
+- `iskills config` 可编辑收藏夹 Git 远程（`origin`）；远程地址输入框第一次 `Ctrl+C` 清空，1 秒内再按一次才中断。
+- 收藏夹详情可打开 GitHub 来源并导入同仓其它技能。
+- 收藏夹来源标签展示 Git 主机与仓库名。
+
+### 修复
+
+- 项目 / 全局 peek 名称区分「引用」与「本地」。
+- import 源列表从最后一项回到第一项。
+- footer 长错误省略，点击可看全文。
+- 打开来源时状态文案不再误写成导入中。
+- 收藏夹 Git 忽略 `.DS_Store`。
+
 ### 变更
 
 - 最低 Node.js 版本降至 20.6（`module.register` / `AbortSignal.any` 等 API 地板；完整 TUI 仍推荐 Bun）。
+- 收藏夹 `config.json` 纳入 Git 跟踪；远程地址仍只写 `origin`，不进 `config.json`。
+- 备注、改名、搜索、筛选、设置列表等其它输入仍一次 `Ctrl+C` 即中断。
 
 ## [0.2.49] - 2026-08-06
 
