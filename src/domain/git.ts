@@ -172,7 +172,11 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
   const temporary = await mkdtemp(join(tmpdir(), 'iskills-source-'));
   const repository = join(temporary, 'repository');
   const cloneArgs = ['clone', '--quiet'];
-  if (parsed.ref && !/^[0-9a-f]{7,40}$/i.test(parsed.ref)) cloneArgs.push('--branch', parsed.ref);
+  const isCommitRef = Boolean(parsed.ref && /^[0-9a-f]{7,40}$/i.test(parsed.ref));
+  // Collect/import only needs HEAD of the chosen ref. Skip depth for SHA pins
+  // so the later checkout can still see that object.
+  if (!isCommitRef) cloneArgs.push('--depth', '1');
+  if (parsed.ref && !isCommitRef) cloneArgs.push('--branch', parsed.ref);
   let cloneSource = parsed.url;
   if (cloneSource.startsWith('file://')) {
     try {
