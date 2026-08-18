@@ -6,6 +6,12 @@
 
 ## [未发布]
 
+## [0.2.51] - 2026-08-18
+
+### 修复
+
+- 收藏/导入远程 skill 时使用 `git clone --depth=1`，避免为单个 Skill 完整 clone 大型仓库。指定 commit SHA 时仍完整 clone。
+
 ## [0.2.50] - 2026-08-16
 
 ### 新增
@@ -431,7 +437,8 @@
 
 - 确保 npm 发布包保留 CLI 可执行权限。
 
-[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.27...HEAD
+[未发布]: https://github.com/eightHundreds/iskills/compare/v0.2.51...HEAD
+[0.2.51]: https://github.com/eightHundreds/iskills/compare/v0.2.50...v0.2.51
 [0.2.27]: https://github.com/eightHundreds/iskills/compare/v0.2.26...v0.2.27
 [0.2.26]: https://github.com/eightHundreds/iskills/compare/v0.2.25...v0.2.26
 [0.2.25]: https://github.com/eightHundreds/iskills/compare/v0.2.24...v0.2.25
