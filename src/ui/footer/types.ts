@@ -41,6 +41,8 @@ export interface FooterBrowseCapabilities {
   canMaterialize: boolean;
   /** Project/global: install selected location skills to other agent roots via m. */
   canInstallToAgents?: boolean;
+  /** List: more-actions menu (MCP JSON import, etc.). */
+  canMore?: boolean;
   /** 0 = hide update action; >0 shows u 更新 or u 更新(N). */
   updateCount: number;
   /** When updateCount > 0 and selection-based, show (N). */
@@ -48,8 +50,8 @@ export interface FooterBrowseCapabilities {
   selectionCount: number;
   /** Master-detail: list can move → into the right detail column. */
   canFocusDetail?: boolean;
-  /** Detail-column Enter: edit tags/note, or open a GitHub source. */
-  detailEnterAction?: 'edit' | 'open' | null;
+  /** Detail-column Enter: edit tags/note/name, open a GitHub source, or sign in. */
+  detailEnterAction?: 'edit' | 'open' | 'login' | null;
   /** List: `g` jump to tag when groups exist. */
   canJumpTag?: boolean;
   /** List: `s` sync collection git when available. */

@@ -6,7 +6,43 @@ import { collectionPaths } from '../core.js';
 import { readUserConfig, writeUserConfig } from '../user-config.js';
 import { assertMcpName } from './identity.js';
 import { pathExists, readJsonObject, writeJsonObject } from './io.js';
-import type { McpSecretValues } from './types.js';
+import type { HttpProbeStatus, McpRecipe, McpSecretValues } from './types.js';
+
+/**
+ * Overlay fill for recipe secret keys (static token / env).
+ * `none` means the recipe records no header/env keys.
+ */
+export type McpSecretState = 'none' | 'signed-out' | 'signed-in';
+
+/** @deprecated Use {@link mcpSecretState}; kept as the same union for protocol login too. */
+export type McpLoginState = McpSecretState;
+
+export function mcpSecretState(recipe: McpRecipe, secrets: McpSecretValues): McpSecretState {
+  if (!recipe.headerKeys.length && !recipe.envKeys.length) return 'none';
+  const headersOk = recipe.headerKeys.every((key) => Boolean(secrets.headers[key]?.trim()));
+  const envOk = recipe.envKeys.every((key) => Boolean(secrets.env[key]?.trim()));
+  return headersOk && envOk ? 'signed-in' : 'signed-out';
+}
+
+/** Static keys in the recipe — not HTTP 401 / OAuth discovery. */
+export function mcpLoginState(recipe: McpRecipe, secrets: McpSecretValues): McpLoginState {
+  return mcpSecretState(recipe, secrets);
+}
+
+/**
+ * Protocol login (OAuth / Bearer challenge). Only HTTP/SSE.
+ * Discovered by probing: 401/403 → unsigned; reachable with Authorization → signed-in.
+ */
+export function mcpProtocolLoginState(
+  transport: McpRecipe['transport'],
+  secrets: McpSecretValues,
+  probe?: HttpProbeStatus
+): McpLoginState {
+  if (transport !== 'http' && transport !== 'sse') return 'none';
+  if (probe === 'needs-auth') return 'signed-out';
+  if (probe === 'reachable' && Boolean(secrets.headers.Authorization?.trim())) return 'signed-in';
+  return 'none';
+}
 
 const SECRETS_REL = '.local/mcp-secrets.json';
 const GITIGNORE_KEEP = '!.local/mcp-secrets.json';

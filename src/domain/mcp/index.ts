@@ -31,11 +31,16 @@ export {
   deleteMcpSecrets,
   emptySecrets,
   isEmptySecrets,
+  mcpLoginState,
+  mcpProtocolLoginState,
+  mcpSecretState,
   readMcpSecrets,
   readMcpSecretsInGit,
   setMcpSecretsInGit,
   writeMcpSecrets,
 } from './secrets.js';
+
+export type { McpLoginState, McpSecretState } from './secrets.js';
 
 export { probeHttp } from './probe.js';
 
@@ -48,9 +53,25 @@ export {
 export { isMcpAgentId, mcpAgentIds, agentMcpWritable } from './dialects.js';
 
 export {
+  classifyJsonSnippet,
+  classifyJsonSnippets,
+  parseMcpJsonSnippet,
+} from './json-snippet.js';
+
+export type {
+  JsonImportCandidate,
+  JsonImportStatus,
+  ParsedMcpSnippet,
+  ParseMcpJsonResult,
+} from './json-snippet.js';
+
+export { isPlaceholder } from './recipe.js';
+
+export {
   addCollectedMcp,
   createCollectedMcp,
   importLocationToCollection,
+  importSnippetToCollection,
   listMcpLocations,
   probeCollectedHttp,
   removeCollectedMcp,
@@ -58,6 +79,7 @@ export {
   renameCollectedMcp,
   scanContext,
   storeCollectedLoginSecret,
+  storeCollectedOverlaySecret,
   toggleMcpLocation,
   updateCollectedMeta,
   updateCollectedRecipe,

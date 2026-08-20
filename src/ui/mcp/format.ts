@@ -4,8 +4,10 @@ import {
   type CollectedMcp,
   type HttpProbeStatus,
   type McpLocationEntry,
+  type McpLoginState,
   type McpRecipe,
 } from '../../domain/mcp/index.js';
+import type { BrowserFocus, DetailFieldId } from '../browser/types.js';
 import { normalizeRemoteUrl } from '../../domain/mcp/identity.js';
 import {
   TAG_FILTER_ALL,
@@ -149,18 +151,70 @@ export function filterLocations(
   });
 }
 
+/** Right column peeks the current row only while the list or detail column is focused. */
+export function mcpPeekCurrent<T>(
+  focus: BrowserFocus,
+  current: T | undefined
+): T | undefined {
+  return focus === 'list' || focus === 'detail' ? current : undefined;
+}
+
+export function mcpDetailEditableFields(
+  collection: boolean,
+  secrets: McpLoginState,
+  login: McpLoginState
+): DetailFieldId[] {
+  if (!collection) return [];
+  const fields: DetailFieldId[] = ['name'];
+  if (login !== 'none') fields.push('login');
+  if (secrets !== 'none') fields.push('secrets');
+  fields.push('tags', 'note');
+  return fields;
+}
+
 export function mcpCollectionDetailRows(
   mcp: CollectedMcp | undefined,
   width: number,
   viewportHeight: number,
-  probe?: HttpProbeStatus
+  options: {
+    probe?: HttpProbeStatus;
+    secrets?: McpLoginState;
+    login?: McpLoginState;
+  } = {}
 ): CollectionDetailRow[] {
-  if (!mcp) return [{ text: t('browser.selectSkillToView'), muted: true }];
+  if (!mcp) return [{ text: t('mcp.selectToView'), muted: true }];
+  const secrets = options.secrets ?? 'none';
+  const login = options.login ?? 'none';
+  const probe = options.probe;
   const rows: CollectionDetailRow[] = [
-    { text: mcp.name, bold: true },
+    { text: mcp.name, bold: true, field: 'name' },
     ...peekFieldRows(t('common.source'), mcpSourceLabel(mcp), width, 1),
     ...peekFieldRows(t('mcp.transport'), mcp.recipe.transport, width, 1),
     ...peekFieldRows(t('mcp.endpoint'), recipeDisplayLine(mcp.recipe), width, 2),
+  ];
+  if (login !== 'none') {
+    rows.push(
+      ...peekFieldRows(
+        t('mcp.login'),
+        login === 'signed-in' ? t('mcp.signedIn') : t('mcp.signedOut'),
+        width,
+        1,
+        { field: 'login' }
+      )
+    );
+  }
+  if (secrets !== 'none') {
+    rows.push(
+      ...peekFieldRows(
+        t('mcp.secrets'),
+        secrets === 'signed-in' ? t('mcp.secretsSet') : t('mcp.secretsUnset'),
+        width,
+        1,
+        { field: 'secrets' }
+      )
+    );
+  }
+  rows.push(
     ...peekFieldRows(
       t('common.tags'),
       mcp.tags.length ? mcp.tags.map((tag) => `[${tag}]`).join(' ') : '--',
@@ -170,8 +224,8 @@ export function mcpCollectionDetailRows(
     ),
     ...peekFieldRows(t('common.note'), mcp.note.trim() || t('common.none'), width, 2, {
       field: 'note',
-    }),
-  ];
+    })
+  );
   if (probe) {
     const label =
       probe === 'reachable'
@@ -201,7 +255,7 @@ export function mcpLocationDetailRows(
   width: number,
   viewportHeight: number
 ): CollectionDetailRow[] {
-  if (!entry) return [{ text: t('browser.selectSkillToView'), muted: true }];
+  if (!entry) return [{ text: t('mcp.selectToView'), muted: true }];
   const match = findCollectedByEndpoint(collection, entry.recipe);
   const title =
     entry.ownership === 'borrowed'
@@ -263,6 +317,7 @@ export function mcpShortcutHelpSections(): ShortcutHelpSection[] {
         { label: t('mcp.helpNavAgent'), keys: '[ / ]' },
         { label: t('browser.helpNavGroup'), keys: 'g' },
         { label: t('mcp.helpNavFilter'), keys: '/' },
+        { label: t('mcp.helpNavDetail'), keys: '→' },
       ],
     },
     {
@@ -278,6 +333,7 @@ export function mcpShortcutHelpSections(): ShortcutHelpSection[] {
       title: t('browser.helpCollect'),
       items: [
         { label: t('mcp.helpCollectImport'), keys: 'i' },
+        { label: t('mcp.helpMore'), keys: 'm' },
       ],
     },
     {
@@ -287,9 +343,7 @@ export function mcpShortcutHelpSections(): ShortcutHelpSection[] {
         { label: t('common.tags'), keys: 't' },
         { label: t('common.note'), keys: 'n' },
         { label: t('common.update'), keys: 'u' },
-        { label: t('mcp.rename'), keys: 'r' },
         { label: t('mcp.toggle'), keys: 'x' },
-        { label: t('mcp.login'), keys: 'l' },
         { label: t('mcp.helpProbe'), keys: 'p' },
         { label: t('common.delete'), keys: 'd' },
       ],

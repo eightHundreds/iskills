@@ -89,6 +89,7 @@ function browseItems(
     const items: FooterItem[] = [{ key: '↑↓', label: t('common.move') }];
     if (browse.detailEnterAction === 'open') items.push({ key: 'Enter', label: t('common.enter') });
     else if (browse.detailEnterAction === 'edit') items.push({ key: 'Enter', label: t('common.edit') });
+    else if (browse.detailEnterAction === 'login') items.push({ key: 'Enter', label: t('mcp.login') });
     items.push(
       ...extraDetailItems,
       { key: '←', label: t('common.list') },
@@ -115,7 +116,7 @@ function browseItems(
   }
   if (browse.canImport) items.push({ key: 'i', label: t('common.collect') });
   items.push(...extraListItems);
-  if (browse.canMaterialize || browse.canInstallToAgents) {
+  if (browse.canMaterialize || browse.canInstallToAgents || browse.canMore) {
     items.push({ key: 'm', label: t('common.more') });
   }
   if (browse.canTag) items.push({ key: 't', label: t('common.tags') });

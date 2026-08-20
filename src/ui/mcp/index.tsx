@@ -5,6 +5,7 @@ import {
   isMcpAgentId,
   listCollectedMcps,
   listMcpLocations,
+  mcpSecretState,
   probeHttp,
   readMcpSecrets,
   removeCollectedMcp,
@@ -12,16 +13,18 @@ import {
   renameCollectedMcp,
   scanContext,
   storeCollectedLoginSecret,
+  storeCollectedOverlaySecret,
   toggleMcpLocation,
   updateCollectedMeta,
   updateLocationsFromCollection,
   type CollectedMcp,
-  type HttpProbeStatus,
   type McpLocationEntry,
+  type McpSecretState,
   type McpScope,
 } from '../../domain/mcp/index.js';
 import { formatAppError, t } from '../../i18n/index.js';
 import { Modal } from '../overlay/static.js';
+import { presentMcpJsonImport } from './json-import.js';
 import { promptText } from '../prompts/present.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
@@ -35,6 +38,8 @@ export interface McpBrowserData {
   collection: CollectedMcp[];
   project: McpLocationEntry[];
   global: McpLocationEntry[];
+  secrets: Record<string, McpSecretState>;
+  accessToken: Record<string, boolean>;
 }
 
 async function loadMcpData(): Promise<McpBrowserData> {
@@ -44,7 +49,21 @@ async function loadMcpData(): Promise<McpBrowserData> {
     listMcpLocations('project', ctx),
     listMcpLocations('global', ctx),
   ]);
-  return { collection, project, global };
+  const overlay = await Promise.all(
+    collection.map(async (item) => {
+      const values = await readMcpSecrets(item.name);
+      return [item.name, values] as const;
+    })
+  );
+  const secrets: Record<string, McpSecretState> = {};
+  const accessToken: Record<string, boolean> = {};
+  for (const [name, values] of overlay) {
+    const item = collection.find((entry) => entry.name === name);
+    if (!item) continue;
+    secrets[name] = mcpSecretState(item.recipe, values);
+    accessToken[name] = Boolean(values.headers.Authorization?.trim());
+  }
+  return { collection, project, global, secrets, accessToken };
 }
 
 export async function runMcpBrowserApp(): Promise<void> {
@@ -62,7 +81,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
   const [status, setStatus] = useState<{ kind: 'normal' | 'error'; text: string } | null>(
     null
   );
-  const [probe, setProbe] = useState<HttpProbeStatus | undefined>(undefined);
+
   const [snapshot, setSnapshot] = useState<McpFooterSnapshot | null>(null);
   const [query, setQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -111,7 +130,6 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
     >
       <McpBrowser
         data={data}
-        {...(probe ? { probe } : {})}
         query={query}
         filterOpen={filterOpen}
         onOpenFilter={() => {
@@ -120,6 +138,17 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
           setFilterOpen(true);
         }}
         onCapabilities={onCapabilities}
+        onImportJson={async () => {
+          try {
+            const result = await presentMcpJsonImport();
+            if (!result) return;
+            await reload();
+            for (const notice of result.notices) flash(notice);
+            flash(t('mcp.importedCount', { count: result.imported }));
+          } catch (error) {
+            flash(formatAppError(error), 'error');
+          }
+        }}
         onImport={async (entries) => {
           try {
             const { importLocationToCollection } = await import('../../domain/mcp/index.js');
@@ -250,16 +279,34 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
           await reload();
         }}
         onLogin={async (item) => {
-          const header = (await promptText(t('mcp.headerPrompt'), 'Authorization'))?.trim();
-          if (!header) return;
-          const token = await promptText(t('mcp.tokenPrompt'));
+          const token = await promptText(t('mcp.accessTokenPrompt'));
           if (!token?.trim()) return;
-          await storeCollectedLoginSecret(item.name, header, token.trim());
+          const value = /^bearer\s+/i.test(token.trim())
+            ? token.trim()
+            : `Bearer ${token.trim()}`;
+          await storeCollectedLoginSecret(item.name, 'Authorization', value);
+          await reload();
           flash(t('mcp.loginSaved'));
         }}
+        onFillSecrets={async (item) => {
+          const headerDefault =
+            item.recipe.headerKeys[0] ?? item.recipe.envKeys[0] ?? 'Authorization';
+          const key = (await promptText(t('mcp.headerPrompt'), headerDefault))?.trim();
+          if (!key) return;
+          const token = await promptText(t('mcp.tokenPrompt'));
+          if (!token?.trim()) return;
+          const slot = item.recipe.envKeys.includes(key) && !item.recipe.headerKeys.includes(key)
+            ? 'env'
+            : 'headers';
+          await storeCollectedOverlaySecret(item.name, slot, key, token.trim());
+          await reload();
+          flash(t('mcp.secretsSaved'));
+        }}
         onProbe={async (item) => {
-          if (item.recipe.transport !== 'http') return;
-          setProbe(await probeHttp(item.recipe, await readMcpSecrets(item.name)));
+          if (item.recipe.transport !== 'http' && item.recipe.transport !== 'sse') {
+            return 'failed';
+          }
+          return probeHttp(item.recipe, await readMcpSecrets(item.name));
         }}
       />
     </AppShell>

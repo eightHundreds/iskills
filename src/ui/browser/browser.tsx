@@ -54,7 +54,7 @@ import {
 } from './format.js';
 import { t } from '../../i18n/index.js';
 import { useModal, useOverlayBusy } from '../overlay/host.js';
-import { FramedPanel } from '../components/framed-panel.js';
+import { MoreActionsPanel } from '../components/more-actions-panel.js';
 import {
   Select,
   Tabs,
@@ -90,54 +90,6 @@ function sameNavigation(
     left.agent === right.agent &&
     left.cursor === right.cursor &&
     left.query === right.query
-  );
-}
-
-/** Framed more-actions picker when multiple m-actions are available. */
-function MoreActionsPanel({
-  scope,
-  items,
-  onSelect,
-  onCancel,
-}: {
-  scope: string;
-  items: Array<{ id: MoreActionId; label: string }>;
-  onSelect: (id: MoreActionId) => void;
-  onCancel: () => void;
-}): ReactNode {
-  const [cursor, setCursor] = useState(0);
-  const clamped = Math.max(0, Math.min(cursor, items.length - 1));
-  const lines = [
-    scope,
-    '',
-    ...items.map((item, index) =>
-      index === clamped ? `› ${item.label}` : `  ${item.label}`
-    ),
-    t('browser.moreActionsFooter'),
-  ];
-  return (
-    <FramedPanel
-      title={t('browser.moreActionsTitle')}
-      content={lines}
-      width={64}
-      muteLastContent
-      scrollWithArrows={false}
-      onEscape={onCancel}
-      onKey={(input, key) => {
-        if (key.upArrow) {
-          setCursor((current) => Math.max(0, current - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setCursor((current) => Math.min(items.length - 1, current + 1));
-          return;
-        }
-        if (key.return || input.includes('\r') || input.includes('\n')) {
-          const item = items[clamped];
-          if (item) onSelect(item.id);
-        }
-      }}
-    />
   );
 }
 

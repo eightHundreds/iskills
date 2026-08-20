@@ -10,7 +10,7 @@ export async function probeHttp(
   secrets: McpSecretValues,
   init: HttpProbeInit = {}
 ): Promise<HttpProbeStatus> {
-  if (recipe.transport !== 'http') return 'failed';
+  if (recipe.transport !== 'http' && recipe.transport !== 'sse') return 'failed';
   const url = secrets.url ?? recipe.url;
   if (!url) return 'failed';
   const fetchImpl = init.fetchImpl ?? fetch;

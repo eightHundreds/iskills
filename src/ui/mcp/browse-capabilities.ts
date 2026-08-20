@@ -1,3 +1,4 @@
+import type { DetailFieldId } from '../browser/types.js';
 import type { FooterBrowseCapabilities, FooterItem } from '../footer/types.js';
 import { t } from '../../i18n/index.js';
 
@@ -18,16 +19,19 @@ export function computeMcpBrowseCapabilities(input: {
   canToggle: boolean;
   canUpdate: boolean;
   canTag: boolean;
-  canLogin: boolean;
-  canRename: boolean;
   hasTagGroups: boolean;
+  detailField?: DetailFieldId;
 }): McpFooterSnapshot {
   const enterAction = input.tab === 'collection' && input.currentIsItem ? 'add' : null;
   const extraListItems: FooterItem[] = [];
   if (input.canToggle) extraListItems.push({ key: 'x', label: t('mcp.toggle') });
-  if (input.canRename) extraListItems.push({ key: 'r', label: t('mcp.rename') });
-  if (input.canLogin) extraListItems.push({ key: 'l', label: t('mcp.login') });
   const extraDetailItems: FooterItem[] = [];
+  const detailEnterAction: FooterBrowseCapabilities['detailEnterAction'] =
+    input.focus === 'detail' && input.tab === 'collection'
+      ? input.detailField === 'login'
+        ? 'login'
+        : 'edit'
+      : null;
   return {
     browse: {
       focus: input.focus,
@@ -36,11 +40,16 @@ export function computeMcpBrowseCapabilities(input: {
       canTag: input.tab === 'collection' && input.canTag,
       canImport: input.canImport,
       canMaterialize: false,
+      canMore: input.focus === 'list',
       updateCount: input.tab === 'collection' && input.canUpdate ? 1 : 0,
       updateIsSelection: false,
       selectionCount: input.selectionCount,
-      canFocusDetail: false,
-      detailEnterAction: null,
+      canFocusDetail:
+        input.focus === 'list' &&
+        input.masterDetail &&
+        input.tab === 'collection' &&
+        input.currentIsItem,
+      detailEnterAction,
       canJumpTag: false,
     },
     extraListItems,

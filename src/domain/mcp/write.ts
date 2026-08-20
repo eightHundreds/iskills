@@ -39,6 +39,7 @@ import {
   readMcpSecrets,
   writeMcpSecrets,
 } from './secrets.js';
+import type { ParsedMcpSnippet } from './json-snippet.js';
 import type {
   AddMcpTarget,
   CollectedMcp,
@@ -49,6 +50,7 @@ import type {
   McpLocationEntry,
   McpScanContext,
   McpScope,
+  McpSecretValues,
   UpdateMcpLocationsOptions,
 } from './types.js';
 
@@ -88,6 +90,29 @@ export async function importLocationToCollection(
     },
     recipe: entry.recipe,
   };
+  return commitImportedMcp(incoming, entry.secrets, options);
+}
+
+export async function importSnippetToCollection(
+  snippet: ParsedMcpSnippet,
+  options: ImportMcpOptions = {}
+): Promise<{ result: ImportMcpResult; name: string }> {
+  const incoming: CollectedMcp = {
+    name: assertMcpName(snippet.name),
+    description: '',
+    tags: [],
+    note: '',
+    source: { type: 'create' },
+    recipe: snippet.recipe,
+  };
+  return commitImportedMcp(incoming, snippet.secrets, options);
+}
+
+async function commitImportedMcp(
+  incoming: CollectedMcp,
+  secrets: McpSecretValues,
+  options: ImportMcpOptions
+): Promise<{ result: ImportMcpResult; name: string }> {
   const collection = await listCollectedMcps();
   const sameEndpoint = findCollectedByEndpoint(collection, incoming.recipe);
   if (sameEndpoint && sameEndpoint.name.toLowerCase() !== incoming.name.toLowerCase()) {
@@ -113,8 +138,8 @@ export async function importLocationToCollection(
   }
   const committed = await writeCollectedMcp(incoming, `mcp: import ${incoming.name}`);
   if (!committed) throw new DomainError('domain.gitCommitFailed', { error: incoming.name });
-  if (options.keepSecrets !== false && !isEmptySecrets(entry.secrets)) {
-    await writeMcpSecrets(incoming.name, entry.secrets);
+  if (options.keepSecrets !== false && !isEmptySecrets(secrets)) {
+    await writeMcpSecrets(incoming.name, secrets);
   }
   return { result: 'imported', name: incoming.name };
 }
@@ -235,14 +260,16 @@ export async function renameCollectedMcp(from: string, to: string): Promise<Coll
   const current = await readCollectedMcp(from);
   if (!current) throw new DomainError('mcp.missingInCollection', { name: from });
   const nextName = assertMcpName(to);
-  if (nextName !== current.name && (await readCollectedMcp(nextName))) {
+  if (nextName === current.name) return current;
+  const existing = await readCollectedMcp(nextName);
+  // Case-insensitive volumes resolve Xuansi.json to the current xuansi.json.
+  // That is a case-only rename of the same MCP, not a second collection entry.
+  if (existing && existing.name !== current.name) {
     throw new DomainError('mcp.sameNameExistsReplace', { name: nextName });
   }
   const renamed = { ...current, name: nextName };
-  if (nextName !== current.name) {
-    await deleteCollectedMcpFile(current.name);
-    await moveMcpSecrets(current.name, nextName);
-  }
+  await deleteCollectedMcpFile(current.name);
+  await moveMcpSecrets(current.name, nextName);
   const committed = await writeCollectedMcp(renamed, `mcp: rename ${current.name} ${nextName}`);
   if (!committed) throw new DomainError('domain.gitCommitFailed', { error: nextName });
   return renamed;
@@ -278,7 +305,7 @@ export async function probeCollectedHttp(
 ): Promise<HttpProbeStatus> {
   const collected = await readCollectedMcp(name);
   if (!collected) throw new DomainError('mcp.missingInCollection', { name });
-  if (collected.recipe.transport !== 'http') {
+  if (collected.recipe.transport !== 'http' && collected.recipe.transport !== 'sse') {
     throw new DomainError('mcp.probeUnsupported', { name });
   }
   const secrets = await readMcpSecrets(name);
@@ -290,8 +317,21 @@ export async function storeCollectedLoginSecret(
   headerName: string,
   value: string
 ): Promise<void> {
+  return storeCollectedOverlaySecret(name, 'headers', headerName, value);
+}
+
+export async function storeCollectedOverlaySecret(
+  name: string,
+  slot: 'headers' | 'env',
+  key: string,
+  value: string
+): Promise<void> {
   const current = await readMcpSecrets(name);
-  await writeMcpSecrets(name, mergeSecrets(current, { env: {}, headers: { [headerName]: value } }));
+  const extra =
+    slot === 'env'
+      ? { env: { [key]: value }, headers: {} }
+      : { env: {}, headers: { [key]: value } };
+  await writeMcpSecrets(name, mergeSecrets(current, extra));
 }
 
 function sameProjectedRecipe(

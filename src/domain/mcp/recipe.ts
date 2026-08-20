@@ -9,7 +9,12 @@ export function isSecretKey(key: string): boolean {
 }
 
 export function isPlaceholder(value: string): boolean {
-  return /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value.trim());
+  const trimmed = value.trim();
+  if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(trimmed)) return true;
+  if (/^<[A-Za-z][A-Za-z0-9._-]*>$/.test(trimmed)) return true;
+  if (/\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(trimmed)) return true;
+  if (/<[A-Za-z][A-Za-z0-9._-]*>/.test(trimmed)) return true;
+  return false;
 }
 
 export function extractFromServerObject(raw: Record<string, unknown>): {

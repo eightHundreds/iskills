@@ -5,11 +5,14 @@ import type {
   CollectedMcp,
   HttpProbeStatus,
   McpLocationEntry,
+  McpLoginState,
   McpScope,
 } from '../../domain/mcp/index.js';
-import { findCollectedByEndpoint, mcpAgentIds } from '../../domain/mcp/index.js';
+import { findCollectedByEndpoint, mcpAgentIds, mcpProtocolLoginState } from '../../domain/mcp/index.js';
 import { t } from '../../i18n/index.js';
 import { Tabs } from '../components/termcn.js';
+import { MoreActionsPanel } from '../components/more-actions-panel.js';
+import { isReturn } from '../components/text.js';
 import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { ShortcutHelpPanel } from '../browser/shortcut-help.js';
 import { AgentTabs, BrowseHomePane, BrowseListPane } from '../browser/panes.js';
@@ -17,6 +20,7 @@ import type { BrowserFocus, BrowserTab } from '../browser/types.js';
 import { TAG_FILTER_ALL, browseListColumnLines } from '../browser/format.js';
 import {
   applyBrowseSessionPatch,
+  browseSessionClickDetail,
   browseSessionClickList,
   browseSessionClickTag,
   browseSessionScrollList,
@@ -45,16 +49,18 @@ import {
   locationListItem,
   locationTagOptions,
   mcpCollectionDetailRows,
+  mcpDetailEditableFields,
   mcpLocationDetailRows,
+  mcpPeekCurrent,
   mcpShortcutHelpSections,
 } from './format.js';
 import type { McpBrowserData } from './index.js';
 
 export function McpBrowser({
   data,
-  probe,
   onCapabilities,
   onImport,
+  onImportJson,
   onAdd,
   onDelete,
   onToggle,
@@ -63,15 +69,16 @@ export function McpBrowser({
   onTags,
   onNote,
   onLogin,
+  onFillSecrets,
   onProbe,
   filterOpen,
   query,
   onOpenFilter,
 }: {
   data: McpBrowserData;
-  probe?: HttpProbeStatus;
   onCapabilities: (snapshot: McpFooterSnapshot) => void;
   onImport: (entries: McpLocationEntry[]) => Promise<void>;
+  onImportJson: () => Promise<void>;
   onAdd: (names: string[], scope: McpScope, agents: string[]) => Promise<void>;
   onDelete: (target: {
     collection?: CollectedMcp[];
@@ -83,7 +90,8 @@ export function McpBrowser({
   onTags: (item: CollectedMcp) => Promise<void>;
   onNote: (item: CollectedMcp) => Promise<void>;
   onLogin: (item: CollectedMcp) => Promise<void>;
-  onProbe: (item: CollectedMcp) => Promise<void>;
+  onFillSecrets: (item: CollectedMcp) => Promise<void>;
+  onProbe: (item: CollectedMcp) => Promise<HttpProbeStatus>;
   filterOpen: boolean;
   query: string;
   onOpenFilter: () => void;
@@ -119,6 +127,7 @@ export function McpBrowser({
   tagCursorRef.current = tagCursor;
   const [detailFieldIndex, setDetailFieldIndex] = useState(0);
   const detailFieldIndexRef = useRef(0);
+  const [probes, setProbes] = useState<Record<string, HttpProbeStatus>>({});
 
   const setTab = (value: BrowserTab): void => {
     setNav((current) => ({ ...current, tab: value }));
@@ -163,6 +172,27 @@ export function McpBrowser({
   const listCount = listItems.length;
   const currentCollected = tab === 'collection' ? visibleCollected[cursor] : undefined;
   const currentLocation = tab !== 'collection' ? visibleLocations[cursor] : undefined;
+  const peekCollected = mcpPeekCurrent(focus, currentCollected);
+  const peekLocation = mcpPeekCurrent(focus, currentLocation);
+  const probe = currentCollected ? probes[currentCollected.name] : undefined;
+  const currentSecrets: McpLoginState = currentCollected
+    ? (data.secrets[currentCollected.name] ?? 'none')
+    : 'none';
+  const currentLogin: McpLoginState = currentCollected
+    ? mcpProtocolLoginState(
+        currentCollected.recipe.transport,
+        {
+          env: {},
+          headers: data.accessToken[currentCollected.name] ? { Authorization: '1' } : {},
+        },
+        probe
+      )
+    : 'none';
+  const detailFields = mcpDetailEditableFields(tab === 'collection', currentSecrets, currentLogin);
+  const activeDetailField =
+    focus === 'detail' && detailFields.length
+      ? detailFields[Math.max(0, Math.min(detailFieldIndex, detailFields.length - 1))]
+      : undefined;
   const selectedCollected = selectedOrCurrent(
     data.collection.filter((item) => selected.has(`mcp:${item.name}`)),
     currentCollected
@@ -198,6 +228,21 @@ export function McpBrowser({
   useEffect(() => {
     if (agent !== activeAgent) setAgent(activeAgent);
   }, [agent, activeAgent]);
+  useEffect(() => {
+    if (detailFieldIndex >= detailFields.length && detailFields.length > 0) {
+      setDetailFieldIndex(detailFields.length - 1);
+    }
+  }, [detailFieldIndex, detailFields.length]);
+  useEffect(() => {
+    if (focus !== 'detail' || tab !== 'collection' || !currentCollected) return;
+    const transport = currentCollected.recipe.transport;
+    if (transport !== 'http' && transport !== 'sse') return;
+    const name = currentCollected.name;
+    if (probes[name]) return;
+    void onProbe(currentCollected).then((status) => {
+      setProbes((current) => ({ ...current, [name]: status }));
+    });
+  }, [focus, tab, currentCollected?.name]);
 
   const applySession = (patch: BrowseSessionPatch<BrowseSessionNav>): void => {
     applyBrowseSessionPatch(patch, {
@@ -223,9 +268,8 @@ export function McpBrowser({
     canToggle: Boolean(currentLocation),
     canUpdate: tab === 'collection' && selectedCollected.length > 0,
     canTag: tab === 'collection' && Boolean(currentCollected),
-    canLogin: tab === 'collection' && Boolean(currentCollected),
-    canRename: tab === 'collection' && Boolean(currentCollected),
     hasTagGroups: false,
+    ...(activeDetailField ? { detailField: activeDetailField } : {}),
   });
   const browseKey = JSON.stringify(footerSnapshot);
   useEffect(() => {
@@ -288,7 +332,7 @@ export function McpBrowser({
         return;
       }
       if (
-        (key.return || input.includes('\r') || input.includes('\n')) &&
+        isReturn(input, key.return) &&
         live.focus === 'list' &&
         tab === 'collection' &&
         selectedCollected.length
@@ -298,9 +342,6 @@ export function McpBrowser({
           'project',
           [...mcpAgentIds()]
         );
-        return;
-      }
-      if (key.rightArrow && live.focus === 'list' && tab === 'collection' && useBrowseHome) {
         return;
       }
       const currentId = listItems[live.cursor]?.id;
@@ -324,14 +365,53 @@ export function McpBrowser({
           currentItemIds: currentId ? [currentId] : [],
           currentIsItem: Boolean(currentId),
           allowNarrowGroupJump: false,
-          detailFieldCount: 0,
+          detailFieldCount: detailFields.length,
+          detailEntryFieldIndex: 0,
         }
       );
       if (session.handled) {
         applySession(session.patch);
         return;
       }
+      if (live.focus === 'detail' && tab === 'collection' && currentCollected) {
+        const field = detailFields[detailFieldIndexRef.current] ?? detailFields[0];
+        if (isReturn(input, key.return) && field) {
+          if (field === 'name') void onRename(currentCollected);
+          else if (field === 'login') {
+            void onLogin(currentCollected).then(() =>
+              onProbe(currentCollected).then((status) => {
+                setProbes((current) => ({ ...current, [currentCollected.name]: status }));
+              })
+            );
+          } else if (field === 'secrets') void onFillSecrets(currentCollected);
+          else if (field === 'tags') void onTags(currentCollected);
+          else if (field === 'note') void onNote(currentCollected);
+        }
+        if (input === 't') void onTags(currentCollected);
+        if (input === 'n') void onNote(currentCollected);
+        return;
+      }
       if (live.focus !== 'list') return;
+      if (input === 'm') {
+        void modal
+          .open<'importJson' | null>({
+            footerItems: [
+              { key: 'Enter', label: t('common.confirm') },
+              { key: 'Esc', label: t('common.cancel') },
+            ],
+            content: (close) => (
+              <MoreActionsPanel
+                items={[{ id: 'importJson', label: t('mcp.importFromJson') }]}
+                onSelect={(id) => close(id)}
+                onCancel={() => close(null)}
+              />
+            ),
+          })
+          .then((id) => {
+            if (id === 'importJson') void onImportJson();
+          });
+        return;
+      }
       if (input === 'i' && tab !== 'collection' && selectedImportable.length) {
         void onImport(selectedImportable);
         return;
@@ -352,10 +432,6 @@ export function McpBrowser({
         void onUpdate(selectedCollected);
         return;
       }
-      if (input === 'r' && currentCollected) {
-        void onRename(currentCollected);
-        return;
-      }
       if (input === 't' && currentCollected) {
         void onTags(currentCollected);
         return;
@@ -364,12 +440,10 @@ export function McpBrowser({
         void onNote(currentCollected);
         return;
       }
-      if (input === 'l' && currentCollected) {
-        void onLogin(currentCollected);
-        return;
-      }
       if (input === 'p' && currentCollected) {
-        void onProbe(currentCollected);
+        void onProbe(currentCollected).then((status) => {
+          setProbes((current) => ({ ...current, [currentCollected.name]: status }));
+        });
       }
     },
     { isActive: !overlayBusy && !filterOpen }
@@ -392,8 +466,12 @@ export function McpBrowser({
         selected
       );
       const detailRows = collection
-        ? mcpCollectionDetailRows(currentCollected, peekWidth, viewportHeight, probe)
-        : mcpLocationDetailRows(currentLocation, data.collection, peekWidth, viewportHeight);
+        ? mcpCollectionDetailRows(peekCollected, peekWidth, viewportHeight, {
+            secrets: currentSecrets,
+            login: currentLogin,
+            ...(probe ? { probe } : {}),
+          })
+        : mcpLocationDetailRows(peekLocation, data.collection, peekWidth, viewportHeight);
       return (
         <BrowseHomePane
           tagOptions={tagOptions}
@@ -404,6 +482,7 @@ export function McpBrowser({
           {...(listActiveLineIndexes ? { listActiveLineIndexes } : {})}
           {...(listSelectedLineIndexes ? { listSelectedLineIndexes } : {})}
           detailRows={detailRows}
+          {...(activeDetailField ? { detailActiveField: activeDetailField } : {})}
           tagWidth={tagWidth}
           listWidth={listWidth}
           peekWidth={peekWidth}
@@ -416,7 +495,21 @@ export function McpBrowser({
             if (patch) applySession(patch);
           }}
           onListIndex={(index) => applySession(browseSessionClickList(navRef.current, index))}
-          onDetailLine={() => undefined}
+          onDetailLine={(visibleIndex) => {
+            const row = detailRows[visibleIndex];
+            if (!row?.field) return;
+            const index = detailFields.indexOf(row.field);
+            if (index < 0) return;
+            if (row.field === 'login' && currentCollected) {
+              void onLogin(currentCollected).then(() =>
+                onProbe(currentCollected).then((status) => {
+                  setProbes((current) => ({ ...current, [currentCollected.name]: status }));
+                })
+              );
+              return;
+            }
+            applySession(browseSessionClickDetail(navRef.current, index));
+          }}
           onListScroll={(delta) =>
             applySession(browseSessionScrollList(navRef.current, delta, listItems.length))
           }
