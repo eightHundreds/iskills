@@ -6,9 +6,8 @@ import type {
   HttpProbeStatus,
   McpLocationEntry,
   McpLoginState,
-  McpScope,
 } from '../../domain/mcp/index.js';
-import { findCollectedByEndpoint, mcpAgentIds, mcpProtocolLoginState } from '../../domain/mcp/index.js';
+import { findCollectedByEndpoint, mcpProtocolLoginState } from '../../domain/mcp/index.js';
 import { t } from '../../i18n/index.js';
 import { Tabs } from '../components/termcn.js';
 import { MoreActionsPanel } from '../components/more-actions-panel.js';
@@ -79,7 +78,7 @@ export function McpBrowser({
   onCapabilities: (snapshot: McpFooterSnapshot) => void;
   onImport: (entries: McpLocationEntry[]) => Promise<void>;
   onImportJson: () => Promise<void>;
-  onAdd: (names: string[], scope: McpScope, agents: string[]) => Promise<void>;
+  onAdd: (names: string[]) => Promise<void>;
   onDelete: (target: {
     collection?: CollectedMcp[];
     locations?: McpLocationEntry[];
@@ -337,11 +336,7 @@ export function McpBrowser({
         tab === 'collection' &&
         selectedCollected.length
       ) {
-        void onAdd(
-          selectedCollected.map((item) => item.name),
-          'project',
-          [...mcpAgentIds()]
-        );
+        void onAdd(selectedCollected.map((item) => item.name));
         return;
       }
       const currentId = listItems[live.cursor]?.id;

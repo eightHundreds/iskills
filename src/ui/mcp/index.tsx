@@ -3,6 +3,7 @@ import {
   addCollectedMcp,
   listCollectedMcps,
   listMcpLocations,
+  mcpInstallReviewOptions,
   mcpSecretState,
   probeHttp,
   readMcpSecrets,
@@ -19,11 +20,11 @@ import {
   type CollectedMcp,
   type McpLocationEntry,
   type McpSecretState,
-  type McpScope,
 } from '../../domain/mcp/index.js';
 import { formatAppError, t } from '../../i18n/index.js';
 import { Modal } from '../overlay/static.js';
 import { presentMcpJsonImport } from './json-import.js';
+import { promptMcpInstallReview } from './install-review.js';
 import { promptText } from '../prompts/present.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
@@ -172,10 +173,17 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             flash(formatAppError(error), 'error');
           }
         }}
-        onAdd={async (names, scope: McpScope, agents: string[]) => {
+        onAdd={async (names) => {
           try {
             const ctx = scanContext();
-            const writable = await writableMcpTargets(agents, scope, ctx);
+            const options = await mcpInstallReviewOptions(ctx);
+            if (!options.targets.length) {
+              flash(t('mcp.noWritableAgents'), 'error');
+              return;
+            }
+            const install = await promptMcpInstallReview(names, options);
+            if (!install) return;
+            const writable = await writableMcpTargets(install.agents, install.destination, ctx);
             let added = 0;
             for (const name of names) {
               added += (await addCollectedMcp(name, writable, ctx)).added;

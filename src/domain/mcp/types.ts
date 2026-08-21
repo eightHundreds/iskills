@@ -81,6 +81,18 @@ export interface AddMcpTarget {
   scope: McpScope;
 }
 
+export interface McpInstallReviewTarget {
+  value: string;
+  projectLabel?: string;
+  globalLabel?: string;
+}
+
+export interface McpInstallReviewOptions {
+  targets: McpInstallReviewTarget[];
+  defaultProjectAgents: string[];
+  defaultGlobalAgents: string[];
+}
+
 export interface UpdateMcpLocationsOptions {
   confirmDrift?: (input: {
     entry: McpLocationEntry;

@@ -5,6 +5,8 @@ export type {
   HttpProbeStatus,
   ImportMcpOptions,
   ImportMcpResult,
+  McpInstallReviewOptions,
+  McpInstallReviewTarget,
   McpCollectionMatch,
   McpLocationEntry,
   McpRecipe,
@@ -70,6 +72,7 @@ export { isPlaceholder } from './recipe.js';
 export {
   addCollectedMcp,
   createCollectedMcp,
+  mcpInstallReviewOptions,
   writableMcpTargets,
   importLocationToCollection,
   importSnippetToCollection,

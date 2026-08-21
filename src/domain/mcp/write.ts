@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { commitCollection } from '../core.js';
+import { agentDisplayName, commitCollection } from '../core.js';
 import { DomainError } from '../errors.js';
 import {
   createCollectedRecord,
@@ -47,12 +47,15 @@ import type {
   HttpProbeStatus,
   ImportMcpOptions,
   ImportMcpResult,
+  McpInstallReviewOptions,
+  McpInstallReviewTarget,
   McpLocationEntry,
   McpScanContext,
   McpScope,
   McpSecretValues,
   UpdateMcpLocationsOptions,
 } from './types.js';
+import { pathExists } from './io.js';
 
 export function scanContext(home = homedir(), cwd = process.cwd()): McpScanContext {
   return { home, cwd };
@@ -163,6 +166,52 @@ export async function writableMcpTargets(
     }
   }
   return targets;
+}
+
+function displayMcpPath(path: string, ctx: McpScanContext): string {
+  const cwd = ctx.cwd.endsWith('/') ? ctx.cwd.slice(0, -1) : ctx.cwd;
+  if (path === cwd) return '.';
+  if (path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1);
+  const home = ctx.home.endsWith('/') ? ctx.home.slice(0, -1) : ctx.home;
+  if (path === home) return '~';
+  if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
+  return path;
+}
+
+/** Rows and defaults for the MCP install review (same shape as skill install). */
+export async function mcpInstallReviewOptions(
+  ctx: McpScanContext = scanContext()
+): Promise<McpInstallReviewOptions> {
+  const targets: McpInstallReviewTarget[] = [];
+  const defaultProjectAgents: string[] = [];
+  const writableGlobal: string[] = [];
+  for (const agent of mcpAgentIds()) {
+    const projectPath = ownedFilePath(agent, 'project', ctx);
+    const globalPath = ownedFilePath(agent, 'global', ctx);
+    const projectWritable = await agentMcpWritable(agent, 'project', ctx);
+    const globalWritable = await agentMcpWritable(agent, 'global', ctx);
+    if (!projectWritable && !globalWritable) continue;
+    const label = agentDisplayName(agent);
+    targets.push({
+      value: agent,
+      ...(projectWritable && projectPath
+        ? { projectLabel: `${label} (${displayMcpPath(projectPath, ctx)})` }
+        : {}),
+      ...(globalWritable && globalPath
+        ? { globalLabel: `${label} (${displayMcpPath(globalPath, ctx)})` }
+        : {}),
+    });
+    if (projectWritable && projectPath && (await pathExists(projectPath))) {
+      defaultProjectAgents.push(agent);
+    }
+    if (globalWritable) writableGlobal.push(agent);
+  }
+  const defaultGlobalAgents = writableGlobal.includes('agents')
+    ? ['agents']
+    : writableGlobal[0]
+      ? [writableGlobal[0]]
+      : [];
+  return { targets, defaultProjectAgents, defaultGlobalAgents };
 }
 
 export async function addCollectedMcp(
