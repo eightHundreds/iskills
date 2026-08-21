@@ -140,6 +140,8 @@ export interface BrowserActionHost {
   getNavigation: () => BrowserNavigationSnapshot;
   setNavigation: (navigation: BrowserNavigationSnapshot) => void;
   setAbortController: (controller: AbortController | null) => void;
+  discardStaleUpdateCheck: () => void;
+  markSkillsCurrent: (names: readonly string[]) => void;
 }
 
 export interface DetailEditorContext {

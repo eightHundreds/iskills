@@ -253,7 +253,7 @@ Options:
   'mcp.importConfirm': 'Import {count} into the collection?',
   'mcp.replaceConfirm': 'Replace collection MCP {name}?',
   'mcp.importFromJson': 'Import from JSON',
-  'mcp.jsonSourcePrompt': 'JSON file path, or one-line JSON:',
+  'mcp.jsonSourcePrompt': 'JSON file path, or JSON:',
   'mcp.jsonInvalid': 'Not valid MCP JSON',
   'mcp.jsonNoServers': 'No recognizable MCP in the JSON',
   'mcp.jsonReviewTitle': 'Import from JSON',

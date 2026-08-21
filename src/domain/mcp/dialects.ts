@@ -1,7 +1,20 @@
 import { join } from 'node:path';
+import { isAgentPresent } from '../core.js';
 import { DomainError } from '../errors.js';
-import { pathExists, readJsonObject, readTomlObject, writeJsonObject, writeTomlObject } from './io.js';
-import { extractFromServerObject, projectServerObject, projectTomlServer } from './recipe.js';
+import {
+  pathExists,
+  readJsonObject,
+  readTomlObject,
+  removeFileIfExists,
+  writeJsonObject,
+  writeTomlObject,
+} from './io.js';
+import {
+  extractFromServerObject,
+  isLaunchableServerObject,
+  projectServerObject,
+  projectTomlServer,
+} from './recipe.js';
 import { emptySecrets } from './secrets.js';
 import type {
   McpLocationEntry,
@@ -75,15 +88,23 @@ export async function agentMcpWritable(
   scope: McpScope,
   ctx: McpScanContext
 ): Promise<boolean> {
-  if (!ownedFilePath(agent, scope, ctx)) return false;
-  if (agent === 'pi') return isPiAdapterPresent(ctx);
+  const path = ownedFilePath(agent, scope, ctx);
+  if (!path) return false;
   if (agent === 'zcode' && scope === 'global') {
-    const path = ownedFilePath(agent, scope, ctx);
-    if (!path || !(await pathExists(path))) return false;
+    if (!(await pathExists(path))) return false;
     const doc = await readJsonObject(path);
     return 'mcpServers' in doc || 'mcp' in doc;
   }
-  return true;
+  if (await pathExists(path)) return true;
+  if (agent === 'pi') return isPiAdapterPresent(ctx);
+  return isMcpAgentPresent(agent, ctx);
+}
+
+/** Claude's MCP global file is ~/.claude.json, not under the skills root. */
+async function isMcpAgentPresent(agent: McpAgentId, ctx: McpScanContext): Promise<boolean> {
+  if (await isAgentPresent(agent, ctx.home)) return true;
+  if (agent === 'claude') return pathExists(join(ctx.home, '.claude.json'));
+  return false;
 }
 
 export async function isPiAdapterPresent(ctx: McpScanContext): Promise<boolean> {
@@ -146,11 +167,17 @@ export async function readBorrowedEntries(
       }
       out.push(...(await sharedJsonBorrowed(join(ctx.home, '.agents/mcp.json'), 'agents', ctx, agent, scope)));
       out.push(
-        ...(await sharedJsonBorrowed(join(ctx.home, '.config/mcp/mcp.json'), 'shared-mcp-json', ctx, agent, scope))
+        ...(await sharedJsonBorrowed(
+          join(ctx.home, '.config/mcp/mcp.json'),
+          '~/.config/mcp/mcp.json',
+          ctx,
+          agent,
+          scope
+        ))
       );
     } else {
       out.push(
-        ...(await sharedJsonBorrowed(join(ctx.cwd, '.mcp.json'), 'shared-mcp-json', ctx, agent, scope))
+        ...(await sharedJsonBorrowed(join(ctx.cwd, '.mcp.json'), '<rootDir>/.mcp.json', ctx, agent, scope))
       );
     }
     return applyPiDisabledEntries(out, ctx, scope);
@@ -166,7 +193,7 @@ export async function readBorrowedEntries(
       }
     } else {
       out.push(
-        ...(await sharedJsonBorrowed(join(ctx.cwd, '.mcp.json'), 'shared-mcp-json', ctx, agent, scope))
+        ...(await sharedJsonBorrowed(join(ctx.cwd, '.mcp.json'), '<rootDir>/.mcp.json', ctx, agent, scope))
       );
     }
     return applyGrokDisabledEntries(out, ctx, scope);
@@ -222,10 +249,16 @@ export async function removeOwnedServer(
 
 export async function setLocationEnabled(entry: McpLocationEntry, ctx: McpScanContext, enabled: boolean): Promise<void> {
   if (entry.agent === 'pi') {
+    if (!(await agentMcpWritable('pi', entry.scope, ctx))) {
+      throw new DomainError('mcp.notWritable', { name: 'pi' });
+    }
     await setPiEnabled(ctx, entry.scope, entry.nativeKey, enabled);
     return;
   }
   if (entry.agent === 'grok') {
+    if (!(await agentMcpWritable('grok', entry.scope, ctx))) {
+      throw new DomainError('mcp.notWritable', { name: 'grok' });
+    }
     await setGrokEnabled(ctx, entry.scope, entry.nativeKey, enabled);
     return;
   }
@@ -305,12 +338,21 @@ function asObject(raw: unknown): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
+function jsonDocIsEmptyMcpShell(doc: Record<string, unknown>, rootKey: string): boolean {
+  const keys = Object.keys(doc);
+  if (keys.length === 0) return true;
+  if (keys.length !== 1 || keys[0] !== rootKey) return false;
+  return Object.keys(asObject(doc[rootKey])).length === 0;
+}
+
 async function readJsonMcpServers(path: string, rootKey: string): Promise<RawRow[]> {
   const doc = await readJsonObject(path);
   const servers = asObject(doc[rootKey]);
-  return Object.entries(servers).map(([nativeKey, value]) => {
-    const extracted = extractFromServerObject(asObject(value));
-    return { nativeKey, filePath: path, ...extracted };
+  return Object.entries(servers).flatMap(([nativeKey, value]) => {
+    const raw = asObject(value);
+    if (!isLaunchableServerObject(raw)) return [];
+    const extracted = extractFromServerObject(raw);
+    return [{ nativeKey, filePath: path, ...extracted }];
   });
 }
 
@@ -533,10 +575,20 @@ async function setPiEnabled(
   const doc = (await pathExists(path)) ? await readJsonObject(path) : {};
   const servers = asObject(doc.mcpServers);
   const current = asObject(servers[nativeKey]);
-  if (enabled) delete current.disabled;
-  else current.disabled = true;
-  servers[nativeKey] = current;
+  if (enabled) {
+    delete current.disabled;
+    if (isLaunchableServerObject(current)) servers[nativeKey] = current;
+    else delete servers[nativeKey];
+  } else {
+    current.disabled = true;
+    servers[nativeKey] = current;
+  }
   doc.mcpServers = servers;
+  // Global ~/.pi/agent/mcp.json is also the adapter config; do not delete an empty shell.
+  if (scope === 'project' && jsonDocIsEmptyMcpShell(doc, 'mcpServers')) {
+    await removeFileIfExists(path);
+    return;
+  }
   await writeJsonObject(path, doc);
 }
 
@@ -584,6 +636,10 @@ async function setGrokEnabled(
   else list.add(nativeKey);
   if (list.size) doc.disabled_mcp_servers = [...list];
   else delete doc.disabled_mcp_servers;
+  if (Object.keys(doc).length === 0) {
+    await removeFileIfExists(path);
+    return;
+  }
   await writeTomlObject(path, doc);
 }
 

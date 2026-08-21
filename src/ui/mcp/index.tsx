@@ -1,8 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import {
   addCollectedMcp,
-  agentMcpWritable,
-  isMcpAgentId,
   listCollectedMcps,
   listMcpLocations,
   mcpSecretState,
@@ -17,6 +15,7 @@ import {
   toggleMcpLocation,
   updateCollectedMeta,
   updateLocationsFromCollection,
+  writableMcpTargets,
   type CollectedMcp,
   type McpLocationEntry,
   type McpSecretState,
@@ -176,12 +175,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
         onAdd={async (names, scope: McpScope, agents: string[]) => {
           try {
             const ctx = scanContext();
-            const writable: { agent: string; scope: McpScope }[] = [];
-            for (const agent of agents) {
-              if (isMcpAgentId(agent) && (await agentMcpWritable(agent, scope, ctx))) {
-                writable.push({ agent, scope });
-              }
-            }
+            const writable = await writableMcpTargets(agents, scope, ctx);
             let added = 0;
             for (const name of names) {
               added += (await addCollectedMcp(name, writable, ctx)).added;

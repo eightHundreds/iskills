@@ -39,6 +39,8 @@ export interface BrowserUpdateCheckState {
   checking: boolean;
   updates: Set<string>;
   failed: number;
+  /** Bumped to drop in-flight `checkUpdates` results that would restore stale ↑. */
+  generation: number;
 }
 
 export const browserDataAtom = atom<BrowserDataSnapshot | null>(null);
@@ -69,6 +71,7 @@ export const browserUpdateCheckAtom = atom<BrowserUpdateCheckState>({
   checking: false,
   updates: new Set<string>(),
   failed: 0,
+  generation: 0,
 });
 
 /** Live health issues for the footer ⚠ entry (async probe; empty until first probe). */
@@ -114,11 +117,36 @@ export function clearTransientStatus(store: BrowserAppStore): void {
 }
 
 export function invalidateUpdateCheck(store: BrowserAppStore): void {
+  const current = store.get(browserUpdateCheckAtom);
   store.set(browserUpdateCheckAtom, {
     checking: false,
     updates: new Set<string>(),
     failed: 0,
+    generation: current.generation + 1,
   });
+}
+
+/** Keep current ↑ set; ignore in-flight checks. */
+export function discardStaleUpdateCheck(store: BrowserAppStore): void {
+  const current = store.get(browserUpdateCheckAtom);
+  store.set(browserUpdateCheckAtom, {
+    ...current,
+    checking: false,
+    generation: current.generation + 1,
+  });
+}
+
+/** Drop ↑ for these names. Does not discard in-flight checks. */
+export function markSkillsCurrent(store: BrowserAppStore, names: readonly string[]): void {
+  if (!names.length) return;
+  const current = store.get(browserUpdateCheckAtom);
+  const updates = new Set(current.updates);
+  let changed = false;
+  for (const name of names) {
+    if (updates.delete(name)) changed = true;
+  }
+  if (!changed) return;
+  store.set(browserUpdateCheckAtom, { ...current, updates });
 }
 
 /** Fire-and-forget health refresh for footer ⚠ (never blocks UI). */

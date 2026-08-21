@@ -319,27 +319,29 @@ export function Browser({
   useEffect(() => {
     if (tab !== 'collection') return;
     let active = true;
-    setUpdateCheck((current: { checking: boolean; updates: Set<string>; failed: number }) => ({
-      ...current,
-      checking: true,
-    }));
+    const generation = store.get(browserUpdateCheckAtom).generation;
+    setUpdateCheck((current) => ({ ...current, checking: true }));
     void checkUpdates(collection)
       .then(({ updates, failed }) => {
-        if (active) setUpdateCheck({ checking: false, updates, failed });
+        if (!active) return;
+        setUpdateCheck((current) =>
+          current.generation !== generation
+            ? current
+            : { ...current, checking: false, updates, failed }
+        );
       })
       .catch(() => {
-        if (active) {
-          setUpdateCheck({
-            checking: false,
-            updates: new Set(),
-            failed: collection.length,
-          });
-        }
+        if (!active) return;
+        setUpdateCheck((current) =>
+          current.generation !== generation
+            ? current
+            : { ...current, checking: false, updates: new Set(), failed: collection.length }
+        );
       });
     return () => {
       active = false;
     };
-  }, [checkUpdates, collection, tab, setUpdateCheck]);
+  }, [checkUpdates, collection, tab, setUpdateCheck, store]);
 
   const frame = browserFrameDimensions({
     rows: stdout.rows,

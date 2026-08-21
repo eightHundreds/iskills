@@ -241,7 +241,7 @@ import / add 选项：
   'mcp.importConfirm': '导入 {count} 条到收藏夹？',
   'mcp.replaceConfirm': '替换同名收藏 {name} 吗？',
   'mcp.importFromJson': '从 JSON 导入',
-  'mcp.jsonSourcePrompt': 'JSON 文件路径，或单行 JSON：',
+  'mcp.jsonSourcePrompt': 'JSON 文件路径，或 JSON：',
   'mcp.jsonInvalid': '无法解析为 MCP JSON',
   'mcp.jsonNoServers': 'JSON 里没有可识别的 MCP',
   'mcp.jsonReviewTitle': '从 JSON 导入',

@@ -27,7 +27,9 @@ import {
   browserStatusAtom,
   clearTransientStatus,
   detailContextAtom,
+  discardStaleUpdateCheck,
   invalidateUpdateCheck,
+  markSkillsCurrent,
   readNavigation,
   scheduleHealthRefresh,
   setBrowserStatus,
@@ -188,6 +190,8 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     getNavigation: () => readNavigation(store),
     setNavigation: (value) => writeNavigation(store, value),
     setAbortController: (controller) => store.set(activeAbortAtom, controller),
+    discardStaleUpdateCheck: () => discardStaleUpdateCheck(store),
+    markSkillsCurrent: (names) => markSkillsCurrent(store, names),
   }), [lifecycle, reloadData, setWorking, store]);
 
   const dispatchResult = useCallback(async (result: BrowserResult) => {

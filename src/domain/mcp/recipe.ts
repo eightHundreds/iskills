@@ -8,6 +8,14 @@ export function isSecretKey(key: string): boolean {
   return SECRET_KEY.test(key);
 }
 
+/** True when the object can start an MCP (url or command). Disable-only overlay stubs are not. */
+export function isLaunchableServerObject(raw: Record<string, unknown>): boolean {
+  if (typeof raw.url === 'string' && raw.url.trim()) return true;
+  if (typeof raw.command === 'string' && raw.command.trim()) return true;
+  if (Array.isArray(raw.command) && raw.command.some((part) => String(part).trim())) return true;
+  return false;
+}
+
 export function isPlaceholder(value: string): boolean {
   const trimmed = value.trim();
   if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(trimmed)) return true;

@@ -8,6 +8,7 @@ import {
   listMcpLocations,
   mcpAgentIds,
   scanContext,
+  writableMcpTargets,
   type McpLocationEntry,
   type McpRecipe,
   type McpScope,
@@ -188,19 +189,21 @@ export async function commandMcpAdd(argv: string[]): Promise<void> {
   if (!names.length) return;
 
   const scope: McpScope = values.global ? 'global' : 'project';
-  let agents = values.agent ?? [];
-  if (!agents.length) {
-    if (!process.stdin.isTTY) {
-      agents = [...mcpAgentIds()];
-    } else {
-      const { promptChoicesMany } = await import('../ui/prompts/present.js');
-      agents = await promptChoicesMany(
-        mcpAgentIds().map((id) => ({ label: id, value: id })),
-        t('mcp.selectAgents')
-      );
-    }
+  const ctx = scanContext();
+  const explicit = Boolean(values.agent?.length);
+  let targets = explicit
+    ? (values.agent ?? []).map((agent) => ({ agent, scope }))
+    : await writableMcpTargets(mcpAgentIds(), scope, ctx);
+  if (!explicit && process.stdin.isTTY && targets.length) {
+    const { promptChoicesMany } = await import('../ui/prompts/present.js');
+    const chosen = await promptChoicesMany(
+      targets.map((target) => ({ label: target.agent, value: target.agent })),
+      t('mcp.selectAgents')
+    );
+    const allowed = new Set(chosen);
+    targets = targets.filter((target) => allowed.has(target.agent));
   }
-  if (!agents.length) return;
+  if (!targets.length) return;
   if (!values.yes && process.stdin.isTTY) {
     const { Modal } = await import('../ui/overlay/static.js');
     const ok = await Modal.confirm({
@@ -214,11 +217,7 @@ export async function commandMcpAdd(argv: string[]): Promise<void> {
 
   let added = 0;
   for (const name of names) {
-    const result = await addCollectedMcp(
-      name,
-      agents.map((agent) => ({ agent, scope }))
-    );
-    added += result.added;
+    added += (await addCollectedMcp(name, targets, ctx)).added;
   }
   console.log(t('mcp.addedCount', { count: added }));
 }

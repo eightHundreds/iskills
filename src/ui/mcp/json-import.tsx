@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import type { TextareaRenderable } from '@opentui/core';
 import { t } from '../../i18n/index.js';
 import { Text, usePanelColors } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
-import { termcnColors } from '../components/termcn.js';
+import { ModalPanel, termcnColors } from '../components/termcn.js';
 import { toggleSelection } from '../components/options.js';
 import { isReturn } from '../components/text.js';
 import { Layer, Modal } from '../overlay/static.js';
@@ -20,7 +21,7 @@ export { runMcpJsonImportFlow, resolveJsonSource } from './json-import-flow.js';
 export async function presentMcpJsonImport(): Promise<JsonImportFlowResult | undefined> {
   return runMcpJsonImportFlow({
     readClipboard: readClipboardText,
-    promptFallback: () => promptText(t('mcp.jsonSourcePrompt')),
+    promptFallback: promptJsonSource,
     promptName: (initial) => promptText(t('mcp.namePrompt'), initial ?? ''),
     review: promptJsonImportReview,
     confirmReplace: (name) =>
@@ -30,6 +31,62 @@ export async function presentMcpJsonImport(): Promise<JsonImportFlowResult | und
         defaultValue: false,
       }),
   });
+}
+
+const jsonSourceKeyBindings = [
+  { name: 'return', action: 'submit' as const },
+  { name: 'kpenter', action: 'submit' as const },
+  { name: 'return', shift: true, action: 'newline' as const },
+];
+
+export function promptJsonSource(): Promise<string | undefined> {
+  return Modal.open<string | undefined>({
+    footerItems: [
+      { key: 'Enter', label: t('common.confirm') },
+      { key: 'Esc', label: t('common.cancel') },
+    ],
+    content: (close) => (
+      <ModalPanel title={` ${t('mcp.jsonReviewTitle')} `} width="80%">
+        <JsonSourcePrompt
+          onSubmit={(value) => close(value.trim() ? value.trim() : undefined)}
+          onCancel={() => close(undefined)}
+        />
+      </ModalPanel>
+    ),
+  });
+}
+
+export function JsonSourcePrompt({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (value: string) => void;
+  onCancel: () => void;
+}): ReactNode {
+  const panel = usePanelColors();
+  const ref = useRef<TextareaRenderable>(null);
+  useInput((_input, key) => {
+    if (key.escape) onCancel();
+  });
+  return (
+    <box flexDirection="column" gap={1}>
+      <Text bold color={panel.body}>
+        {t('mcp.jsonSourcePrompt')}
+      </Text>
+      <textarea
+        ref={ref}
+        focused
+        height={12}
+        initialValue=""
+        keyBindings={jsonSourceKeyBindings}
+        textColor={panel.body}
+        backgroundColor={panel.surface}
+        focusedBackgroundColor={panel.surface}
+        focusedTextColor={panel.body}
+        onSubmit={() => onSubmit(ref.current?.plainText ?? '')}
+      />
+    </box>
+  );
 }
 
 export function promptJsonImportReview(

@@ -68,6 +68,11 @@ function remoteBranchHead(url: string, ref: string): Promise<string | undefined>
   return request;
 }
 
+/** After a clone confirms the branch tip, keep the session check cache in sync. */
+function rememberRemoteBranchHead(url: string, ref: string, commit: string): void {
+  remoteHeadCache.set(`${url}\0${ref}`, Promise.resolve(commit));
+}
+
 export async function checkGitSkillUpdates(skills: Skill[]): Promise<{
   updates: Set<string>;
   failed: number;
@@ -294,6 +299,17 @@ async function prepareDirectoryMerge(
   return { workspace, conflicted };
 }
 
+let updateWorktreeSeq = 0;
+
+async function removeUpdateWorktrees(repository: string, trees: string[]): Promise<void> {
+  for (const tree of trees) {
+    try {
+      git(['-C', repository, 'worktree', 'remove', '--force', tree]);
+    } catch {}
+    await rm(tree, { recursive: true, force: true });
+  }
+}
+
 async function prepareSourceMerge(
   name: string,
   repository: string,
@@ -302,11 +318,20 @@ async function prepareSourceMerge(
   oldPath: string,
   newPath: string
 ): Promise<{ workspace: string; conflicted: boolean }> {
-  const baseTree = join(dirname(repository), 'base');
-  const remoteTree = join(dirname(repository), 'remote');
-  git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', baseTree, baseCommit]);
-  git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
-  return prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
+  const token = `${assertSkillName(name)}-${process.pid}-${++updateWorktreeSeq}`;
+  const root = dirname(repository);
+  const baseTree = join(root, `base-${token}`);
+  const remoteTree = join(root, `remote-${token}`);
+  const added: string[] = [];
+  try {
+    git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', baseTree, baseCommit]);
+    added.push(baseTree);
+    git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
+    added.push(remoteTree);
+    return await prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
+  } finally {
+    await removeUpdateWorktrees(repository, added);
+  }
 }
 
 /** Apply source-update conflict workspaces that the user finished resolving. */
@@ -415,15 +440,71 @@ export async function backgroundCollectionSync(): Promise<void> {
   }
 }
 
+interface SkillUpdateClone {
+  temporary: string;
+  repository: string;
+}
+
 export interface UpdateGitSkillOptions {
-  confirmDelete?: (links: SkillLink[]) => Promise<boolean>;
+  confirmDelete?: (links: SkillLink[], skill: Skill) => Promise<boolean>;
   quietDelete?: boolean;
 }
 
-export async function updateGitSkill(
+export interface GitSkillBatchUpdateOptions extends UpdateGitSkillOptions {
+  onProgress?: (skill: Skill, current: number, total: number) => void | Promise<void>;
+  onSkill?: (skill: Skill, status: UpdateStatus) => void | Promise<void>;
+}
+
+export type GitSkillUpdateOutcome =
+  | { skill: Skill; status: UpdateStatus }
+  | { skill: Skill; error: unknown };
+
+async function cloneForSkillUpdate(url: string): Promise<SkillUpdateClone> {
+  const temporary = await mkdtemp(join(tmpdir(), 'iskills-update-'));
+  const repository = join(temporary, 'repository');
+  try {
+    git(['clone', '--quiet', '--no-checkout', url, repository]);
+    return { temporary, repository };
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function drainUpdateClones(
+  clones: Map<string, Promise<SkillUpdateClone>>
+): Promise<void> {
+  for (const pending of clones.values()) {
+    try {
+      const clone = await pending;
+      await rm(clone.temporary, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+async function acquireUpdateClone(
+  url: string,
+  clones: Map<string, Promise<SkillUpdateClone>> | undefined
+): Promise<{ clone: SkillUpdateClone; owned: boolean }> {
+  if (!clones) {
+    return { clone: await cloneForSkillUpdate(url), owned: true };
+  }
+  let pending = clones.get(url);
+  if (!pending) {
+    pending = cloneForSkillUpdate(url).catch((error) => {
+      clones.delete(url);
+      throw error;
+    });
+    clones.set(url, pending);
+  }
+  return { clone: await pending, owned: false };
+}
+
+async function applyGitSkillUpdate(
   skill: Skill,
   allowDelete: boolean,
-  options: UpdateGitSkillOptions = {}
+  options: UpdateGitSkillOptions,
+  clones?: Map<string, Promise<SkillUpdateClone>>
 ): Promise<UpdateStatus> {
   const metadata = await readMetadata(skill.name);
   const source = metadata.source;
@@ -442,10 +523,9 @@ export async function updateGitSkill(
     return 'conflict';
   }
 
-  const temporary = await mkdtemp(join(tmpdir(), 'iskills-update-'));
-  const repository = join(temporary, 'repository');
+  const { clone, owned } = await acquireUpdateClone(gitSource.url, clones);
+  const repository = clone.repository;
   try {
-    git(['clone', '--quiet', '--no-checkout', gitSource.url, repository]);
     const latestRef = gitSource.ref
       ? `refs/remotes/origin/${gitSource.ref}`
       : 'refs/remotes/origin/HEAD';
@@ -458,6 +538,7 @@ export async function updateGitSkill(
       throw new DomainError('git.branchMissing', { ref: gitSource.ref });
     }
     const latestCommit = git(['-C', repository, 'rev-parse', latestRef]);
+    if (gitSource.ref) rememberRemoteBranchHead(gitSource.url, gitSource.ref, latestCommit);
     if (latestCommit === gitSource.commit) return 'unchanged';
     if (gitSource.commit && !gitObjectExists(repository, gitSource.commit)) {
       throw new DomainError('git.commitMissing', { commit: gitSource.commit });
@@ -477,7 +558,7 @@ export async function updateGitSkill(
         if (!options.confirmDelete) {
           throw new DomainError('git.upstreamDeletedNeedsConfirm', { name: skill.name });
         }
-        const confirmed = await options.confirmDelete(links);
+        const confirmed = await options.confirmDelete(links, skill);
         if (!confirmed) return 'delete-skipped';
       }
       await removeFromCollection(skill.name, true, options.quietDelete ?? false);
@@ -500,9 +581,16 @@ export async function updateGitSkill(
       if (!(await exists(join(baseline, 'SKILL.md')))) {
         throw new DomainError('git.missingBaseline');
       }
-      const remoteTree = join(temporary, 'remote');
+      const remoteTree = join(
+        dirname(repository),
+        `remote-${assertSkillName(skill.name)}-${process.pid}`
+      );
       git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
-      merge = await prepareDirectoryMerge(skill.name, baseline, join(remoteTree, newPath));
+      try {
+        merge = await prepareDirectoryMerge(skill.name, baseline, join(remoteTree, newPath));
+      } finally {
+        await removeUpdateWorktrees(repository, [remoteTree]);
+      }
     }
     const nextSource: GitSource = {
       ...gitSource,
@@ -531,7 +619,40 @@ export async function updateGitSkill(
     await commitCollection(`update ${skill.name}`);
     return 'updated';
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    if (owned) await rm(clone.temporary, { recursive: true, force: true });
+  }
+}
+
+export async function updateGitSkill(
+  skill: Skill,
+  allowDelete: boolean,
+  options: UpdateGitSkillOptions = {}
+): Promise<UpdateStatus> {
+  return applyGitSkillUpdate(skill, allowDelete, options);
+}
+
+export async function updateGitSkills(
+  skills: Skill[],
+  allowDelete: boolean,
+  options: GitSkillBatchUpdateOptions = {}
+): Promise<GitSkillUpdateOutcome[]> {
+  const clones = new Map<string, Promise<SkillUpdateClone>>();
+  const outcomes: GitSkillUpdateOutcome[] = [];
+  try {
+    for (const [index, skill] of skills.entries()) {
+      await options.onProgress?.(skill, index + 1, skills.length);
+      try {
+        const status = await applyGitSkillUpdate(skill, allowDelete, options, clones);
+        await options.onSkill?.(skill, status);
+        outcomes.push({ skill, status });
+      } catch (error) {
+        if (error instanceof Error && error.name === 'InterruptError') throw error;
+        outcomes.push({ skill, error });
+      }
+    }
+    return outcomes;
+  } finally {
+    await drainUpdateClones(clones);
   }
 }
 

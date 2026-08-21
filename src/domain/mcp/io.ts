@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import JSON5 from 'json5';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
@@ -58,4 +58,13 @@ export async function writeTextAtomic(path: string, text: string): Promise<void>
 
 export async function pathExists(path: string): Promise<boolean> {
   return exists(path);
+}
+
+export async function removeFileIfExists(path: string): Promise<void> {
+  try {
+    await rm(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
 }

@@ -45,7 +45,7 @@ export interface McpLocationEntry {
   agent: string;
   scope: McpScope;
   ownership: McpOwnership;
-  /** Display id for borrowed source (claude, cursor, shared-mcp-json, …). */
+  /** Display id for borrowed source (claude, `<rootDir>/.mcp.json`, …). */
   borrowedFrom?: string;
   nativeKey: string;
   enabled: boolean;

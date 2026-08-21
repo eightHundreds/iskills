@@ -22,6 +22,10 @@ import {
 } from '../browser/format.js';
 import { t } from '../../i18n/index.js';
 
+export function mcpToggleDisplay(enabled: boolean): string {
+  return enabled ? `🟢 ${t('mcp.enabled')}` : `🔴 ${t('mcp.disabled')}`;
+}
+
 /** Human-readable launch line — not the `transport:…` identity key. */
 export function recipeDisplayLine(recipe: McpRecipe): string {
   if (recipe.transport === 'stdio') {
@@ -275,12 +279,7 @@ export function mcpLocationDetailRows(
       width,
       1
     ),
-    ...peekFieldRows(
-      t('mcp.toggle'),
-      entry.enabled ? t('mcp.enabled') : t('mcp.disabled'),
-      width,
-      1
-    ),
+    ...peekFieldRows(t('mcp.toggle'), mcpToggleDisplay(entry.enabled), width, 1),
   ];
   if (entry.borrowedFrom) {
     rows.push(

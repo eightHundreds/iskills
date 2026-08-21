@@ -151,6 +151,20 @@ export async function createCollectedMcp(input: CreateMcpInput): Promise<Collect
   return collected;
 }
 
+export async function writableMcpTargets(
+  agents: readonly string[],
+  scope: McpScope,
+  ctx: McpScanContext = scanContext()
+): Promise<AddMcpTarget[]> {
+  const targets: AddMcpTarget[] = [];
+  for (const agent of agents) {
+    if (isMcpAgentId(agent) && (await agentMcpWritable(agent, scope, ctx))) {
+      targets.push({ agent, scope });
+    }
+  }
+  return targets;
+}
+
 export async function addCollectedMcp(
   name: string,
   targets: AddMcpTarget[],

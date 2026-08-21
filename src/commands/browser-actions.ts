@@ -36,7 +36,7 @@ import {
   collectSkillSourceRoots,
 } from '../domain/cross-agent-install.js';
 import { DomainError } from '../domain/errors.js';
-import { cloneGitSource, syncCollection, updateGitSkill } from '../domain/git.js';
+import { cloneGitSource, syncCollection, updateGitSkills } from '../domain/git.js';
 import type { CollectedSkill, GitSource, Skill, SkillMetadata } from '../domain/types.js';
 import type { InstallReviewTarget } from '../ui/install/types.js';
 import { Modal } from '../ui/overlay/static.js';
@@ -235,39 +235,47 @@ async function handleSync(host: BrowserActionHost): Promise<void> {
 async function handleUpdate(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {
   host.setStatus('', false);
   host.setWorkingProgress(null);
-  const outcomes: string[] = [];
+  host.discardStaleUpdateCheck();
   let failed = 0;
-  for (const [index, skill] of skills.entries()) {
-    host.setWorkingProgress({
-      skillName: skill.name,
-      current: index + 1,
-      total: skills.length,
-      workingAction: 'update',
-    });
-    await delay(120);
-    try {
-      const updateStatus = await updateGitSkill(skill, false, {
-        quietDelete: true,
-        confirmDelete: (links) => Modal.confirm({
-          title: t('cmd.upstreamDeleted'),
-          message: t('cmd.upstreamDeletedConfirm', { name: skill.name }),
-          details: links.map((link) => {
-            const kind = link.kind === 'origin'
-              ? t('common.origin')
-              : link.kind === 'usage'
-                ? t('common.usage')
-                : t('common.dependent');
-            return t('cmd.linkKindLine', { kind, path: link.path });
-          }),
+  try {
+    const outcomes = await updateGitSkills(skills, false, {
+      quietDelete: true,
+      confirmDelete: (links, skill) => Modal.confirm({
+        title: t('cmd.upstreamDeleted'),
+        message: t('cmd.upstreamDeletedConfirm', { name: skill.name }),
+        details: links.map((link) => {
+          const kind = link.kind === 'origin'
+            ? t('common.origin')
+            : link.kind === 'usage'
+              ? t('common.usage')
+              : t('common.dependent');
+          return t('cmd.linkKindLine', { kind, path: link.path });
         }),
-      });
-      outcomes.push(`${skill.name}: ${updateStatus}`);
-    } catch (error) {
-      failed += 1;
-      outcomes.push(t('cmd.updateFailedLine', { name: skill.name, error: formatAppError(error) }));
-    }
+      }),
+      onProgress: async (skill, current, total) => {
+        host.setWorkingProgress({
+          skillName: skill.name,
+          current,
+          total,
+          workingAction: 'update',
+        });
+        await delay(120);
+      },
+      onSkill: (skill, status) => {
+        if (
+          status === 'updated' ||
+          status === 'unchanged' ||
+          status === 'pinned' ||
+          status === 'deleted'
+        ) {
+          host.markSkillsCurrent([skill.name]);
+        }
+      },
+    });
+    failed = outcomes.filter((outcome) => 'error' in outcome).length;
+  } finally {
+    host.setWorkingProgress(null);
   }
-  host.setWorkingProgress(null);
   const updated = skills.length - failed;
   host.setStatus(
     failed === 0

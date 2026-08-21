@@ -70,6 +70,7 @@ export { isPlaceholder } from './recipe.js';
 export {
   addCollectedMcp,
   createCollectedMcp,
+  writableMcpTargets,
   importLocationToCollection,
   importSnippetToCollection,
   listMcpLocations,
