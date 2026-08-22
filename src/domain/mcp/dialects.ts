@@ -125,21 +125,14 @@ export async function readOwnedRows(
   scope: McpScope,
   ctx: McpScanContext
 ): Promise<RawRow[]> {
-  const path = ownedFilePath(agent, scope, ctx);
-  if (!path || !(await pathExists(path))) {
-    if (agent === 'claude' && scope === 'project') {
-      return readClaudeLocalRows(ctx);
-    }
-    return [];
+  if (agent === 'claude') {
+    return scope === 'project' ? readClaudeProjectRows(ctx) : readClaudeUserRows(ctx);
   }
+  const path = ownedFilePath(agent, scope, ctx);
+  if (!path || !(await pathExists(path))) return [];
   if (agent === 'codex' || agent === 'grok') return readTomlRows(path, agent, ctx, scope);
   if (agent === 'opencode') return readOpencodeRows(path);
   const rows = await readJsonMcpServers(path, jsonRootKey(agent));
-  if (agent === 'claude' && scope === 'project') {
-    const local = await readClaudeLocalRows(ctx);
-    return [...rows, ...local];
-  }
-  if (agent === 'claude') return applyClaudeDisabled(rows, ctx, scope);
   if (agent === 'pi') return applyPiDisabled(rows, ctx, scope);
   return rows;
 }
@@ -266,7 +259,7 @@ export async function setLocationEnabled(entry: McpLocationEntry, ctx: McpScanCo
     throw new DomainError('mcp.borrowedNotMutable', { name: entry.nativeKey });
   }
   if (entry.agent === 'claude') {
-    await setClaudeEnabled(ctx, entry.scope, entry.nativeKey, enabled);
+    await setClaudeEnabled(ctx, claudeDisableKind(entry.filePath, ctx), entry.nativeKey, enabled);
     return;
   }
   if (entry.agent === 'opencode') {
@@ -345,15 +338,21 @@ function jsonDocIsEmptyMcpShell(doc: Record<string, unknown>, rootKey: string): 
   return Object.keys(asObject(doc[rootKey])).length === 0;
 }
 
-async function readJsonMcpServers(path: string, rootKey: string): Promise<RawRow[]> {
-  const doc = await readJsonObject(path);
-  const servers = asObject(doc[rootKey]);
+function rowsFromJsonServers(
+  servers: Record<string, unknown>,
+  filePath: string
+): RawRow[] {
   return Object.entries(servers).flatMap(([nativeKey, value]) => {
     const raw = asObject(value);
     if (!isLaunchableServerObject(raw)) return [];
     const extracted = extractFromServerObject(raw);
-    return [{ nativeKey, filePath: path, ...extracted }];
+    return [{ nativeKey, filePath, ...extracted }];
   });
+}
+
+async function readJsonMcpServers(path: string, rootKey: string): Promise<RawRow[]> {
+  const doc = await readJsonObject(path);
+  return rowsFromJsonServers(asObject(doc[rootKey]), path);
 }
 
 async function upsertJsonServer(
@@ -458,65 +457,97 @@ async function deleteTomlServer(path: string, nativeKey: string): Promise<void> 
   await writeTomlObject(path, doc);
 }
 
-async function readClaudeLocalRows(ctx: McpScanContext): Promise<RawRow[]> {
-  const path = join(ctx.home, '.claude.json');
-  if (!(await pathExists(path))) return [];
-  const doc = await readJsonObject(path);
-  const projects = asObject(doc.projects);
-  const project = asObject(projects[ctx.cwd]);
-  const servers = asObject(project.mcpServers);
-  const disabled = new Set(stringList(project.disabledMcpServers));
-  return Object.entries(servers).map(([nativeKey, value]) => {
-    const extracted = extractFromServerObject(asObject(value));
-    if (disabled.has(nativeKey)) extracted.enabled = false;
-    return { nativeKey, filePath: path, ...extracted };
-  });
+type ClaudeDisableKind = 'mcpjson' | 'user';
+
+function claudeListKey(kind: ClaudeDisableKind): 'disabledMcpjsonServers' | 'disabledMcpServers' {
+  return kind === 'mcpjson' ? 'disabledMcpjsonServers' : 'disabledMcpServers';
 }
 
-async function applyClaudeDisabled(
-  rows: RawRow[],
-  ctx: McpScanContext,
-  scope: McpScope
-): Promise<RawRow[]> {
+/** `.mcp.json` rows use the json list; everything from `~/.claude.json` uses the user list. */
+function claudeDisableKind(filePath: string, ctx: McpScanContext): ClaudeDisableKind {
+  return filePath === ownedFilePath('claude', 'project', ctx) ? 'mcpjson' : 'user';
+}
+
+async function readClaudeDoc(ctx: McpScanContext): Promise<Record<string, unknown>> {
   const path = join(ctx.home, '.claude.json');
-  if (!(await pathExists(path))) return rows;
-  const doc = await readJsonObject(path);
-  const projects = asObject(doc.projects);
-  const project = asObject(projects[ctx.cwd]);
-  const disabled = new Set([
-    ...stringList(project.disabledMcpServers),
-    ...(scope === 'project' ? stringList(project.disabledMcpjsonServers) : []),
-  ]);
+  if (!(await pathExists(path))) return {};
+  return readJsonObject(path);
+}
+
+function claudeProject(doc: Record<string, unknown>, cwd: string): Record<string, unknown> {
+  return asObject(asObject(doc.projects)[cwd]);
+}
+
+function applyClaudeDisabled(
+  rows: RawRow[],
+  project: Record<string, unknown>,
+  kind: ClaudeDisableKind
+): RawRow[] {
+  const disabled = new Set(stringList(project[claudeListKey(kind)]));
+  if (!disabled.size) return rows;
   return rows.map((row) =>
     disabled.has(row.nativeKey) ? { ...row, enabled: false } : row
   );
 }
 
+async function readClaudeUserRows(ctx: McpScanContext): Promise<RawRow[]> {
+  const path = ownedFilePath('claude', 'global', ctx);
+  if (!path) return [];
+  const doc = await readClaudeDoc(ctx);
+  const rows = rowsFromJsonServers(asObject(doc.mcpServers), path);
+  return applyClaudeDisabled(rows, claudeProject(doc, ctx.cwd), 'user');
+}
+
+async function readClaudeProjectRows(ctx: McpScanContext): Promise<RawRow[]> {
+  const mcpPath = ownedFilePath('claude', 'project', ctx);
+  const doc = await readClaudeDoc(ctx);
+  const project = claudeProject(doc, ctx.cwd);
+  const jsonRows = mcpPath && (await pathExists(mcpPath))
+    ? applyClaudeDisabled(await readJsonMcpServers(mcpPath, jsonRootKey('claude')), project, 'mcpjson')
+    : [];
+  const local = rowsFromJsonServers(asObject(project.mcpServers), join(ctx.home, '.claude.json'));
+  return [...jsonRows, ...applyClaudeDisabled(local, project, 'user')];
+}
+
+function setClaudeDisableList(
+  project: Record<string, unknown>,
+  kind: ClaudeDisableKind,
+  nativeKey: string,
+  enabled: boolean
+): void {
+  const listKey = claudeListKey(kind);
+  const list = new Set(stringList(project[listKey]));
+  if (enabled) list.delete(nativeKey);
+  else list.add(nativeKey);
+  if (list.size) project[listKey] = [...list];
+  else delete project[listKey];
+}
+
+function stripClaudeDisabledFlag(
+  bag: Record<string, unknown>,
+  rootKey: string,
+  nativeKey: string
+): void {
+  const raw = bag[rootKey];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+  const current = asObject(asObject(raw)[nativeKey]);
+  if (!('disabled' in current)) return;
+  delete current.disabled;
+}
+
 async function setClaudeEnabled(
   ctx: McpScanContext,
-  scope: McpScope,
+  kind: ClaudeDisableKind,
   nativeKey: string,
   enabled: boolean
 ): Promise<void> {
   const path = join(ctx.home, '.claude.json');
   const doc = (await pathExists(path)) ? await readJsonObject(path) : {};
-  if (scope === 'global') {
-    const servers = asObject(doc.mcpServers);
-    const current = asObject(servers[nativeKey]);
-    if (enabled) delete current.disabled;
-    else current.disabled = true;
-    servers[nativeKey] = current;
-    doc.mcpServers = servers;
-    await writeJsonObject(path, doc);
-    return;
-  }
   const projects = asObject(doc.projects);
   const project = asObject(projects[ctx.cwd]);
-  const key = 'disabledMcpjsonServers';
-  const list = new Set(stringList(project[key]));
-  if (enabled) list.delete(nativeKey);
-  else list.add(nativeKey);
-  project[key] = [...list];
+  setClaudeDisableList(project, kind, nativeKey, enabled);
+  stripClaudeDisabledFlag(doc, 'mcpServers', nativeKey);
+  stripClaudeDisabledFlag(project, 'mcpServers', nativeKey);
   projects[ctx.cwd] = project;
   doc.projects = projects;
   await writeJsonObject(path, doc);

@@ -6,6 +6,10 @@
 
 ## [未发布]
 
+### 修复
+
+- Claude Code MCP 开关改为写当前项目的 `disabledMcpServers` / `disabledMcpjsonServers`，不再在服务器对象上写 `disabled`。
+
 ## [0.2.54] - 2026-08-21
 
 ### 变更
