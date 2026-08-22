@@ -25,6 +25,7 @@ import { formatAppError, t } from '../../i18n/index.js';
 import { Modal } from '../overlay/static.js';
 import { presentMcpJsonImport } from './json-import.js';
 import { promptMcpInstallReview } from './install-review.js';
+import { promptMcpSecrets } from './secrets-form.js';
 import { promptText } from '../prompts/present.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
@@ -293,14 +294,13 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
         onFillSecrets={async (item) => {
           const headerDefault =
             item.recipe.headerKeys[0] ?? item.recipe.envKeys[0] ?? 'Authorization';
-          const key = (await promptText(t('mcp.headerPrompt'), headerDefault))?.trim();
-          if (!key) return;
-          const token = await promptText(t('mcp.tokenPrompt'));
-          if (!token?.trim()) return;
-          const slot = item.recipe.envKeys.includes(key) && !item.recipe.headerKeys.includes(key)
-            ? 'env'
-            : 'headers';
-          await storeCollectedOverlaySecret(item.name, slot, key, token.trim());
+          const filled = await promptMcpSecrets(headerDefault);
+          if (!filled) return;
+          const slot =
+            item.recipe.envKeys.includes(filled.key) && !item.recipe.headerKeys.includes(filled.key)
+              ? 'env'
+              : 'headers';
+          await storeCollectedOverlaySecret(item.name, slot, filled.key, filled.value);
           await reload();
           flash(t('mcp.secretsSaved'));
         }}

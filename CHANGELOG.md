@@ -10,6 +10,10 @@
 
 - Claude Code MCP 开关改为写当前项目的 `disabledMcpServers` / `disabledMcpjsonServers`，不再在服务器对象上写 `disabled`。
 
+### 变更
+
+- MCP 密钥填写改为同屏多 Tab（键名、值），不再连续弹出两个输入框。
+
 ## [0.2.54] - 2026-08-21
 
 ### 变更
