@@ -1,11 +1,14 @@
+import { agentDisplayName } from '../../domain/core.js';
 import {
   findCollectedByEndpoint,
   mcpAgentIds,
   type CollectedMcp,
   type HttpProbeStatus,
+  type McpInstallReviewTarget,
   type McpLocationEntry,
   type McpLoginState,
   type McpRecipe,
+  type McpScanContext,
 } from '../../domain/mcp/index.js';
 import type { BrowserFocus, DetailFieldId } from '../browser/types.js';
 import { normalizeRemoteUrl } from '../../domain/mcp/identity.js';
@@ -24,6 +27,34 @@ import { t } from '../../i18n/index.js';
 
 export function mcpToggleDisplay(enabled: boolean): string {
   return enabled ? `🟢 ${t('mcp.enabled')}` : `🔴 ${t('mcp.disabled')}`;
+}
+
+function displayMcpPath(path: string, ctx: McpScanContext): string {
+  const cwd = ctx.cwd.endsWith('/') ? ctx.cwd.slice(0, -1) : ctx.cwd;
+  if (path === cwd) return '.';
+  if (path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1);
+  const home = ctx.home.endsWith('/') ? ctx.home.slice(0, -1) : ctx.home;
+  if (path === home) return '~';
+  if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
+  return path;
+}
+
+export function labeledMcpInstallTargets(
+  targets: readonly McpInstallReviewTarget[],
+  ctx: McpScanContext
+): { value: string; projectLabel?: string; globalLabel?: string }[] {
+  return targets.map((target) => {
+    const label = agentDisplayName(target.value);
+    return {
+      value: target.value,
+      ...(target.projectPath
+        ? { projectLabel: `${label} (${displayMcpPath(target.projectPath, ctx)})` }
+        : {}),
+      ...(target.globalPath
+        ? { globalLabel: `${label} (${displayMcpPath(target.globalPath, ctx)})` }
+        : {}),
+    };
+  });
 }
 
 /** Human-readable launch line — not the `transport:…` identity key. */

@@ -33,7 +33,6 @@ export {
   deleteMcpSecrets,
   emptySecrets,
   isEmptySecrets,
-  mcpLoginState,
   mcpProtocolLoginState,
   mcpSecretState,
   readMcpSecrets,

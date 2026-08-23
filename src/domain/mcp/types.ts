@@ -83,8 +83,8 @@ export interface AddMcpTarget {
 
 export interface McpInstallReviewTarget {
   value: string;
-  projectLabel?: string;
-  globalLabel?: string;
+  projectPath?: string;
+  globalPath?: string;
 }
 
 export interface McpInstallReviewOptions {

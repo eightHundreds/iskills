@@ -34,7 +34,3 @@ export async function probeHttp(
     clearTimeout(timer);
   }
 }
-
-export function probeHeadersFromSecrets(secrets: McpSecretValues): Record<string, string> {
-  return { ...secrets.headers };
-}

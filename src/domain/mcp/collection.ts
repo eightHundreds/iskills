@@ -1,9 +1,9 @@
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectionPaths, commitCollection, ensureCollection } from '../core.js';
+import { collectionPaths, commitCollection, ensureCollection, exists } from '../core.js';
 import { DomainError } from '../errors.js';
 import { assertMcpName } from './identity.js';
-import { pathExists, readJsonObject, writeJsonObject } from './io.js';
+import { readJsonObject, writeJsonObject } from './io.js';
 import type { CollectedMcp, CreateMcpInput, McpRecipe, McpSource } from './types.js';
 
 export function mcpCollectionDir(): string {
@@ -63,7 +63,7 @@ export function collectedFromRecord(raw: Record<string, unknown>, fallbackName: 
 export async function listCollectedMcps(): Promise<CollectedMcp[]> {
   await ensureMcpCollection();
   const dir = mcpCollectionDir();
-  if (!(await pathExists(dir))) return [];
+  if (!(await exists(dir))) return [];
   const entries = await readdir(dir);
   const collected: CollectedMcp[] = [];
   for (const entry of entries) {
@@ -76,7 +76,7 @@ export async function listCollectedMcps(): Promise<CollectedMcp[]> {
 
 export async function readCollectedMcp(name: string): Promise<CollectedMcp | undefined> {
   const path = mcpCollectionPath(name);
-  if (!(await pathExists(path))) return undefined;
+  if (!(await exists(path))) return undefined;
   return collectedFromRecord(await readJsonObject(path), name);
 }
 

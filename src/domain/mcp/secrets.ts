@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectionPaths } from '../core.js';
+import { collectionPaths, exists } from '../core.js';
 import { readUserConfig, writeUserConfig } from '../user-config.js';
 import { assertMcpName } from './identity.js';
-import { pathExists, readJsonObject, writeJsonObject } from './io.js';
+import { readJsonObject, writeJsonObject } from './io.js';
 import type { HttpProbeStatus, McpRecipe, McpSecretValues } from './types.js';
 
 /**
@@ -14,7 +14,7 @@ import type { HttpProbeStatus, McpRecipe, McpSecretValues } from './types.js';
  */
 export type McpSecretState = 'none' | 'signed-out' | 'signed-in';
 
-/** @deprecated Use {@link mcpSecretState}; kept as the same union for protocol login too. */
+/** Same union as {@link McpSecretState}; used for protocol login as well. */
 export type McpLoginState = McpSecretState;
 
 export function mcpSecretState(recipe: McpRecipe, secrets: McpSecretValues): McpSecretState {
@@ -22,11 +22,6 @@ export function mcpSecretState(recipe: McpRecipe, secrets: McpSecretValues): Mcp
   const headersOk = recipe.headerKeys.every((key) => Boolean(secrets.headers[key]?.trim()));
   const envOk = recipe.envKeys.every((key) => Boolean(secrets.env[key]?.trim()));
   return headersOk && envOk ? 'signed-in' : 'signed-out';
-}
-
-/** Static keys in the recipe — not HTTP 401 / OAuth discovery. */
-export function mcpLoginState(recipe: McpRecipe, secrets: McpSecretValues): McpLoginState {
-  return mcpSecretState(recipe, secrets);
 }
 
 /**
@@ -140,7 +135,7 @@ function normalizeSecrets(raw: Record<string, unknown>): McpSecretValues {
 async function syncSecretsGitignore(enabled: boolean): Promise<void> {
   const gitignore = join(collectionPaths().root, '.gitignore');
   let text = '';
-  if (await pathExists(gitignore)) text = await readFile(gitignore, 'utf8');
+  if (await exists(gitignore)) text = await readFile(gitignore, 'utf8');
   const lines = text.split(/\r?\n/).filter((line) => line !== GITIGNORE_KEEP);
   if (enabled) {
     if (!lines.includes('.local/')) lines.push('.local/');

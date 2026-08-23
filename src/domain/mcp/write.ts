@@ -1,11 +1,10 @@
 import { homedir } from 'node:os';
-import { agentDisplayName, commitCollection } from '../core.js';
+import { commitCollection, exists } from '../core.js';
 import { DomainError } from '../errors.js';
 import {
   createCollectedRecord,
   deleteCollectedMcpFile,
   listCollectedMcps,
-  mcpCollectionPath,
   readCollectedMcp,
   writeCollectedMcp,
 } from './collection.js';
@@ -32,7 +31,6 @@ import { probeHttp, type HttpProbeInit } from './probe.js';
 import { fillMissingSecrets } from './recipe.js';
 import {
   deleteMcpSecrets,
-  emptySecrets,
   isEmptySecrets,
   mergeSecrets,
   moveMcpSecrets,
@@ -55,7 +53,6 @@ import type {
   McpSecretValues,
   UpdateMcpLocationsOptions,
 } from './types.js';
-import { pathExists } from './io.js';
 
 export function scanContext(home = homedir(), cwd = process.cwd()): McpScanContext {
   return { home, cwd };
@@ -168,17 +165,7 @@ export async function writableMcpTargets(
   return targets;
 }
 
-function displayMcpPath(path: string, ctx: McpScanContext): string {
-  const cwd = ctx.cwd.endsWith('/') ? ctx.cwd.slice(0, -1) : ctx.cwd;
-  if (path === cwd) return '.';
-  if (path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1);
-  const home = ctx.home.endsWith('/') ? ctx.home.slice(0, -1) : ctx.home;
-  if (path === home) return '~';
-  if (path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
-  return path;
-}
-
-/** Rows and defaults for the MCP install review (same shape as skill install). */
+/** Who is writable, with config paths. UI draws labels. */
 export async function mcpInstallReviewOptions(
   ctx: McpScanContext = scanContext()
 ): Promise<McpInstallReviewOptions> {
@@ -191,17 +178,12 @@ export async function mcpInstallReviewOptions(
     const projectWritable = await agentMcpWritable(agent, 'project', ctx);
     const globalWritable = await agentMcpWritable(agent, 'global', ctx);
     if (!projectWritable && !globalWritable) continue;
-    const label = agentDisplayName(agent);
     targets.push({
       value: agent,
-      ...(projectWritable && projectPath
-        ? { projectLabel: `${label} (${displayMcpPath(projectPath, ctx)})` }
-        : {}),
-      ...(globalWritable && globalPath
-        ? { globalLabel: `${label} (${displayMcpPath(globalPath, ctx)})` }
-        : {}),
+      ...(projectWritable && projectPath ? { projectPath } : {}),
+      ...(globalWritable && globalPath ? { globalPath } : {}),
     });
-    if (projectWritable && projectPath && (await pathExists(projectPath))) {
+    if (projectWritable && projectPath && (await exists(projectPath))) {
       defaultProjectAgents.push(agent);
     }
     if (globalWritable) writableGlobal.push(agent);
@@ -409,5 +391,3 @@ function sameProjectedRecipe(
   if (leftArgs.length !== rightArgs.length) return false;
   return leftArgs.every((arg, index) => arg === rightArgs[index]);
 }
-
-export { emptySecrets, mcpCollectionPath, ownedFilePath };
