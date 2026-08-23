@@ -55,6 +55,7 @@ export async function setMcpSecretsInGit(enabled: boolean): Promise<void> {
   const current = await readUserConfig();
   await writeUserConfig({ ...current, mcpSecretsInGit: enabled });
   await syncSecretsGitignore(enabled);
+  if (enabled && (await exists(mcpSecretsPath()))) forceAddSecretsFile();
 }
 
 export async function readAllMcpSecrets(): Promise<Record<string, McpSecretValues>> {

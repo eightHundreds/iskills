@@ -13,6 +13,7 @@
 
 ### 修复
 
+- 打开「MCP 密钥进 Git」时，把已有 `.local/mcp-secrets.json` 纳入收藏夹 Git 跟踪。
 - Claude Code MCP 开关改为写当前项目的 `disabledMcpServers` / `disabledMcpjsonServers`，不再在服务器对象上写 `disabled`。
 
 ## [0.2.54] - 2026-08-21
