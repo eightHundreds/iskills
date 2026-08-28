@@ -64,13 +64,11 @@ if (shouldReexecToBun()) {
       },
     });
     if (result.error) {
-      const { t } = await import('../dist/src/i18n/index.js');
-      console.error(
-        t('cli.errorPrefix', {
-          message: t('cli.bunStartFailed', { message: result.error.message }),
-        })
+      const { DomainError } = await import('../dist/src/domain/errors.js');
+      const { printProcessFailure } = await import('../dist/src/cli.js');
+      await printProcessFailure(
+        new DomainError('cli.bunStartFailed', { message: result.error.message })
       );
-      process.exitCode = 1;
     } else {
       process.exit(result.status ?? 1);
     }
@@ -81,20 +79,8 @@ if (shouldReexecToBun()) {
 // Bun resolves those without the hook; registering is harmless.
 await import('./opentui-register.mjs');
 
-const { main } = await import('../dist/src/cli.js');
-const { formatAppError, t } = await import('../dist/src/i18n/index.js');
-const { InterruptError } = await import('../dist/src/ui/shell/terminal.js');
+const { main, printProcessFailure } = await import('../dist/src/cli.js');
 
 main().catch((error) => {
-  if (
-    error instanceof InterruptError ||
-    (error instanceof Error && error.name === 'InterruptError')
-  ) {
-    process.exitCode = 130;
-    return;
-  }
-  // Single presentation path: DomainError codes → catalog; plain Error → message.
-  const message = formatAppError(error);
-  console.error(t('cli.errorPrefix', { message }));
-  process.exitCode = 1;
+  void printProcessFailure(error);
 });

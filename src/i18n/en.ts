@@ -72,6 +72,7 @@ export const en: { readonly [K in keyof typeof zh]: string } = {
   // ── CLI / help ──────────────────────────────────────────────────────────
   'cli.unknownCommand': 'Unknown command: {command}',
   'cli.errorPrefix': 'Error: {message}',
+  'cli.logWritten': 'Complete log: {path}',
   'cli.bunStartFailed': 'Failed to start Bun runtime: {message}',
   'cli.mainTtyRequired':
     'The main TUI requires a TTY for stdin and stdout; this terminal is not supported.',

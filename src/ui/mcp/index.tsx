@@ -21,7 +21,7 @@ import {
   type McpLocationEntry,
   type McpSecretState,
 } from '../../domain/mcp/index.js';
-import { formatAppError, t } from '../../i18n/index.js';
+import { formatErrorWithLog, t } from '../../i18n/index.js';
 import { Modal } from '../overlay/static.js';
 import { presentMcpJsonImport } from './json-import.js';
 import { promptMcpInstallReview } from './install-review.js';
@@ -147,7 +147,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             for (const notice of result.notices) flash(notice);
             flash(t('mcp.importedCount', { count: result.imported }));
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onImport={async (entries) => {
@@ -171,7 +171,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             await reload();
             flash(t('mcp.importedCount', { count }));
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onAdd={async (names) => {
@@ -192,7 +192,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             await reload();
             flash(t('mcp.addedCount', { count: added }));
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onDelete={async (target) => {
@@ -225,7 +225,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             }
             await reload();
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onToggle={async (entry) => {
@@ -233,7 +233,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             await toggleMcpLocation(entry, scanContext());
             await reload();
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onUpdate={async (items) => {
@@ -253,7 +253,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             }
             await reload();
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onRename={async (item) => {
@@ -264,7 +264,7 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             await reload();
             flash(t('mcp.renamed', { name: next.trim() }));
           } catch (error) {
-            flash(formatAppError(error), 'error');
+            flash(await formatErrorWithLog(error), 'error');
           }
         }}
         onTags={async (item) => {

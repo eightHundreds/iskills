@@ -12,8 +12,19 @@ import { commandMcp } from './commands/mcp.js';
 import { commitCollection, ensureCollection } from './domain/core.js';
 import { finalizeResolvedConflicts } from './domain/git.js';
 import { DomainError } from './domain/errors.js';
-import { applyUserConfigLocale, installDomainNotify } from './i18n/index.js';
+import {
+  applyUserConfigLocale,
+  formatAppError,
+  getLocale,
+  installDomainNotify,
+  t,
+} from './i18n/index.js';
 import { InterruptError } from './ui/shell/terminal.js';
+import {
+  installRunLogProcessHooks,
+  persistFailureLog,
+  startRunLog,
+} from './util/run-log-session.js';
 
 const packageVersion = (
   createRequire(import.meta.url)('../../package.json') as { version: string }
@@ -28,6 +39,31 @@ const PUBLIC_COMMANDS = new Set([
   'config',
   'mcp',
 ]);
+
+function isInterrupt(error: unknown): boolean {
+  return (
+    error instanceof InterruptError ||
+    (error instanceof Error && error.name === 'InterruptError')
+  );
+}
+
+function processRuntime(): string {
+  return process.versions.bun
+    ? `bun ${process.versions.bun}`
+    : `node ${process.version}`;
+}
+
+/** Present a process-level failure on stderr and persist the run log (npm-style path). */
+export async function printProcessFailure(error: unknown): Promise<void> {
+  if (isInterrupt(error)) {
+    process.exitCode = 130;
+    return;
+  }
+  console.error(t('cli.errorPrefix', { message: formatAppError(error) }));
+  const path = await persistFailureLog(error);
+  if (path) console.error(t('cli.logWritten', { path }));
+  process.exitCode = 1;
+}
 
 async function run(argv: string[]): Promise<void> {
   await applyUserConfigLocale();
@@ -69,17 +105,24 @@ async function run(argv: string[]): Promise<void> {
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   installDomainNotify();
+  await applyUserConfigLocale();
+  startRunLog({
+    argv,
+    version: packageVersion,
+    runtime: processRuntime(),
+    locale: getLocale(),
+    cwd: process.cwd(),
+    pid: process.pid,
+  });
+  installRunLogProcessHooks();
   try {
     await run(argv);
   } catch (error) {
-    if (
-      error instanceof InterruptError ||
-      (error instanceof Error && error.name === 'InterruptError')
-    ) {
+    if (isInterrupt(error)) {
       process.exitCode = 130;
       return;
     }
-    // Keep DomainError (stable code); bin formats via formatAppError.
+    // Keep DomainError (stable code); bin formats via printProcessFailure.
     throw error;
   } finally {
     // Lazy: tear down without loading OpenTUI when no UI was mounted.

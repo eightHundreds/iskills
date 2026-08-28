@@ -39,7 +39,7 @@ import {
 } from './store.js';
 import { Browser } from './browser.js';
 import { Detail, type DetailAction } from './detail.js';
-import { formatAppError, t } from '../../i18n/index.js';
+import { formatErrorWithLog, t } from '../../i18n/index.js';
 import type {
   BrowserActionHost,
   BrowserAppLifecycle,
@@ -173,7 +173,7 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
           'normal'
         );
       } catch (error) {
-        setBrowserStatus(store, formatAppError(error), false, 'error');
+        setBrowserStatus(store, await formatErrorWithLog(error), false, 'error');
       }
     })();
   }, [data, reloadData, store]);
@@ -220,7 +220,7 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
         return;
       }
       // Surface action failures in the footer — never leave the promise rejection silent.
-      setBrowserStatus(store, formatAppError(error), false, 'error');
+      setBrowserStatus(store, await formatErrorWithLog(error), false, 'error');
     }
   }, [actionHost, exit, setDetail, setPhase, store]);
 
@@ -277,7 +277,7 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
               exit(error);
               return;
             }
-            setBrowserStatus(store, formatAppError(error), false, 'error');
+            setBrowserStatus(store, await formatErrorWithLog(error), false, 'error');
           }
         }}
       />
@@ -288,12 +288,12 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
     <Browser
       {...viewInput}
       finish={(result) => {
-        void dispatchResult(result).catch((error) => {
+        void dispatchResult(result).catch(async (error) => {
           if (error instanceof InterruptError) {
             exit(error);
             return;
           }
-          setBrowserStatus(store, formatAppError(error), false, 'error');
+          setBrowserStatus(store, await formatErrorWithLog(error), false, 'error');
         });
       }}
     />

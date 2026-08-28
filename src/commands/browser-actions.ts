@@ -64,6 +64,7 @@ import {
   type ImportToCollectionResult,
 } from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
+import { persistFailureLog } from '../util/run-log-session.js';
 
 async function bindMetadataSource(
   skillName: string,
@@ -209,6 +210,23 @@ export async function handleBrowserResult(
   return 'continue';
 }
 
+async function presentActionFailure(
+  host: BrowserActionHost,
+  error: unknown,
+  wrap = false
+): Promise<void> {
+  if (error instanceof InterruptError) throw error;
+  const message = wrap
+    ? t('common.failed', { error: formatAppError(error) })
+    : formatAppError(error);
+  const path = await persistFailureLog(error);
+  host.setStatus(
+    path ? `${message}\n${t('cli.logWritten', { path })}` : message,
+    false,
+    'error'
+  );
+}
+
 async function handleSync(host: BrowserActionHost): Promise<void> {
   host.setStatus('', false);
   // Busy gate: browser disables input while workingAction/updatingSkillName is set.
@@ -226,7 +244,7 @@ async function handleSync(host: BrowserActionHost): Promise<void> {
   } catch (error) {
     if (error instanceof InterruptError) throw error;
     // Prefer DomainError text alone — avoid "失败：收藏夹 Git 同步失败：…" double prefix.
-    host.setStatus(formatAppError(error), false, 'error');
+    await presentActionFailure(host, error);
   } finally {
     host.setWorkingProgress(null);
   }
@@ -317,7 +335,7 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
     ({ targets, defaultProjectAgents, defaultGlobalAgents } =
       await installTargetsAndDefaults());
   } catch (error) {
-    host.setStatus(formatAppError(error), false, 'error');
+    await presentActionFailure(host, error);
     return;
   }
   const install = await promptInstallReview(
@@ -341,7 +359,7 @@ async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Pro
     host.setStatus(t('cmd.addedCount', { count }), true, 'normal');
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   }
 }
 
@@ -363,7 +381,7 @@ async function handleRemoveCollection(
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   }
 }
 
@@ -381,7 +399,7 @@ async function handleRemoveLocations(host: BrowserActionHost, skills: Skill[]): 
       selected: host.getNavigation().selected.filter((path) => !removed.has(path)),
     });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   }
 }
 
@@ -395,11 +413,11 @@ async function handleInstallToAgents(
   try {
     present = await listPresentAgents();
   } catch (error) {
-    host.setStatus(formatAppError(error), false, 'error');
+    await presentActionFailure(host, error);
     return;
   }
   if (!present.length) {
-    host.setStatus(formatAppError(noPresentAgentsError()), false, 'error');
+    await presentActionFailure(host, noPresentAgentsError());
     return;
   }
   // Exclude every source skill root (lexical + canonical — symlink aliases collapse).
@@ -432,7 +450,7 @@ async function handleInstallToAgents(
     choices.push({ label, value: target.value });
   }
   if (!choices.length) {
-    host.setStatus(t('cmd.noOtherAgentTargets'), false, 'error');
+    await presentActionFailure(host, new DomainError('cmd.noOtherAgentTargets'));
     return;
   }
   const selectedAgents = await promptChoicesMany(
@@ -462,7 +480,7 @@ async function handleInstallToAgents(
     host.setStatus(t('cmd.addedCount', { count }), true, 'normal');
     host.setNavigation({ ...host.getNavigation(), selected: [] });
   } catch (error) {
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   }
 }
 
@@ -496,7 +514,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
     host.setWorkingProgress(null);
     if (error instanceof InterruptError) throw error;
     if (error instanceof Error && error.name === 'AbortError') throw new InterruptError();
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   } finally {
     host.setAbortController(null);
   }
@@ -538,7 +556,7 @@ export async function handleOpenCollectedGitHubSource(
     return result.count;
   } catch (error) {
     if (error instanceof InterruptError) throw error;
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
     return 0;
   } finally {
     host.setWorkingProgress(null);
@@ -555,7 +573,7 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
       })
     );
   } catch (error) {
-    host.setStatus(t('common.failed', { error: formatAppError(error) }), false, 'error');
+    await presentActionFailure(host, error, true);
   }
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }

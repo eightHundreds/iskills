@@ -5,7 +5,7 @@
  */
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { LocalePreference, UserConfig } from '../../domain/user-config.js';
-import { applyLocalePreference, formatAppError, t } from '../../i18n/index.js';
+import { applyLocalePreference, formatErrorWithLog, t } from '../../i18n/index.js';
 import { termcnColors } from '../components/colors.js';
 import { padColumns, textWidth } from '../components/terminal-layout.js';
 import { useInput } from '../components/use-input.js';
@@ -215,7 +215,7 @@ export function SettingsPanel({
     } catch (error) {
       await Modal.info({
         title: t('config.remoteTitle'),
-        content: [formatAppError(error)],
+        content: (await formatErrorWithLog(error)).split('\n'),
       });
     }
   }, [onPersistRemote]);

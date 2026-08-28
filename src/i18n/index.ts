@@ -8,6 +8,7 @@
  */
 
 import { DomainError, setDomainNotify } from '../domain/errors.js';
+import { recordRunLog } from '../domain/run-log.js';
 import type { LocalePreference } from '../domain/user-config.js';
 import { en } from './en.js';
 import { zh } from './zh.js';
@@ -160,9 +161,22 @@ export function formatAppError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Localized error plus the run-log path when persist succeeds.
+ * Interrupt errors are not dumped.
+ */
+export async function formatErrorWithLog(error: unknown): Promise<string> {
+  const message = formatAppError(error);
+  const { persistFailureLog } = await import('../util/run-log-session.js');
+  const path = await persistFailureLog(error);
+  if (!path) return message;
+  return `${message}\n${t('cli.logWritten', { path })}`;
+}
+
 /** Wire domain non-fatal notices to stderr/stdout via the active catalog. */
 export function installDomainNotify(): void {
   setDomainNotify((code, params) => {
+    recordRunLog('warn', 'notify', code, params);
     const text = formatAppError(new DomainError(code, params ?? {}));
     if (
       code.startsWith('domain.warn') ||

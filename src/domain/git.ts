@@ -37,6 +37,7 @@ import type {
   UpdateStatus,
 } from './types.js';
 import { DomainError, domainNotify } from './errors.js';
+import { recordRunLog } from './run-log.js';
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -189,12 +190,19 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
     } catch {}
   }
   cloneArgs.push(cloneSource, repository);
+  const started = Date.now();
+  recordRunLog('info', 'git.clone', 'start', {
+    url: parsed.url,
+    depth: isCommitRef ? 0 : 1,
+    ...(parsed.ref ? { ref: parsed.ref } : {}),
+  });
   try {
     git(cloneArgs);
     if (parsed.ref && /^[0-9a-f]{7,40}$/i.test(parsed.ref)) {
       git(['-C', repository, 'checkout', '--quiet', parsed.ref]);
     }
     const commit = git(['-C', repository, 'rev-parse', 'HEAD']);
+    recordRunLog('info', 'git.clone', 'ok', { ms: Date.now() - started, commit });
     let branch = '';
     try {
       branch = git(['-C', repository, 'symbolic-ref', '--short', 'HEAD']);
@@ -221,6 +229,10 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
       },
     };
   } catch (error) {
+    recordRunLog('error', 'git.clone', errorMessage(error), {
+      ms: Date.now() - started,
+      url: parsed.url,
+    });
     await rm(temporary, { recursive: true, force: true });
     throw new DomainError('git.cloneFailed', { error: errorMessage(error) });
   }

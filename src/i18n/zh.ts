@@ -70,6 +70,7 @@ export const zh = {
   // ── CLI / help ──────────────────────────────────────────────────────────
   'cli.unknownCommand': '未知命令：{command}',
   'cli.errorPrefix': '错误：{message}',
+  'cli.logWritten': '完整日志：{path}',
   'cli.bunStartFailed': '无法启动 Bun 运行时：{message}',
   'cli.mainTtyRequired': '主 TUI 需要 stdin 和 stdout TTY；当前终端不支持。',
   'cli.configTtyRequired': '配置界面需要 stdin 和 stdout TTY；当前终端不支持。',
