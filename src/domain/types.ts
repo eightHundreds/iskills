@@ -30,6 +30,8 @@ export interface Skill {
   name: string;
   description: string;
   path: string;
+  /** In-source relative path, when discovered from a Git/local tree. */
+  sourcePath?: string;
   isReference?: boolean;
   tags?: string[];
   note?: string;

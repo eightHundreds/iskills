@@ -2,13 +2,14 @@ import type { MouseEvent } from '@opentui/core';
 import { Text, usePanelColors, useStdout } from '../tui/index.js';
 import { useInput } from '../components/use-input.js';
 import { useMemo, useState, type ReactNode } from 'react';
+import { duplicatedSkillNames } from '../../domain/source-skill-names.js';
 import type { Skill } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
 import { collectionMatchLabels, collectionMatchMarkers } from '../collection-match.js';
 import { termcnColors } from '../components/termcn.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { textWidth, wrapColumns } from '../components/terminal-layout.js';
-import { toggleSelection, wrapListIndex } from '../components/options.js';
+import { wrapListIndex } from '../components/options.js';
 import { isReturn } from '../components/text.js';
 import { t } from '../../i18n/index.js';
 
@@ -55,7 +56,10 @@ function detailPreviewLines(
 ): DetailPreviewLine[] {
   const lines: DetailPreviewLine[] = [
     ...detailFieldLines(skillFieldLabels().description, skill.description || t('common.none'), width),
-    ...wrapColumns(t('import.fromAgentPath', { agent, path: skill.path }), width).map((value) => ({
+    ...wrapColumns(
+      t('import.fromAgentPath', { agent, path: skill.sourcePath || skill.path }),
+      width
+    ).map((value) => ({
       value,
       muted: true,
     })),
@@ -70,6 +74,25 @@ function detailPreviewLines(
 export interface SkillOption<T extends Skill> {
   skill: T;
   agent: string;
+}
+
+function catalogSkills<T extends Skill>(groups: { options: SkillOption<T>[] }[]): T[] {
+  return groups.flatMap((group) => group.options.map((option) => option.skill));
+}
+
+/** Space-select: at most one skill per frontmatter name. */
+function selectUniqueNamedSkill(previous: Set<string>, skill: Skill, catalog: Skill[]): Set<string> {
+  const next = new Set(previous);
+  if (next.has(skill.path)) {
+    next.delete(skill.path);
+    return next;
+  }
+  const key = skill.name.toLowerCase();
+  for (const other of catalog) {
+    if (other.name.toLowerCase() === key) next.delete(other.path);
+  }
+  next.add(skill.path);
+  return next;
 }
 
 function SkillDetailPreview<T extends Skill>({
@@ -171,6 +194,8 @@ export function SkillMultiSelect<T extends Skill>({
 
   const currentGroup = groups.find((group) => group.agent === activeAgent) ?? groups[0];
   const options = currentGroup?.options ?? [];
+  const catalog = useMemo(() => catalogSkills(groups), [groups]);
+  const sameNames = useMemo(() => duplicatedSkillNames(catalog), [catalog]);
   const cursor = cursorByAgent[activeAgent] ?? 0;
   const total = groups.reduce((sum, group) => sum + group.options.length, 0);
   const singleAgent = groups.length <= 1;
@@ -214,17 +239,32 @@ export function SkillMultiSelect<T extends Skill>({
   const toggleCurrent = () => {
     const option = options[clampedCursor];
     if (!option) return;
-    setSelected((prev) => toggleSelection(prev, option.skill.path));
+    setSelected((prev) => selectUniqueNamedSkill(prev, option.skill, catalog));
   };
 
   const toggleAllInTab = () => {
     if (!options.length) return;
-    const allSelected = options.every((option) => selected.has(option.skill.path));
+    const tabKeys = [...new Set(options.map((option) => option.skill.name.toLowerCase()))];
+    const covered = tabKeys.every((key) =>
+      options.some(
+        (option) => option.skill.name.toLowerCase() === key && selected.has(option.skill.path)
+      )
+    );
     setSelected((prev) => {
       const next = new Set(prev);
+      if (covered) {
+        for (const option of options) next.delete(option.skill.path);
+        return next;
+      }
+      const claimed = new Set<string>();
+      for (const skill of catalog) {
+        if (next.has(skill.path)) claimed.add(skill.name.toLowerCase());
+      }
       for (const option of options) {
-        if (allSelected) next.delete(option.skill.path);
-        else next.add(option.skill.path);
+        const key = option.skill.name.toLowerCase();
+        if (claimed.has(key)) continue;
+        next.add(option.skill.path);
+        claimed.add(key);
       }
       return next;
     });
@@ -256,7 +296,7 @@ export function SkillMultiSelect<T extends Skill>({
           setCursor(index);
           const option = options[index];
           if (option) {
-            setSelected((prev) => toggleSelection(prev, option.skill.path));
+            setSelected((prev) => selectUniqueNamedSkill(prev, option.skill, catalog));
           }
         }
         return;
@@ -374,12 +414,9 @@ export function SkillMultiSelect<T extends Skill>({
                     onClick={() => {
                       setCursor(index);
                       setFocus('list');
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(option.skill.path)) next.delete(option.skill.path);
-                        else next.add(option.skill.path);
-                        return next;
-                      });
+                      setSelected((prev) =>
+                        selectUniqueNamedSkill(prev, option.skill, catalog)
+                      );
                     }}
                   >
                     <box
@@ -413,7 +450,9 @@ export function SkillMultiSelect<T extends Skill>({
                           color={colors.muted}
                           backgroundColor={colors.surface}
                         >
-                          {option.skill.description}
+                          {sameNames.has(option.skill.name.toLowerCase())
+                            ? option.skill.sourcePath || option.skill.path
+                            : option.skill.description}
                         </Text>
                       </box>
                     </box>

@@ -35,7 +35,12 @@ import {
   type CrossAgentInstallPlan,
 } from '../domain/cross-agent-install.js';
 import { DomainError } from '../domain/errors.js';
+import { recordRunLog } from '../domain/run-log.js';
 import { matchesSkill } from '../domain/skill-query.js';
+import {
+  annotateSourcePaths,
+  assertUniqueSkillNames,
+} from '../domain/source-skill-names.js';
 import { cloneGitSource } from '../domain/git.js';
 import { collectionMatchLabels } from '../ui/collection-match.js';
 import type {
@@ -179,6 +184,8 @@ export interface RemoteImportOptions {
   tags?: string[];
   /** Same shape as batch import confirm (single-skill list for search). */
   confirmReplace?: (candidates: ImportReplaceCandidate[]) => Promise<boolean>;
+  /** When several same-name copies exist, pick which paths to collect (names stay unique). */
+  selectSkills?: (skills: Skill[]) => Promise<Skill[]>;
 }
 
 export interface RemoteImportResult {
@@ -207,9 +214,30 @@ export async function importRemoteSkillToCollection(
     const found = (await discoverSkills(gitContext.repository)).filter(
       (skill) => skill.name.toLowerCase() === skillName.toLowerCase()
     );
+    const matchingPaths = found.map((skill) =>
+      assertRelativePath(relative(gitContext.repository, skill.path).split(sep).join('/'))
+    );
+    recordRunLog('info', 'discover', 'matching', {
+      name: skillName,
+      count: found.length,
+      paths: matchingPaths.join(', '),
+    });
     if (!found.length) throw new DomainError('cmd.skillMissingInSource', { name: skillName });
-    if (found.length > 1) throw new DomainError('cmd.skillDuplicateInSource', { name: skillName });
-    const skill = found[0]!;
+    let copies = annotateSourcePaths(found, gitContext.repository);
+    if (copies.length > 1) {
+      recordRunLog('info', 'discover.duplicate', 'same name', {
+        name: skillName,
+        count: copies.length,
+        paths: matchingPaths.join(', '),
+      });
+      if (!options.selectSkills) {
+        throw new DomainError('cmd.skillDuplicateInSource', { name: skillName });
+      }
+      copies = await options.selectSkills(copies);
+      if (!copies.length) return { name: skillName, status: 'cancelled' };
+      assertUniqueSkillNames(copies);
+    }
+    const skill = copies[0]!;
     const incoming = await gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
     const replacing = await pathPresent(target);
@@ -259,7 +287,10 @@ function skillOutsideCollection(skill: Skill): boolean {
 async function loadGitImportSkills(gitContext: GitImportContext): Promise<Skill[]> {
   const collection = await listCollection().catch(() => []);
   return annotateGitCollectionStatus(
-    (await discoverSkills(gitContext.repository)).filter(skillOutsideCollection),
+    annotateSourcePaths(
+      (await discoverSkills(gitContext.repository)).filter(skillOutsideCollection),
+      gitContext.repository
+    ),
     gitContext,
     collection
   );
@@ -379,6 +410,7 @@ export async function importSkillsToCollection(
   options: ImportToCollectionOptions = {}
 ): Promise<ImportToCollectionResult> {
   if (!skills.length) return { count: 0 };
+  assertUniqueSkillNames(skills);
   const { selected, replaceNames } = await resolveImportSelection(skills, options);
   if (!selected.length) return { count: 0 };
   const installed: string[] = [];
@@ -443,6 +475,7 @@ export async function importGitSkillsToCollection(
   options: ImportToCollectionOptions = {}
 ): Promise<ImportToCollectionResult> {
   if (!skills.length) return { count: 0 };
+  assertUniqueSkillNames(skills);
   const { selected, replaceNames } = await resolveImportSelection(skills, options, gitContext);
   if (!selected.length) return { count: 0 };
   const installed: string[] = [];
@@ -497,9 +530,14 @@ export async function commandImport(argv: string[]): Promise<void> {
         .filter((group) => group.skills.length > 0);
       skills = globalGroups.flatMap((group) => group.skills);
     } else {
-      skills = (await discoverSkills(localInput || resolve('.'))).filter(skillOutsideCollection);
+      const localRoot = localInput || resolve('.');
+      skills = annotateSourcePaths(
+        (await discoverSkills(localRoot)).filter(skillOutsideCollection),
+        localRoot
+      );
     }
     if (!skills.length) throw new DomainError('cmd.noSkillMd');
+    if (values.all) assertUniqueSkillNames(skills);
 
     let selected = skills;
     if (!values.all && (skills.length > 1 || !input)) {
