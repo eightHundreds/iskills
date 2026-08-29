@@ -12,7 +12,7 @@ import {
   type RawRow,
 } from './shared.js';
 import type { McpDialect } from './registry.js';
-import { isLaunchableServerObject } from '../recipe.js';
+import { isLaunchableServerObject, projectServerObject } from '../recipe.js';
 import type { McpLocationEntry, McpScanContext, McpScope } from '../types.js';
 
 export async function isPiAdapterPresent(ctx: McpScanContext): Promise<boolean> {
@@ -90,7 +90,14 @@ export const piDialect: McpDialect = {
   async writeOwned(scope, ctx, nativeKey, recipe, secrets): Promise<void> {
     const path = this.ownedPath(scope, ctx);
     if (!path) throw new DomainError('mcp.notWritable', { name: 'pi' });
-    await upsertJsonServer(path, 'mcpServers', nativeKey, recipe, secrets, 'json');
+    let previous: Record<string, unknown> = {};
+    if (await exists(path)) {
+      const doc = await readJsonObject(path);
+      previous = asObject(asObject(doc.mcpServers)[nativeKey]);
+    }
+    const next = projectServerObject(recipe, secrets, 'json');
+    if (previous.disabled === true) next.disabled = true;
+    await upsertJsonServer(path, 'mcpServers', nativeKey, next);
   },
   async removeOwned(scope, ctx, nativeKey): Promise<void> {
     const path = this.ownedPath(scope, ctx);

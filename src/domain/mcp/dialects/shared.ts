@@ -8,8 +8,6 @@ import {
 import {
   extractFromServerObject,
   isLaunchableServerObject,
-  projectServerObject,
-  projectTomlServer,
 } from '../recipe.js';
 import type {
   McpLocationEntry,
@@ -63,15 +61,10 @@ export async function upsertJsonServer(
   path: string,
   rootKey: string,
   nativeKey: string,
-  recipe: McpRecipe,
-  secrets: McpSecretValues,
-  style: 'json'
+  next: Record<string, unknown>
 ): Promise<void> {
   const doc = (await exists(path)) ? await readJsonObject(path) : {};
   const servers = asObject(doc[rootKey]);
-  const previous = asObject(servers[nativeKey]);
-  const next = projectServerObject(recipe, secrets, style);
-  if (previous.disabled === true) next.disabled = true;
   servers[nativeKey] = next;
   doc[rootKey] = servers;
   await writeJsonObject(path, doc);
@@ -88,14 +81,10 @@ export async function deleteJsonServer(path: string, rootKey: string, nativeKey:
 export async function upsertTomlServer(
   path: string,
   nativeKey: string,
-  recipe: McpRecipe,
-  secrets: McpSecretValues
+  next: Record<string, unknown>
 ): Promise<void> {
   const doc = (await exists(path)) ? await readTomlObject(path) : {};
   const servers = asObject(doc.mcp_servers);
-  const previous = asObject(servers[nativeKey]);
-  const next = projectTomlServer(recipe, secrets);
-  if (previous.enabled === false) next.enabled = false;
   servers[nativeKey] = next;
   doc.mcp_servers = servers;
   await writeTomlObject(path, doc);

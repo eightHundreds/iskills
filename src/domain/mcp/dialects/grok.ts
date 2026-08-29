@@ -11,7 +11,7 @@ import {
   type RawRow,
 } from './shared.js';
 import type { McpDialect } from './registry.js';
-import { extractFromServerObject } from '../recipe.js';
+import { extractFromServerObject, projectTomlServer } from '../recipe.js';
 import type { McpLocationEntry, McpScanContext, McpScope } from '../types.js';
 
 async function readGrokCompat(
@@ -74,7 +74,9 @@ export const grokDialect: McpDialect = {
   async writeOwned(scope, ctx, nativeKey, recipe, secrets): Promise<void> {
     const path = this.ownedPath(scope, ctx);
     if (!path) throw new DomainError('mcp.notWritable', { name: 'grok' });
-    await upsertTomlServer(path, nativeKey, recipe, secrets);
+    const next = projectTomlServer(recipe, secrets);
+    delete next.enabled;
+    await upsertTomlServer(path, nativeKey, next);
   },
   async removeOwned(scope, ctx, nativeKey): Promise<void> {
     const path = this.ownedPath(scope, ctx);

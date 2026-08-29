@@ -17,7 +17,7 @@ import {
 import { piDialect, isPiAdapterPresent } from './pi.js';
 import { getDialect, registerDialect, type McpDialect } from './registry.js';
 import { readJsonObject, writeJsonObject, readTomlObject, writeTomlObject } from '../io.js';
-import { extractFromServerObject, projectServerObject } from '../recipe.js';
+import { extractFromServerObject, projectServerObject, projectTomlServer } from '../recipe.js';
 import type {
   McpLocationEntry,
   McpRecipe,
@@ -77,7 +77,14 @@ function jsonDialect(
     async writeOwned(scope, ctx, nativeKey, recipe, secrets): Promise<void> {
       const path = this.ownedPath(scope, ctx);
       if (!path) throw new DomainError('mcp.notWritable', { name: id });
-      await upsertJsonServer(path, 'mcpServers', nativeKey, recipe, secrets, 'json');
+      let previous: Record<string, unknown> = {};
+      if (await exists(path)) {
+        const doc = await readJsonObject(path);
+        previous = asObject(asObject(doc.mcpServers)[nativeKey]);
+      }
+      const next = projectServerObject(recipe, secrets, 'json');
+      if (previous.disabled === true) next.disabled = true;
+      await upsertJsonServer(path, 'mcpServers', nativeKey, next);
     },
     async removeOwned(scope, ctx, nativeKey): Promise<void> {
       const path = this.ownedPath(scope, ctx);
@@ -187,7 +194,14 @@ const codexDialect: McpDialect = {
   async writeOwned(scope, ctx, nativeKey, recipe, secrets): Promise<void> {
     const path = this.ownedPath(scope, ctx);
     if (!path) throw new DomainError('mcp.notWritable', { name: 'codex' });
-    await upsertTomlServer(path, nativeKey, recipe, secrets);
+    let previous: Record<string, unknown> = {};
+    if (await exists(path)) {
+      const doc = await readTomlObject(path);
+      previous = asObject(asObject(doc.mcp_servers)[nativeKey]);
+    }
+    const next = projectTomlServer(recipe, secrets);
+    if (previous.enabled === false) next.enabled = false;
+    await upsertTomlServer(path, nativeKey, next);
   },
   async removeOwned(scope, ctx, nativeKey): Promise<void> {
     const path = this.ownedPath(scope, ctx);

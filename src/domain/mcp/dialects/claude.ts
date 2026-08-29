@@ -12,6 +12,7 @@ import {
 } from './shared.js';
 import type { McpDialect } from './registry.js';
 import { DomainError } from '../../errors.js';
+import { projectServerObject } from '../recipe.js';
 import type { McpLocationEntry, McpScanContext, McpScope } from '../types.js';
 
 type ClaudeDisableKind = 'mcpjson' | 'user';
@@ -126,7 +127,9 @@ export const claudeDialect: McpDialect = {
   async writeOwned(scope, ctx, nativeKey, recipe, secrets): Promise<void> {
     const path = this.ownedPath(scope, ctx);
     if (!path) throw new DomainError('mcp.notWritable', { name: 'claude' });
-    await upsertJsonServer(path, 'mcpServers', nativeKey, recipe, secrets, 'json');
+    const next = projectServerObject(recipe, secrets, 'json');
+    delete next.disabled;
+    await upsertJsonServer(path, 'mcpServers', nativeKey, next);
   },
   async removeOwned(scope, ctx, nativeKey): Promise<void> {
     const path = this.ownedPath(scope, ctx);
