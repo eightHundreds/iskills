@@ -7,8 +7,8 @@ import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../doma
 export type BrowserTab = 'project' | 'collection' | 'global';
 /** tags/list/detail = 3-column body; detail = right peek field focus. */
 export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
-/** Focusable fields in the master-detail right column (collection only). */
-export type DetailFieldId = 'source' | 'tags' | 'note' | 'name' | 'login' | 'secrets';
+/** Focusable fields in the master-detail right column (collection only). copyPath is click-only. */
+export type DetailFieldId = 'source' | 'tags' | 'note' | 'name' | 'login' | 'secrets' | 'copyPath';
 
 /** In-browser long action shown in the footer right slot. */
 export type BrowserWorkingAction = 'update' | 'materialize' | 'sync' | 'openSource';

@@ -17,6 +17,7 @@ import type {
 } from './types.js';
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import { presentHealthAlerts } from './health.js';
+import { copySkillDiskPath } from './copy-path.js';
 import {
   browserDetailFieldAtom,
   browserFilterAtom,
@@ -26,6 +27,7 @@ import {
   browserSelectionAtom,
   browserTagFilterAtom,
   browserUpdateCheckAtom,
+  type BrowserAppStore,
 } from './store.js';
 import {
   browserFrameDimensions,
@@ -787,6 +789,10 @@ export function Browser({
           onDetailLine={(visibleIndex) => {
             const row = detailRows[visibleIndex];
             if (!row?.field) return;
+            if (row.field === 'copyPath' && peekSkill) {
+              void copySkillDiskPath(store as BrowserAppStore, peekSkill.path);
+              return;
+            }
             const index = detailFields.indexOf(row.field);
             if (index < 0) return;
             if (row.field === 'source' && peekSkill) {

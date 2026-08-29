@@ -610,6 +610,8 @@ export interface CollectionDetailRow {
   primary?: boolean;
   /** Marks a focusable field row in the right column (all wrapped lines share id). */
   field?: DetailFieldId;
+  /** Compact chip (e.g. copy path): clickable text only, not the full column. */
+  action?: boolean;
 }
 
 /**
@@ -630,6 +632,32 @@ export function detailLabelWidth(): number {
     t('common.description'),
   ];
   return Math.max(6, ...labels.map((label) => textWidth(label))) + 1;
+}
+
+/** Peek-column action chip: copy the current skill disk path. */
+export function peekCopyPathRow(): CollectionDetailRow {
+  return {
+    text: t('browser.copyPath'),
+    field: 'copyPath',
+    action: true,
+    primary: true,
+    bold: true,
+  };
+}
+
+/** Pin an action row to the bottom of the peek column; pad so it does not sit on content. */
+export function pinPeekAction(
+  content: CollectionDetailRow[],
+  action: CollectionDetailRow,
+  viewportHeight: number
+): CollectionDetailRow[] {
+  if (viewportHeight <= 1) return content.slice(0, Math.max(0, viewportHeight));
+  const actionBlock: CollectionDetailRow[] =
+    viewportHeight >= 3 ? [{ text: '' }, action] : [action];
+  const budget = Math.max(1, viewportHeight - actionBlock.length);
+  const clipped = content.slice(0, budget);
+  while (clipped.length < budget) clipped.push({ text: '' });
+  return [...clipped, ...actionBlock];
 }
 
 /** Label + value rows for the master-detail peek column (label column is fixed-width). */
@@ -715,15 +743,19 @@ export function browseDetailRows(
     );
   }
   // One blank before description; description is secondary and length-variable.
-  // 不要用空行撑到视口底，否则看起来像「贴底」。
+  // 不要用空行撑内容到视口底；底部留给「复制路径」按钮。
   const descriptionBudget = Math.max(2, Math.floor(viewportHeight * 0.35));
-  return [
-    ...rows,
-    { text: '' },
-    ...peekFieldRows(t('common.description'), skill.description || t('common.noDescription'), width, descriptionBudget, {
-      mutedValue: true,
-    }),
-  ].slice(0, viewportHeight);
+  return pinPeekAction(
+    [
+      ...rows,
+      { text: '' },
+      ...peekFieldRows(t('common.description'), skill.description || t('common.noDescription'), width, descriptionBudget, {
+        mutedValue: true,
+      }),
+    ],
+    peekCopyPathRow(),
+    viewportHeight
+  );
 }
 
 export function visibleAgentGroups(groups: SkillGroup[]): SkillGroup[] {

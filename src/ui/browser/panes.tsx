@@ -19,7 +19,7 @@ import { browseTagOffset } from './browse-session.js';
 import { listViewportBudget, masterDetailSeparator } from './layout.js';
 import { t } from '../../i18n/index.js';
 import { Clickable } from '../components/mouse/clickable.js';
-import { padColumns, sliceColumns } from '../components/terminal-layout.js';
+import { padColumns, sliceColumns, textWidth } from '../components/terminal-layout.js';
 import { termcnColors, WorkingSpinner } from '../components/termcn.js';
 
 export function masterDetailBlankRow(
@@ -385,6 +385,17 @@ function DetailColumnRow({
   selected?: boolean;
   labelWidth: number;
 }): ReactNode {
+  if (row.action) {
+    const chip = sliceColumns(row.text, 0, width);
+    return (
+      <Text
+        color={termcnColors.primary}
+        bold
+      >
+        {chip}
+      </Text>
+    );
+  }
   if (selected) {
     return (
       <Text
@@ -555,6 +566,7 @@ export function MasterDetailBody({
                 (() => {
                   const detailRow = detailRows[index]!;
                   const fieldSelected =
+                    !detailRow.action &&
                     detailActive &&
                     detailRow.field !== undefined &&
                     detailRow.field === detailActiveField;
@@ -566,6 +578,17 @@ export function MasterDetailBody({
                       labelWidth={detailLabelWidth}
                     />
                   );
+                  if (onDetailLineClick && detailRow.action) {
+                    const chipWidth = Math.max(
+                      1,
+                      Math.min(peekWidth, textWidth(detailRow.text) || 1)
+                    );
+                    return (
+                      <box width={chipWidth} flexShrink={0}>
+                        <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
+                      </box>
+                    );
+                  }
                   return onDetailLineClick && detailRow.field ? (
                     <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
                   ) : (
