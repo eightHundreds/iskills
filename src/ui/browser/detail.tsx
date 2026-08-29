@@ -8,6 +8,7 @@ import { useOverlayBusy } from '../overlay/host.js';
 import { termcnColors } from '../components/termcn.js';
 import { Clickable } from '../components/mouse/clickable.js';
 import { isReturn } from '../components/text.js';
+import { centerStart, textWidth } from '../components/terminal-layout.js';
 import { copySkillDiskPath } from './copy-path.js';
 import { detailContentLines, isGitHubSourceUrl } from './format.js';
 import { detailFrameDimensions } from './layout.js';
@@ -47,6 +48,9 @@ export function Detail({
   const offset = Math.min(detailOffset, maxOffset);
   const visibleLines = lines.slice(offset, offset + viewportHeight);
   const shellBusy = useOverlayBusy();
+  const copyPathLabel = t('browser.copyPath');
+  const copyPathWidth = Math.max(1, textWidth(copyPathLabel));
+  const copyPathLead = centerStart(copyPathWidth, detailFrame.width);
   const copyPath = (): void => {
     void copySkillDiskPath(store, skill.path);
   };
@@ -109,11 +113,16 @@ export function Detail({
           return text;
         })}
       </box>
-      <Clickable onClick={copyPath}>
-        <Text color={termcnColors.primary} bold>
-          {t('browser.copyPath')}
-        </Text>
-      </Clickable>
+      <box flexDirection="row" width={detailFrame.width}>
+        {copyPathLead > 0 ? <Text>{' '.repeat(copyPathLead)}</Text> : null}
+        <box width={copyPathWidth} flexShrink={0}>
+          <Clickable onClick={copyPath}>
+            <Text color={termcnColors.primary} bold>
+              {copyPathLabel}
+            </Text>
+          </Clickable>
+        </box>
+      </box>
     </box>
   );
 }

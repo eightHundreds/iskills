@@ -19,7 +19,7 @@ import { browseTagOffset } from './browse-session.js';
 import { listViewportBudget, masterDetailSeparator } from './layout.js';
 import { t } from '../../i18n/index.js';
 import { Clickable } from '../components/mouse/clickable.js';
-import { padColumns, sliceColumns, textWidth } from '../components/terminal-layout.js';
+import { centerStart, padColumns, sliceColumns, textWidth } from '../components/terminal-layout.js';
 import { termcnColors, WorkingSpinner } from '../components/termcn.js';
 
 export function masterDetailBlankRow(
@@ -583,9 +583,13 @@ export function MasterDetailBody({
                       1,
                       Math.min(peekWidth, textWidth(detailRow.text) || 1)
                     );
+                    const lead = centerStart(chipWidth, peekWidth);
                     return (
-                      <box width={chipWidth} flexShrink={0}>
-                        <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
+                      <box flexDirection="row" width={peekWidth}>
+                        {lead > 0 ? <Text>{' '.repeat(lead)}</Text> : null}
+                        <box width={chipWidth} flexShrink={0}>
+                          <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
+                        </box>
                       </box>
                     );
                   }

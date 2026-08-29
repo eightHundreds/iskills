@@ -30,6 +30,11 @@ export function padColumns(value: string, width: number): string {
   return `${value}${' '.repeat(Math.max(0, width - textWidth(value)))}`;
 }
 
+/** Leading columns that place `contentWidth` in the center of `containerWidth`. */
+export function centerStart(contentWidth: number, containerWidth: number): number {
+  return Math.max(0, Math.floor((containerWidth - contentWidth) / 2));
+}
+
 export function wrapColumns(value: string, width: number): string[] {
   if (!value) return [''];
   const lines: string[] = [];
