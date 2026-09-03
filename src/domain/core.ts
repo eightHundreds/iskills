@@ -365,6 +365,11 @@ export function normalizeGitRepositoryIdentity(value: string): string {
   }
 }
 
+/** Git provenance that can be tracked or unbound (type git plus a repository URL). */
+export function isBoundGitSource(source: SkillSource | undefined): boolean {
+  return source?.type === 'git' && Boolean(source.url);
+}
+
 export function sameGitIdentity(current: SkillMetadata, incoming: SkillMetadata): boolean {
   return current.source.type === 'git' &&
     incoming.source.type === 'git' &&

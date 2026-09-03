@@ -203,6 +203,8 @@ import / add 选项：
   'domain.noUsageInScope': '当前范围没有使用技能：{name}',
   'domain.usageNotExpectedLink': '使用位置已不是预期软链，未删除：{path}',
   'domain.notInCollection': '收藏夹中不存在：{name}',
+  'domain.sourceNotBound': '该技能没有可解绑的 Git 来源：{name}',
+  'domain.unbindFailedRollback': '解绑来源失败：{error}；回滚失败：{rollback}',
   'domain.removeNeedsConfirm': '删除收藏需要确认',
   'domain.removedWithRestore': '已从收藏夹移除 {name}，并还回 {path}。',
   'domain.removed': '已从收藏夹移除 {name}。',
@@ -450,6 +452,24 @@ import / add 选项：
   'health.gitDivergedDetail': '可按 s 同步；若仍失败请在收藏夹目录用 Git 处理',
   'health.sourceConflict': '技能 {skill} 更新待解决',
   'health.sourceConflictDetail': '解决冲突工作区后重新进入应用或等待启动收尾',
+  'health.repairIntro':
+    '把下列 iskills 收藏夹问题处理到完成标准。来源更新冲突只在冲突工作区里做 Git 合并；工作区干净后由 iskills 写入正在使用的技能，无需手工拷贝。',
+  'health.repairCollection': '收藏夹目录：{root}',
+  'health.repairSourceTitle': '技能 {skill}：来源更新冲突',
+  'health.repairSourceWorkspace': '在冲突工作区完成三方 Git 合并：{path}',
+  'health.repairSourceLive': '正在使用的技能目录由 iskills 在工作区干净后写入：{path}',
+  'health.repairSourceShape':
+    '冲突工作区是独立 Git 仓库：当前检出为收藏夹里的本地树，remote 分支是上游更新，base 是上次收藏基线。把 remote 合并进当前分支。',
+  'health.repairSourceIncoming': '即将合并的来源：{source}',
+  'health.repairSourceUnmerged': '当前未合并文件：',
+  'health.repairSourceDone':
+    '完成标准：在冲突工作区执行 git diff --name-only --diff-filter=U 与 git status --porcelain 均为空，且 git rev-parse MERGE_HEAD 失败（没有进行中的 merge）。然后 git commit 结束合并。之后重新打开 iskills 或等待启动收尾。',
+  'health.repairGitRebaseDone':
+    '在收藏夹目录完成 rebase（解决后 git rebase --continue）或 git rebase --abort：{root}',
+  'health.repairGitMergeDone':
+    '在收藏夹目录完成 merge（解决后 git commit）或 git merge --abort：{root}',
+  'health.repairGitDivergedDone':
+    '优先在 iskills 主界面按 s 同步。若仍失败，在收藏夹目录用 Git 处理与 origin 的分叉：{root}',
 
   // ── browser ─────────────────────────────────────────────────────────────
   'browser.healthTitle': '告警',
@@ -463,6 +483,14 @@ import / add 选项：
   'browser.copyPath': '复制路径',
   'browser.pathCopied': '已复制路径',
   'browser.copyPathFailed': '复制路径失败',
+  'browser.unbindSource': '解绑来源',
+  'browser.unbindSourceTitle': '解绑来源',
+  'browser.unbindSourceConfirm':
+    '解绑 {name} 的来源后，将不再检测该仓库更新。技能仍留在收藏夹。',
+  'browser.unbindSourceDone': '已解绑来源',
+  'browser.copyForAgent': '复制给 Agent',
+  'browser.copyForAgentCopied': '已复制，可贴给其他 Agent',
+  'browser.copyForAgentFailed': '复制给 Agent 失败',
   'browser.selectedSkills': '已选择 {count} 个技能',
   'browser.skillLine': '技能：{names}',
   'browser.importCollectionTitle': '加入收藏夹',
@@ -500,7 +528,7 @@ import / add 选项：
   'browser.helpNav': '导航',
   'browser.helpNavMove': '移动焦点或列表项',
   'browser.helpNavTab': '切换当前层级 Tab',
-  'browser.helpNavDetail': '收藏夹：窄屏打开详情；三栏进入详情列（项目/全局右栏仅预览）',
+  'browser.helpNavDetail': '收藏夹：窄屏打开详情（↑/↓ 切换可编辑字段）；三栏进入详情列（项目/全局右栏仅预览）',
   'browser.helpNavFilter': '筛选技能',
   'browser.helpNavGroup': '跳转到标签列 / 分组（有标签时）',
   'browser.helpSelect': '选择',

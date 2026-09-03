@@ -211,6 +211,9 @@ Options:
   'domain.usageNotExpectedLink':
     'Usage path is not the expected symlink; not deleted: {path}',
   'domain.notInCollection': 'Not in collection: {name}',
+  'domain.sourceNotBound': 'Skill has no Git source to unbind: {name}',
+  'domain.unbindFailedRollback':
+    'Failed to unbind source: {error}; rollback failed: {rollback}',
   'domain.removeNeedsConfirm': 'Removing from collection requires confirmation',
   'domain.removedWithRestore': 'Removed {name} from collection and restored {path}.',
   'domain.removed': 'Removed {name} from collection.',
@@ -478,6 +481,24 @@ Options:
   'health.gitDivergedDetail': 'Press s to sync; if it still fails, resolve with Git in the collection directory',
   'health.sourceConflict': 'Skill update pending: {skill}',
   'health.sourceConflictDetail': 'Resolve the conflict workspace, then reopen the app or wait for startup finalize',
+  'health.repairIntro':
+    'Bring the following iskills collection issues to their completion criteria. For a source update conflict, finish the Git merge only in the conflict workspace; iskills writes the live skill once that workspace is clean — no manual copy.',
+  'health.repairCollection': 'Collection directory: {root}',
+  'health.repairSourceTitle': 'Skill {skill}: source update conflict',
+  'health.repairSourceWorkspace': 'Complete the three-way Git merge in the conflict workspace: {path}',
+  'health.repairSourceLive': 'iskills writes the in-use skill directory after the workspace is clean: {path}',
+  'health.repairSourceShape':
+    'The conflict workspace is its own Git repo: the current checkout is the local collection tree, branch remote is the upstream update, and base is the last collected baseline. Merge remote into the current branch.',
+  'health.repairSourceIncoming': 'Incoming source: {source}',
+  'health.repairSourceUnmerged': 'Currently unmerged files:',
+  'health.repairSourceDone':
+    'Done when, in the conflict workspace, git diff --name-only --diff-filter=U and git status --porcelain are empty, and git rev-parse MERGE_HEAD fails (no merge in progress). Then git commit to finish the merge. Reopen iskills or wait for startup finalize.',
+  'health.repairGitRebaseDone':
+    'Finish the rebase in the collection directory (git rebase --continue after resolving) or git rebase --abort: {root}',
+  'health.repairGitMergeDone':
+    'Finish the merge in the collection directory (git commit after resolving) or git merge --abort: {root}',
+  'health.repairGitDivergedDone':
+    'Prefer s to sync in the iskills main TUI. If that still fails, resolve the divergence from origin with Git in the collection directory: {root}',
 
   // ── browser ─────────────────────────────────────────────────────────────
   'browser.healthTitle': 'Alerts',
@@ -491,6 +512,14 @@ Options:
   'browser.copyPath': 'Copy path',
   'browser.pathCopied': 'Path copied',
   'browser.copyPathFailed': 'Failed to copy path',
+  'browser.unbindSource': 'Unbind source',
+  'browser.unbindSourceTitle': 'Unbind source',
+  'browser.unbindSourceConfirm':
+    'After unbinding {name}, this collection skill will no longer check that repository for updates. The skill stays in the collection.',
+  'browser.unbindSourceDone': 'Source unbound',
+  'browser.copyForAgent': 'Copy for Agent',
+  'browser.copyForAgentCopied': 'Copied — paste into another agent',
+  'browser.copyForAgentFailed': 'Failed to copy for Agent',
   'browser.selectedSkills': 'Selected {count} skill(s)',
   'browser.skillLine': 'Skill: {names}',
   'browser.importCollectionTitle': 'Add to collection',
@@ -531,7 +560,7 @@ Options:
   'browser.helpNavMove': 'Move focus or list item',
   'browser.helpNavTab': 'Switch tab at current level',
   'browser.helpNavDetail':
-    'Collection: open detail on narrow screens; enter detail column in three-pane (project/global right column is preview only)',
+    'Collection: open detail on narrow screens (↑/↓ moves editable fields); enter detail column in three-pane (project/global right column is preview only)',
   'browser.helpNavFilter': 'Filter skills',
   'browser.helpNavGroup': 'Jump to tag column / groups (when tags exist)',
   'browser.helpSelect': 'Selection',

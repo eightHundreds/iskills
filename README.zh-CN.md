@@ -115,7 +115,7 @@ iskills mcp
 | --- | --- |
 | 收藏根目录 | `$XDG_CONFIG_HOME/iskills`；未设置时为 `~/.config/iskills` |
 | Git | 可选。收藏夹本身是 Git 仓库时，变更会自动提交，并可异步同步 |
-| 来源冲突 | 收藏夹下 `.local/conflicts` — 用编辑器 + Git 手动解决 |
+| 来源冲突 | 收藏夹下 `.local/conflicts` — 用编辑器 + Git 手动解决，或在告警里「复制给 Agent」交给其他 Agent |
 
 提交合并结果后，下次启动主 TUI（或运行保留的收藏操作）会自动应用。冲突内容不会写入正在使用的技能。
 

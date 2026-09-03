@@ -3,11 +3,13 @@
  * Column/row strings, filters, modal copy, detail text model.
  */
 import type { DetailFieldId, SkillGroup } from './types.js';
+import type { FooterItem } from '../footer/types.js';
 import { matchesSkill } from '../../domain/skill-query.js';
-import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
+import type { Skill, SkillLink, SkillMetadata } from '../../domain/types.js';
 import { skillFieldLabels } from '../skill-labels.js';
 import { t } from '../../i18n/index.js';
 import { padColumns, sliceColumns, textWidth, wrapColumns } from '../components/terminal-layout.js';
+import { peekActionChips, type DetailActionChip } from './detail-actions.js';
 
 export {
   focusAfterDownFromAgents,
@@ -246,28 +248,149 @@ export function detailContentLines(
     ];
   }
 
+  const tagged = (field: DetailFieldId, rows: DetailContentLine[]): DetailContentLine[] =>
+    rows.map((line) => ({ ...line, field }));
   const sourceLines = detailFieldLines(skillFieldLabels().source, source, width);
   lines.push(
-    ...detailFieldLines(skillFieldLabels().tags, metadata.tags.length ? metadata.tags.join(', ') : t('common.none'), width),
-    ...detailFieldLines(skillFieldLabels().note, metadata.note || t('common.none'), width),
-    ...(isGitHubSourceUrl(metadata.source.url)
-      ? sourceLines.map((line) => ({ ...line, field: 'source' as const }))
-      : sourceLines)
+    ...tagged(
+      'tags',
+      detailFieldLines(skillFieldLabels().tags, metadata.tags.length ? metadata.tags.join(', ') : t('common.none'), width)
+    ),
+    ...tagged(
+      'note',
+      detailFieldLines(skillFieldLabels().note, metadata.note || t('common.none'), width)
+    ),
+    ...(isGitHubSourceUrl(metadata.source.url) ? tagged('source', sourceLines) : sourceLines)
   );
   if (metadata.source.path) {
     lines.push(...detailFieldLines(skillFieldLabels().path, metadata.source.path, width));
   }
-  lines.push({ label: skillFieldLabels().relatedLocations, value: '' });
-  if (!links.length) return [...lines, { value: t('common.noneIndented'), muted: true }];
-  return [
-    ...lines,
-    ...links.flatMap((link) => detailFieldLines(
-      link.kind === 'origin' ? t('common.originIndented') : link.kind === 'usage' ? t('common.usageIndented') : t('common.dependentIndented'),
+  lines.push(
+    ...tagged('location', detailFieldLines(skillFieldLabels().location, skill.path, width))
+  );
+  const related = detailFieldLines(
+    skillFieldLabels().relatedLocations,
+    String(links.length),
+    width
+  );
+  lines.push(...(links.length ? tagged('relatedLocations', related) : related));
+  return lines;
+}
+
+/** Full list of origin / usage / dependent paths (fullscreen related-locations pane). */
+export function relatedLocationLines(
+  links: SkillLink[],
+  frameWidth: number
+): DetailContentLine[] {
+  const width = Math.max(1, frameWidth - 4);
+  if (!links.length) return [{ value: t('common.none'), muted: true }];
+  return links.flatMap((link) =>
+    detailFieldLines(
+      link.kind === 'origin'
+        ? t('common.origin')
+        : link.kind === 'usage'
+          ? t('common.usage')
+          : t('common.dependent'),
       link.path,
       width,
       true
-    )),
-  ];
+    )
+  );
+}
+
+/** Unique activatable fields in visual order (fullscreen collection detail). */
+export function fieldsInDetailLines(
+  lines: readonly Pick<DetailContentLine, 'field'>[]
+): DetailFieldId[] {
+  const fields: DetailFieldId[] = [];
+  for (const line of lines) {
+    const field = line.field;
+    if (!field) continue;
+    if (fields.includes(field)) continue;
+    fields.push(field);
+  }
+  return fields;
+}
+
+export function firstLineIndexForField(
+  lines: readonly Pick<DetailContentLine, 'field'>[],
+  field: DetailFieldId | undefined
+): number {
+  if (!field) return 0;
+  const index = lines.findIndex((line) => line.field === field);
+  return index < 0 ? 0 : index;
+}
+
+/** Keep a content line inside the fullscreen detail viewport. */
+export function clampDetailOffsetToLine(
+  lineIndex: number,
+  offset: number,
+  viewportHeight: number,
+  maxOffset: number
+): number {
+  const view = Math.max(1, viewportHeight);
+  if (lineIndex < offset) return Math.max(0, Math.min(maxOffset, lineIndex));
+  if (lineIndex >= offset + view) {
+    return Math.max(0, Math.min(maxOffset, lineIndex - view + 1));
+  }
+  return Math.max(0, Math.min(maxOffset, offset));
+}
+
+/**
+ * Fullscreen collection: ↑/↓ moves field focus; at the first/last field
+ * the same keys scroll remaining content. Non-collection: scroll only.
+ */
+export function reduceFullscreenDetailNav(input: {
+  fieldIndex: number;
+  fieldCount: number;
+  offset: number;
+  maxOffset: number;
+  arrow: 'up' | 'down';
+}): { fieldIndex: number; offset: number; fieldChanged: boolean } {
+  const fieldIndex = Math.max(0, Math.min(Math.max(0, input.fieldCount - 1), input.fieldIndex));
+  const offset = Math.max(0, Math.min(input.maxOffset, input.offset));
+  if (input.fieldCount <= 0) {
+    const nextOffset =
+      input.arrow === 'up' ? Math.max(0, offset - 1) : Math.min(input.maxOffset, offset + 1);
+    return { fieldIndex: 0, offset: nextOffset, fieldChanged: false };
+  }
+  if (input.arrow === 'up') {
+    if (fieldIndex > 0) return { fieldIndex: fieldIndex - 1, offset, fieldChanged: true };
+    return { fieldIndex, offset: Math.max(0, offset - 1), fieldChanged: false };
+  }
+  if (fieldIndex < input.fieldCount - 1) {
+    return { fieldIndex: fieldIndex + 1, offset, fieldChanged: true };
+  }
+  return { fieldIndex, offset: Math.min(input.maxOffset, offset + 1), fieldChanged: false };
+}
+
+/** Keys for the fullscreen skill-detail phase (replaces the browse footer). */
+export function fullscreenDetailFooterItems(
+  collection: boolean,
+  detailField: DetailFieldId | undefined,
+  relatedLocationCount = 0
+): FooterItem[] {
+  const items: FooterItem[] = [];
+  if (collection) {
+    items.push({ key: '↑↓', label: t('common.move') });
+    const field = detailField ?? 'tags';
+    const canOpenRelated = relatedLocationCount > 0;
+    if (field === 'relatedLocations' && canOpenRelated) {
+      items.push({ key: 'Enter/→', label: t('common.relatedLocations') });
+    } else {
+      if (field === 'source') items.push({ key: 'Enter', label: t('common.enter') });
+      else if (field === 'location') items.push({ key: 'Enter', label: t('common.copy') });
+      else items.push({ key: 'Enter', label: t('common.edit') });
+      if (canOpenRelated) items.push({ key: '→', label: t('common.relatedLocations') });
+    }
+    items.push(
+      { key: 'n', label: t('common.note') },
+      { key: 't', label: t('common.tags') },
+      { key: 's', label: t('common.source') },
+    );
+  }
+  items.push({ key: 'Esc', label: t('common.back') });
+  return items;
 }
 
 /** One shortcut binding for the interactive help panel. */
@@ -397,7 +520,7 @@ export function formatGitSourceLabel(url: string): string {
   return `${brand}: ${path}`;
 }
 
-export function collectionSourceLabel(skill: CollectedSkill): string {
+export function collectionSourceLabel(skill: Pick<Skill, 'source'>): string {
   const source = skill.source;
   if (!source) return t('common.unknown');
   if (source.type === 'git' && source.url) return formatGitSourceLabel(source.url);
@@ -407,7 +530,7 @@ export function collectionSourceLabel(skill: CollectedSkill): string {
   return source.type;
 }
 
-export function collectionVersionLabel(skill: CollectedSkill): string | undefined {
+export function collectionVersionLabel(skill: Pick<Skill, 'source'>): string | undefined {
   const version = skill.source?.commit ?? skill.source?.ref;
   return version?.trim() || undefined;
 }
@@ -599,7 +722,9 @@ export function collectionListColumnLines(
   };
 }
 
-export interface CollectionDetailRow {
+export interface CollectionDetailFieldRow {
+  /** Discriminant: omitted/false = field row (vs action chip row). */
+  action?: false;
   /** Value text, or full-line text when `label` is omitted. */
   text: string;
   /** Optional field label; rendered muted and left-padded to a fixed width. */
@@ -610,9 +735,14 @@ export interface CollectionDetailRow {
   primary?: boolean;
   /** Marks a focusable field row in the right column (all wrapped lines share id). */
   field?: DetailFieldId;
-  /** Compact chip (e.g. copy path): clickable text only, not the full column. */
-  action?: boolean;
 }
+
+export interface CollectionDetailActionRow {
+  action: true;
+  chips: DetailActionChip[];
+}
+
+export type CollectionDetailRow = CollectionDetailFieldRow | CollectionDetailActionRow;
 
 /**
  * Fixed label column width for the master-detail peek pane.
@@ -634,21 +764,10 @@ export function detailLabelWidth(): number {
   return Math.max(6, ...labels.map((label) => textWidth(label))) + 1;
 }
 
-/** Peek-column action chip: copy the current skill disk path. */
-export function peekCopyPathRow(): CollectionDetailRow {
-  return {
-    text: t('browser.copyPath'),
-    field: 'copyPath',
-    action: true,
-    primary: true,
-    bold: true,
-  };
-}
-
 /** Pin an action row to the bottom of the peek column; pad so it does not sit on content. */
 export function pinPeekAction(
   content: CollectionDetailRow[],
-  action: CollectionDetailRow,
+  action: CollectionDetailActionRow,
   viewportHeight: number
 ): CollectionDetailRow[] {
   if (viewportHeight <= 1) return content.slice(0, Math.max(0, viewportHeight));
@@ -667,7 +786,7 @@ export function peekFieldRows(
   width: number,
   maxLines: number,
   options: { mutedValue?: boolean; field?: DetailFieldId } = {}
-): CollectionDetailRow[] {
+): CollectionDetailFieldRow[] {
   const valueWidth = Math.max(1, width - detailLabelWidth());
   const lines = wrapColumns(value || t('common.none'), valueWidth).slice(0, maxLines);
   return lines.map((line, index) => ({
@@ -711,20 +830,19 @@ export function browseDetailRows(
       };
   const rows: CollectionDetailRow[] = [title];
   if (collection) {
-    const collected = skill as CollectedSkill;
-    const version = collectionVersionLabel(collected) ?? '--';
-    const triggerTags = collected.tags?.length
-      ? collected.tags.map((tag) => `[${tag}]`).join(' ')
+    const version = collectionVersionLabel(skill) ?? '--';
+    const triggerTags = skill.tags?.length
+      ? skill.tags.map((tag) => `[${tag}]`).join(' ')
       : '--';
-    const note = collected.note?.trim() || t('common.none');
+    const note = skill.note?.trim() || t('common.none');
     // Compact metadata block: no interstitial blanks so fields share one visual group.
     rows.push(
       ...peekFieldRows(
         t('common.source'),
-        collectionSourceLabel(collected),
+        collectionSourceLabel(skill),
         width,
         1,
-        isGitHubSourceUrl(collected.source?.url) ? { field: 'source' } : {}
+        isGitHubSourceUrl(skill.source?.url) ? { field: 'source' } : {}
       ),
       ...peekFieldRows(t('common.version'), version, width, 1),
       ...peekFieldRows(t('common.tags'), triggerTags, width, 2, { field: 'tags' }),
@@ -753,7 +871,10 @@ export function browseDetailRows(
         mutedValue: true,
       }),
     ],
-    peekCopyPathRow(),
+    {
+      action: true,
+      chips: peekActionChips(collection, collection ? skill.source : undefined),
+    },
     viewportHeight
   );
 }

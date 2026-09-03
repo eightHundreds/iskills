@@ -7,8 +7,19 @@ import type { CollectedSkill, Skill, SkillLink, SkillMetadata } from '../../doma
 export type BrowserTab = 'project' | 'collection' | 'global';
 /** tags/list/detail = 3-column body; detail = right peek field focus. */
 export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
-/** Focusable fields in the master-detail right column (collection only). copyPath is click-only. */
-export type DetailFieldId = 'source' | 'tags' | 'note' | 'name' | 'login' | 'secrets' | 'copyPath';
+/** Focusable fields in the collection detail (peek + fullscreen). */
+export type DetailFieldId =
+  | 'source'
+  | 'tags'
+  | 'note'
+  | 'name'
+  | 'login'
+  | 'secrets'
+  | 'relatedLocations'
+  | 'location';
+
+/** Click-only peek / fullscreen chips; not ↑/↓ fields. */
+export type DetailActionId = 'copyPath' | 'unbindSource';
 
 /** In-browser long action shown in the footer right slot. */
 export type BrowserWorkingAction = 'update' | 'materialize' | 'sync' | 'openSource';
@@ -45,6 +56,7 @@ export type BrowserResult =
   | { type: 'installToAgents'; skills: Skill[]; scope: 'project' | 'global' }
   | { type: 'import'; skills: Skill[] }
   | { type: 'openSource'; skill: Skill }
+  | { type: 'unbindSource'; skill: Skill }
   | {
       type: 'open';
       skill: Skill;

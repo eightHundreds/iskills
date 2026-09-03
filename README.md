@@ -115,7 +115,7 @@ Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `
 | --- | --- |
 | Collection root | `$XDG_CONFIG_HOME/iskills`, or `~/.config/iskills` if unset |
 | Git | Optional. When the collection is a Git repo, changes are auto-committed and can sync asynchronously |
-| Source conflicts | `.local/conflicts` under the collection — resolve with an editor + Git |
+| Source conflicts | `.local/conflicts` under the collection — resolve with an editor + Git, or copy a handoff from Alerts via **Copy for Agent** |
 
 After you commit a merge resolution, the next main TUI start (or a retained collection command) applies the result. Active in-use skills are never overwritten by conflict material.
 

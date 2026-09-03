@@ -30,6 +30,7 @@ import {
   materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
+  unbindCollectedSkillSource,
 } from '../domain/collection-write.js';
 import {
   canonicalizePath,
@@ -201,6 +202,9 @@ export async function handleBrowserResult(
       break;
     case 'openSource':
       await handleOpenCollectedGitHubSource(host, result.skill);
+      break;
+    case 'unbindSource':
+      await handleUnbindSource(host, result.skill.name);
       break;
     default:
       break;
@@ -576,6 +580,13 @@ async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<v
     await presentActionFailure(host, error, true);
   }
   host.setNavigation({ ...host.getNavigation(), selected: [] });
+}
+
+export async function handleUnbindSource(host: BrowserActionHost, skillName: string): Promise<void> {
+  await unbindCollectedSkillSource(skillName);
+  host.setStatus(t('browser.unbindSourceDone'), true, 'normal');
+  host.markSkillsCurrent([skillName]);
+  host.discardStaleUpdateCheck();
 }
 
 export async function handleDetailAction(

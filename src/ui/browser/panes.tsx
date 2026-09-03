@@ -5,16 +5,19 @@
 import type { MouseEvent } from '@opentui/core';
 import { Text, useStdout } from '../tui/index.js';
 import { useCallback, type ReactNode } from 'react';
-import type { DetailFieldId } from './types.js';
+import type { DetailActionId, DetailFieldId } from './types.js';
 import {
   collectionCategoryLines,
   detailLabelWidth,
   listSkillSummary,
   type BrowseListItem,
   type BrowseTagOption,
+  type CollectionDetailFieldRow,
   type CollectionDetailRow,
   type SkillRow,
 } from './format.js';
+import { DetailActionChipRow } from './detail-action-chips.js';
+import { detailActionChipsWidth } from './detail-actions.js';
 import { browseTagOffset } from './browse-session.js';
 import { listViewportBudget, masterDetailSeparator } from './layout.js';
 import { t } from '../../i18n/index.js';
@@ -380,22 +383,11 @@ function DetailColumnRow({
   selected = false,
   labelWidth,
 }: {
-  row: CollectionDetailRow;
+  row: CollectionDetailFieldRow;
   width: number;
   selected?: boolean;
   labelWidth: number;
 }): ReactNode {
-  if (row.action) {
-    const chip = sliceColumns(row.text, 0, width);
-    return (
-      <Text
-        color={termcnColors.primary}
-        bold
-      >
-        {chip}
-      </Text>
-    );
-  }
   if (selected) {
     return (
       <Text
@@ -464,6 +456,7 @@ export function MasterDetailBody({
   onTagLineClick,
   onListLineClick,
   onDetailLineClick,
+  onDetailChipClick,
   onListScroll,
 }: {
   tagLines: string[];
@@ -485,6 +478,7 @@ export function MasterDetailBody({
   onTagLineClick?: (visibleIndex: number) => void;
   onListLineClick?: (visibleIndex: number) => void;
   onDetailLineClick?: (visibleIndex: number) => void;
+  onDetailChipClick?: (chip: DetailActionId) => void;
   onListScroll?: (delta: number) => void;
 }): ReactNode {
   const rows = Math.max(tagLines.length, listLines.length);
@@ -565,8 +559,24 @@ export function MasterDetailBody({
               {detailRows?.[index] ? (
                 (() => {
                   const detailRow = detailRows[index]!;
+                  if (detailRow.action === true) {
+                    const chips = detailRow.chips;
+                    const barWidth = Math.max(
+                      1,
+                      Math.min(peekWidth, detailActionChipsWidth(chips) || 1)
+                    );
+                    const lead = centerStart(barWidth, peekWidth);
+                    return (
+                      <box flexDirection="row" width={peekWidth}>
+                        {lead > 0 ? <Text>{' '.repeat(lead)}</Text> : null}
+                        <DetailActionChipRow
+                          chips={chips}
+                          onChip={(chip) => onDetailChipClick?.(chip)}
+                        />
+                      </box>
+                    );
+                  }
                   const fieldSelected =
-                    !detailRow.action &&
                     detailActive &&
                     detailRow.field !== undefined &&
                     detailRow.field === detailActiveField;
@@ -578,21 +588,6 @@ export function MasterDetailBody({
                       labelWidth={detailLabelWidth}
                     />
                   );
-                  if (onDetailLineClick && detailRow.action) {
-                    const chipWidth = Math.max(
-                      1,
-                      Math.min(peekWidth, textWidth(detailRow.text) || 1)
-                    );
-                    const lead = centerStart(chipWidth, peekWidth);
-                    return (
-                      <box flexDirection="row" width={peekWidth}>
-                        {lead > 0 ? <Text>{' '.repeat(lead)}</Text> : null}
-                        <box width={chipWidth} flexShrink={0}>
-                          <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
-                        </box>
-                      </box>
-                    );
-                  }
                   return onDetailLineClick && detailRow.field ? (
                     <Clickable onClick={() => onDetailLineClick(index)}>{cell}</Clickable>
                   ) : (
@@ -635,6 +630,7 @@ export function MasterDetailHome({
   onTagLineClick,
   onListLineClick,
   onDetailLineClick,
+  onDetailChipClick,
   onListScroll,
 }: {
   tagWidth: number;
@@ -654,6 +650,7 @@ export function MasterDetailHome({
   onTagLineClick?: (visibleIndex: number) => void;
   onListLineClick?: (visibleIndex: number) => void;
   onDetailLineClick?: (visibleIndex: number) => void;
+  onDetailChipClick?: (chip: DetailActionId) => void;
   onListScroll?: (delta: number) => void;
 }): ReactNode {
   const headerLine = (left: string, middle: string, right: string): ReactNode => (
@@ -704,6 +701,7 @@ export function MasterDetailHome({
         {...(onTagLineClick ? { onTagLineClick } : {})}
         {...(onListLineClick ? { onListLineClick } : {})}
         {...(onDetailLineClick ? { onDetailLineClick } : {})}
+        {...(onDetailChipClick ? { onDetailChipClick } : {})}
         {...(onListScroll ? { onListScroll } : {})}
       />
       <Text color={termcnColors.border} wrap="truncate-end">
@@ -734,6 +732,7 @@ export function BrowseHomePane({
   onTagIndex,
   onListIndex,
   onDetailLine,
+  onDetailChipClick,
   onListScroll,
 }: {
   tagOptions: BrowseTagOption[];
@@ -755,6 +754,7 @@ export function BrowseHomePane({
   onTagIndex: (index: number) => void;
   onListIndex: (index: number) => void;
   onDetailLine: (visibleIndex: number) => void;
+  onDetailChipClick?: (chip: DetailActionId) => void;
   onListScroll: (delta: number) => void;
 }): ReactNode {
   const tagOffset = browseTagOffset(tagCursor, tagOptions.length, viewportHeight);
@@ -791,6 +791,7 @@ export function BrowseHomePane({
         onListIndex(index);
       }}
       onDetailLineClick={onDetailLine}
+      {...(onDetailChipClick ? { onDetailChipClick } : {})}
       onListScroll={onListScroll}
     />
   );

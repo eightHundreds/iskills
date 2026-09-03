@@ -21,6 +21,7 @@ import {
   ensureCollection,
   errorMessage,
   exists,
+  isBoundGitSource,
   isExactSymlink,
   metadataPath,
   moveDirectory,
@@ -33,7 +34,14 @@ import {
   writeMetadata,
   writeState,
 } from './core.js';
-import type { CollectionState, GitSource, Skill, SkillLink, SkillMetadata } from './types.js';
+import type {
+  CollectionState,
+  GitSource,
+  Skill,
+  SkillLink,
+  SkillMetadata,
+  SourceConflict,
+} from './types.js';
 import { DomainError, domainNotify } from './errors.js';
 
 export interface ReplacementInput {
@@ -324,6 +332,27 @@ export async function adoptCollectionSkillsMissingMetadata(
 
 export type ReplaceCommitResult = 'ok' | 'deferred' | 'failed';
 
+/** Drop source-update conflicts for one skill; callers own workspace cleanup. */
+export function dropSourceConflicts(
+  state: CollectionState,
+  name: string
+): { state: CollectionState; dropped: SourceConflict[] } {
+  const dropped = state.conflicts.filter(
+    (conflict): conflict is SourceConflict =>
+      conflict.type === 'source' && conflict.skill === name
+  );
+  if (!dropped.length) return { state, dropped };
+  return {
+    state: {
+      ...state,
+      conflicts: state.conflicts.filter(
+        (conflict) => conflict.type !== 'source' || conflict.skill !== name
+      ),
+    },
+    dropped,
+  };
+}
+
 // Replaces one collected Skill while keeping its tree, metadata, links and baseline coherent.
 /** @returns deferred when commit:false; failed when commit soft-failed; ok otherwise. */
 export async function replaceCollectionSkill(
@@ -377,11 +406,12 @@ export async function replaceCollectionSkill(
     if (input.metadata.source.type === 'git' && !input.metadata.source.commit) {
       await cp(target, baseline, { recursive: true });
     }
+    const { state: withoutSourceConflicts, dropped } = dropSourceConflicts(state, input.name);
     const nextState: CollectionState = {
-      links: state.links.filter((link) => link.skill !== input.name || link.kind === 'usage'),
-      conflicts: state.conflicts.filter(
-        (conflict) => conflict.type !== 'source' || conflict.skill !== input.name
+      links: withoutSourceConflicts.links.filter(
+        (link) => link.skill !== input.name || link.kind === 'usage'
       ),
+      conflicts: withoutSourceConflicts.conflicts,
     };
     if (input.local) {
       nextState.links.push({ skill: input.name, path: input.local.source, kind: 'origin' });
@@ -400,12 +430,10 @@ export async function replaceCollectionSkill(
         ? 'ok'
         : 'failed';
     }
-    for (const conflict of state.conflicts) {
-      if (conflict.type === 'source' && conflict.skill === input.name) {
-        await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
-          domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
-        });
-      }
+    for (const conflict of dropped) {
+      await rm(conflict.path, { recursive: true, force: true }).catch((error) => {
+        domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
+      });
     }
     await rm(transaction, { recursive: true, force: true }).catch((error) => {
       domainNotify('domain.warnReplaceBackupCleanup', { error: errorMessage(error) });
@@ -498,15 +526,12 @@ export async function removeFromCollection(
   }
   await rm(metadataPath(name), { force: true });
   await rm(baselinePath(name), { recursive: true, force: true });
-  for (const conflict of state.conflicts) {
-    if (conflict.type === 'source' && conflict.skill === name) {
-      await rm(conflict.path, { recursive: true, force: true });
-    }
+  const { state: withoutSourceConflicts, dropped } = dropSourceConflicts(state, name);
+  for (const conflict of dropped) {
+    await rm(conflict.path, { recursive: true, force: true });
   }
   state.links = state.links.filter((link) => link.skill !== name);
-  state.conflicts = state.conflicts.filter(
-    (conflict) => conflict.type !== 'source' || conflict.skill !== name
-  );
+  state.conflicts = withoutSourceConflicts.conflicts;
   await writeState(state);
   const commitOk = await commitCollection(`remove ${name}`);
   // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
@@ -519,6 +544,49 @@ export async function removeFromCollection(
       originRestorable && origin ? { name, path: origin.path } : { name },
     );
   }
+}
+
+/**
+ * Drop Git provenance so the collected skill is no longer tracked for updates.
+ * Keeps the skill tree and origin/usage/dependent links.
+ */
+export async function unbindCollectedSkillSource(name: string): Promise<void> {
+  const skillName = assertSkillName(name);
+  const skillPath = join(collectionPaths().skills, skillName);
+  if (!(await exists(skillPath))) throw new DomainError('domain.notInCollection', { name: skillName });
+  const previous = await readMetadata(skillName);
+  if (!isBoundGitSource(previous.source)) {
+    throw new DomainError('domain.sourceNotBound', { name: skillName });
+  }
+  const state = await readState();
+  const { state: nextState, dropped } = dropSourceConflicts(state, skillName);
+  const next: SkillMetadata = { ...previous, source: { type: 'unknown' } };
+  let wroteState = false;
+  try {
+    await writeMetadata(next);
+    if (dropped.length) {
+      await writeState(nextState);
+      wroteState = true;
+    }
+  } catch (error) {
+    try {
+      await writeMetadata(previous);
+      if (wroteState) await writeState(state);
+    } catch (rollbackError) {
+      throw new DomainError('domain.unbindFailedRollback', {
+        error: errorMessage(error),
+        rollback: errorMessage(rollbackError),
+      });
+    }
+    throw error;
+  }
+  await rm(baselinePath(skillName), { recursive: true, force: true });
+  for (const conflict of dropped) {
+    await rm(conflict.path, { recursive: true, force: true }).catch((cleanupError) => {
+      domainNotify('domain.warnConflictCleanup', { error: errorMessage(cleanupError) });
+    });
+  }
+  await commitCollection(`unbind source ${skillName}`);
 }
 
 async function validateMaterializableSkillTree(

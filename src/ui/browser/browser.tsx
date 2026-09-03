@@ -18,6 +18,7 @@ import type {
 import type { CollectedSkill, Skill } from '../../domain/types.js';
 import { presentHealthAlerts } from './health.js';
 import { copySkillDiskPath } from './copy-path.js';
+import { confirmUnbindCollectedSource } from './unbind-source.js';
 import {
   browserDetailFieldAtom,
   browserFilterAtom,
@@ -444,7 +445,7 @@ export function Browser({
       }
       // Health alerts panel (demo seed via browserHealthAtom).
       if (input === '!') {
-        void presentHealthAlerts(store.get(browserHealthAtom));
+        void presentHealthAlerts(store.get(browserHealthAtom), store);
         return;
       }
       if (key.escape || input === 'q') return finish({ type: 'quit' });
@@ -788,20 +789,29 @@ export function Browser({
           }}
           onDetailLine={(visibleIndex) => {
             const row = detailRows[visibleIndex];
-            if (!row?.field) return;
-            if (row.field === 'copyPath' && peekSkill) {
-              void copySkillDiskPath(store as BrowserAppStore, peekSkill.path);
-              return;
-            }
-            const index = detailFields.indexOf(row.field);
+            if (!row || row.action === true || !row.field) return;
+            const actionField = row.field;
+            const index = detailFields.indexOf(actionField);
             if (index < 0) return;
-            if (row.field === 'source' && peekSkill) {
+            if (actionField === 'source' && peekSkill) {
               finish({ type: 'openSource', skill: peekSkill });
               return;
             }
             const liveNav = navigationRef.current;
             if (!liveNav) return;
             applySession(browseSessionClickDetail(liveNav, index));
+          }}
+          onDetailChipClick={(chip) => {
+            if (chip === 'copyPath' && peekSkill) {
+              void copySkillDiskPath(store as BrowserAppStore, peekSkill.path);
+              return;
+            }
+            if (chip === 'unbindSource' && peekSkill) {
+              if (actionBusy) return;
+              void confirmUnbindCollectedSource(peekSkill.name).then((ok) => {
+                if (ok) finish({ type: 'unbindSource', skill: peekSkill });
+              });
+            }
           }}
           onListScroll={(delta) => {
             const liveNav = navigationRef.current;

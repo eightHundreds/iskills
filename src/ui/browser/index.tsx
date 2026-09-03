@@ -10,6 +10,7 @@ import {
   handleBrowserResult,
   handleDetailAction,
   handleOpenCollectedGitHubSource,
+  handleUnbindSource,
   loadBrowserData,
   loadDetailContext,
 } from '../../commands/browser-actions.js';
@@ -262,7 +263,11 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
               }
               return;
             }
-            await handleDetailAction(actionHost, context, action);
+            if (action === 'unbindSource') {
+              await handleUnbindSource(actionHost, context.skill.name);
+            } else {
+              await handleDetailAction(actionHost, context, action);
+            }
             await reloadData();
             const current = store.get(detailContextAtom);
             if (!current) return;

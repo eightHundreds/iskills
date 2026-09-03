@@ -11,7 +11,22 @@ export type CollectionHealthIssue =
   | { id: 'git-rebase'; kind: 'git-rebase' }
   | { id: 'git-merge'; kind: 'git-merge' }
   | { id: 'git-diverged'; kind: 'git-diverged'; branch: string }
-  | { id: string; kind: 'source-conflict'; skill: string };
+  | {
+      id: string;
+      kind: 'source-conflict';
+      skill: string;
+      path: string;
+      sourceUrl: string;
+      sourceRef?: string;
+      sourceCommit?: string;
+    };
+
+/** Unmerged paths in a source-conflict workspace. Empty when git cannot be queried. */
+export function listSourceConflictUnmergedFiles(workspace: string): string[] {
+  const names = gitQuiet(workspace, ['diff', '--name-only', '--diff-filter=U']);
+  if (!names) return [];
+  return names.split(/\r?\n/).filter(Boolean);
+}
 
 function isAncestor(root: string, maybeAncestor: string, maybeDescendant: string): boolean {
   try {
@@ -89,6 +104,10 @@ export async function probeCollectionHealth(): Promise<CollectionHealthIssue[]> 
         id: `source:${conflict.skill}`,
         kind: 'source-conflict',
         skill: conflict.skill,
+        path: conflict.path,
+        sourceUrl: conflict.source.url,
+        ...(conflict.source.ref ? { sourceRef: conflict.source.ref } : {}),
+        ...(conflict.source.commit ? { sourceCommit: conflict.source.commit } : {}),
       });
     }
   } catch {

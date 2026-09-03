@@ -20,7 +20,7 @@ import {
   taggedTagOptions,
   type BrowseListItem,
   type BrowseTagOption,
-  type CollectionDetailRow,
+  type CollectionDetailFieldRow,
   type ShortcutHelpSection,
 } from '../browser/format.js';
 import { t } from '../../i18n/index.js';
@@ -216,12 +216,12 @@ export function mcpCollectionDetailRows(
     secrets?: McpLoginState;
     login?: McpLoginState;
   } = {}
-): CollectionDetailRow[] {
+): CollectionDetailFieldRow[] {
   if (!mcp) return [{ text: t('mcp.selectToView'), muted: true }];
   const secrets = options.secrets ?? 'none';
   const login = options.login ?? 'none';
   const probe = options.probe;
-  const rows: CollectionDetailRow[] = [
+  const rows: CollectionDetailFieldRow[] = [
     { text: mcp.name, bold: true, field: 'name' },
     ...peekFieldRows(t('common.source'), mcpSourceLabel(mcp), width, 1),
     ...peekFieldRows(t('mcp.transport'), mcp.recipe.transport, width, 1),
@@ -289,14 +289,14 @@ export function mcpLocationDetailRows(
   collection: CollectedMcp[],
   width: number,
   viewportHeight: number
-): CollectionDetailRow[] {
+): CollectionDetailFieldRow[] {
   if (!entry) return [{ text: t('mcp.selectToView'), muted: true }];
   const match = findCollectedByEndpoint(collection, entry.recipe);
   const title =
     entry.ownership === 'borrowed'
       ? `${t('mcp.borrowedMark')} ${entry.nativeKey}`
       : entry.nativeKey;
-  const rows: CollectionDetailRow[] = [
+  const rows: CollectionDetailFieldRow[] = [
     { text: title, bold: true },
     ...peekFieldRows(
       t('common.location'),

@@ -10,10 +10,9 @@ import { FooterPaint } from '../shell/footer.js';
 import { computeBrowseCapabilities } from './browse-capabilities.js';
 import { masterDetailLayout } from './layout.js';
 import { t } from '../../i18n/index.js';
-import type { FooterItem } from '../footer/types.js';
 import { presentHealthAlerts } from './health.js';
-import { isGitHubSourceUrl } from './format.js';
 import { Modal } from '../overlay/static.js';
+import { fullscreenDetailFooterItems } from './format.js';
 import {
   browserDataAtom,
   browserDetailFieldAtom,
@@ -88,19 +87,21 @@ export function BrowserShellFooter(): ReactNode {
 
   // Single shell footer (option A): detail / group-jump own shell keys — never body strip only.
   if (!overlayItems && phase === 'detail' && detail) {
-    const items: FooterItem[] = [];
-    if (detail.collection) {
-      if (isGitHubSourceUrl(detail.metadata.source.url)) {
-        items.push({ key: 'Enter', label: t('common.enter') });
-      }
-      items.push(
-        { key: 'n', label: t('common.note') },
-        { key: 't', label: t('common.tags') },
-        { key: 's', label: t('common.source') },
-      );
-    }
-    items.push({ key: 'Esc', label: t('common.back') });
-    return <FooterPaint view={{ mode: 'keys', items }} />;
+    return (
+      <FooterPaint
+        view={{
+          mode: 'keys',
+          items: fullscreenDetailFooterItems(
+            detail.collection,
+            detailField,
+            detail.links.length
+          ),
+          ...(status.text
+            ? { status: status.text, statusKind: status.kind }
+            : {}),
+        }}
+      />
+    );
   }
   if (!overlayItems && groupJump) {
     return (
@@ -211,7 +212,7 @@ export function BrowserShellFooter(): ReactNode {
       view={view}
       onStatusAction={(action) => {
         if (action === 'health') {
-          void presentHealthAlerts(healthAlerts);
+          void presentHealthAlerts(healthAlerts, store);
           return;
         }
         if (action === 'error' && status.text) {
