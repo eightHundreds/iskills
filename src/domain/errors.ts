@@ -15,8 +15,8 @@ export class DomainError extends Error {
   readonly code: string;
   readonly params: DomainParams;
 
-  constructor(code: string, params: DomainParams = {}) {
-    super(code);
+  constructor(code: string, params: DomainParams = {}, options?: ErrorOptions) {
+    super(code, options);
     this.name = 'DomainError';
     this.code = code;
     this.params = params;

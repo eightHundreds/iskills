@@ -419,6 +419,9 @@ Options:
     'Multiple different sources for "{name}" would install to the same target: {target}',
   'cmd.noOtherAgentTargets': 'No other agent with a different path to install to',
   'cmd.selectInstallAgents': 'Install to other agents:',
+  'domain.installRollbackFailed': 'Installation failed: {target}; error: {error}; rollback failed: {rollback}. Recovery material: {backup}',
+  'domain.installCleanupFailed': 'Installed: {target}; cleanup failed: {error}. Retained material: {backup}',
+  'cmd.installBatchFailed': 'Installation failed: {failed}; {error}\nCompleted: {completed}\nNot attempted: {pending}\nSkipped: {skipped}',
   'cmd.addedSkillsToDirs':
     'Added {skills} skill(s) to {dirs} directory(ies){copy}.',
   'cmd.addedCopySuffix': ' (copy)',

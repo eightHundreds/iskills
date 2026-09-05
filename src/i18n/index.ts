@@ -149,6 +149,7 @@ export function formatAppError(error: unknown): string {
     if (key in zh || key in en) {
       // Nested operation labels (e.g. domain.opDelete) may appear as params.
       const params: MessageVars = { ...error.params };
+      if (error.cause !== undefined) params.error = formatAppError(error.cause);
       for (const [name, value] of Object.entries(params)) {
         if (typeof value === 'string' && (value in zh || value in en)) {
           params[name] = t(value as MessageKey);

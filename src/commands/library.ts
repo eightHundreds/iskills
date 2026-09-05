@@ -1,5 +1,5 @@
-import { cp, lstat, mkdir, realpath, rename, rm, symlink } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   noPresentAgentsError,
@@ -19,21 +19,17 @@ import {
   listPresentAgents,
   pathPresent,
   readMetadata,
-  readState,
   resolveIncomingProvenance,
   sanitizeTerminal,
-  writeState,
 } from '../domain/core.js';
-import {
-  installCollectionSkill,
-  registerCollectionLinks,
-} from '../domain/collection-write.js';
+import { installCollectionSkill } from '../domain/collection-write.js';
 import {
   canonicalizePath,
   isPhysicalSelfInstall,
   resolveCrossAgentInstallPlan,
   type CrossAgentInstallPlan,
 } from '../domain/cross-agent-install.js';
+import { installSkillTarget } from '../domain/install-target.js';
 import { DomainError } from '../domain/errors.js';
 import { recordRunLog } from '../domain/run-log.js';
 import { matchesSkill } from '../domain/skill-query.js';
@@ -48,7 +44,6 @@ import type {
   CollectionMatch,
   GitImportContext,
   Skill,
-  SkillLink,
   SkillMetadata,
 } from '../domain/types.js';
 import { t } from '../i18n/index.js';
@@ -681,19 +676,24 @@ export async function addSkillsToProject(
   if (!skills.length) return { count: 0, targetCount: 0 };
   const targetRoots = await resolveTargets(values);
   if (!targetRoots.length) return { count: 0, targetCount: 0 };
-  await Promise.all(targetRoots.map((targetRoot) => mkdir(targetRoot, { recursive: true })));
   const addedSkills = new Set<string>();
   const addedTargets = new Set<string>();
-  const usageLinks: Array<{ skill: string; path: string; kind: 'usage' }> = [];
+  const completed: string[] = [];
+  const skipped: string[] = [];
+  const pending = targetRoots.flatMap((root) => skills.map((skill) => ({
+    skill, target: join(root, skill.name), root,
+  })));
 
-  for (const targetRoot of targetRoots) {
-    for (const skill of skills) {
-      const target = join(targetRoot, skill.name);
+  for (const [index, { skill, target, root: targetRoot }] of pending.entries()) {
+    try {
       if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
         throw new DomainError('cmd.targetPointsSelf', { target });
       }
       if (await pathPresent(target)) {
-        if (await isExactSymlink(target, skill.path)) continue;
+        if (await isExactSymlink(target, skill.path)) {
+          skipped.push(target);
+          continue;
+        }
         let replace = values.replace ?? false;
         if (!replace && process.stdin.isTTY && !values.yes) {
           replace = values.confirmReplace
@@ -704,22 +704,27 @@ export async function addSkillsToProject(
             });
         }
         if (!replace) {
-          if (process.stdin.isTTY && !values.yes) continue;
+          if (process.stdin.isTTY && !values.yes) {
+            skipped.push(target);
+            continue;
+          }
           throw new DomainError('cmd.targetExistsReplace', { target });
         }
-        await rm(target, { recursive: true });
       }
-      if (values.copy) {
-        await cp(skill.path, target, { recursive: true, errorOnExist: true });
-      } else {
-        await symlink(skill.path, target, 'dir');
-        usageLinks.push({ skill: skill.name, path: target, kind: 'usage' });
-      }
+      await installSkillTarget(skill.name, skill.path, target, values.copy ?? false);
+      completed.push(target);
       addedSkills.add(skill.name);
       addedTargets.add(targetRoot);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'InterruptError') throw error;
+      throw new DomainError('cmd.installBatchFailed', {
+        completed: completed.join(', ') || '—',
+        failed: target,
+        pending: pending.slice(index + 1).map((item) => item.target).join(', ') || '—',
+        skipped: skipped.join(', ') || '—',
+      }, { cause: error });
     }
   }
-  await registerCollectionLinks(usageLinks);
   if (!values.quiet) {
     console.log(
       t('cmd.addedSkillsToDirs', {
@@ -737,48 +742,6 @@ export interface InstallAcrossAgentsOptions {
   confirmReplaceAll?: (targets: string[]) => Promise<boolean>;
   /** When true, replace conflicts without prompting. */
   replace?: boolean;
-}
-
-/** Move existing target aside, create symlink, restore on failure. */
-async function replacePathWithSymlink(target: string, linkTarget: string): Promise<void> {
-  const absolute = resolve(target);
-  const parent = dirname(absolute);
-  await mkdir(parent, { recursive: true });
-  let backup: string | undefined;
-  if (await pathPresent(absolute)) {
-    backup = join(
-      parent,
-      `.iskills-replace-${basename(absolute)}-${process.pid}-${Date.now()}`
-    );
-    await rename(absolute, backup);
-  }
-  try {
-    await symlink(linkTarget, absolute, 'dir');
-    if (backup) await rm(backup, { recursive: true, force: true });
-  } catch (error) {
-    await rm(absolute, { recursive: true, force: true }).catch(() => {});
-    if (backup) await rename(backup, absolute);
-    throw error;
-  }
-}
-
-/**
- * Drop any collection links recorded at `paths`, then append usage links for successful installs.
- */
-async function rewriteUsageLinksAtTargets(
-  clearPaths: string[],
-  add: Array<{ skill: string; path: string }>
-): Promise<void> {
-  if (!clearPaths.length && !add.length) return;
-  const clear = new Set(clearPaths.map((path) => resolve(path)));
-  const state = await readState();
-  const links: SkillLink[] = state.links.filter(
-    (link) => !clear.has(resolve(link.path))
-  );
-  for (const item of add) {
-    links.push({ skill: item.skill, path: resolve(item.path), kind: 'usage' });
-  }
-  await writeState({ ...state, links });
 }
 
 /**
@@ -841,10 +804,14 @@ export async function installSkillsAcrossAgents(
   type WorkItem = { plan: CrossAgentInstallPlan; target: string };
   const work: WorkItem[] = [];
   const conflicts: string[] = [];
+  const skipped: string[] = [];
 
   for (const [target, plan] of planByTarget) {
     if (await pathPresent(target)) {
-      if (await isExactSymlink(target, plan.linkTarget)) continue;
+      if (await isExactSymlink(target, plan.linkTarget)) {
+        skipped.push(target);
+        continue;
+      }
       // Same physical tree via agent-root alias — never treat as replaceable conflict.
       if (await isPhysicalSelfInstall(target, plan.linkTarget)) {
         throw new DomainError('cmd.targetPointsSelf', { target });
@@ -873,35 +840,35 @@ export async function installSkillsAcrossAgents(
   const addedSkills = new Set<string>();
   const addedTargets = new Set<string>();
   const writtenPaths: string[] = [];
-  const usageAdds: Array<{ skill: string; path: string }> = [];
 
-  for (const item of work) {
-    const { plan, target } = item;
-    const isConflict = conflictSet.has(target);
-    if (isConflict && !replaceAll) continue;
-
-    if (await pathPresent(target)) {
-      if (await isExactSymlink(target, plan.linkTarget)) continue;
-      if (await isPhysicalSelfInstall(target, plan.linkTarget)) {
-        throw new DomainError('cmd.targetPointsSelf', { target });
+  for (const [index, { plan, target }] of work.entries()) {
+    try {
+      const isConflict = conflictSet.has(target);
+      if (isConflict && !replaceAll) {
+        skipped.push(target);
+        continue;
       }
-      if (!isConflict && !replaceAll) continue;
-      await replacePathWithSymlink(target, plan.linkTarget);
-    } else {
-      await mkdir(dirname(target), { recursive: true });
-      await symlink(plan.linkTarget, target, 'dir');
+      if (await pathPresent(target)) {
+        if (await isExactSymlink(target, plan.linkTarget) || (!isConflict && !replaceAll)) {
+          skipped.push(target);
+          continue;
+        }
+      }
+      await installSkillTarget(plan.skill.name, plan.linkTarget, target, false, plan.registerUsage);
+      writtenPaths.push(target);
+      addedSkills.add(plan.skill.name);
+      addedTargets.add(dirname(target));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'InterruptError') throw error;
+      throw new DomainError('cmd.installBatchFailed', {
+        completed: writtenPaths.join(', ') || '—',
+        failed: target,
+        pending: work.slice(index + 1).map((item) => item.target).join(', ') || '—',
+        skipped: skipped.join(', ') || '—',
+      }, { cause: error });
     }
-
-    writtenPaths.push(target);
-    if (plan.registerUsage) {
-      usageAdds.push({ skill: plan.skill.name, path: target });
-    }
-    addedSkills.add(plan.skill.name);
-    addedTargets.add(dirname(target));
   }
 
-  // Clear stale link records at written paths, then register new usage rows.
-  await rewriteUsageLinksAtTargets(writtenPaths, usageAdds);
   return { count: addedSkills.size, targetCount: addedTargets.size };
 }
 
