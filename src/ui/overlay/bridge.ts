@@ -1,4 +1,3 @@
-import { getActiveTui } from '../shell/lifecycle.js';
 import type { LayerApi, ModalApi } from './types.js';
 
 /** Imperative handle registered by the mounted OverlayHost. */
@@ -21,6 +20,12 @@ type OverlayBootstrap = () => Promise<OverlayBootstrapSession>;
 
 let activeHost: OverlayHostHandle | null = null;
 let bootstrap: OverlayBootstrap | null = null;
+let isTuiActive: () => boolean = () => false;
+
+/** Shell supplies terminal ownership without a static overlay → shell dependency. */
+export function setOverlayTuiActive(query: () => boolean): void {
+  isTuiActive = query;
+}
 
 /** Called by OverlayHost on mount / update / unmount. */
 export function registerOverlayHost(handle: OverlayHostHandle | null): void {
@@ -64,7 +69,7 @@ export async function withOverlayHost<T>(
 ): Promise<T> {
   if (activeHost) return work(activeHost);
   // Long-lived shell already mounted (e.g. browser); host may register one tick later.
-  if (getActiveTui()) {
+  if (isTuiActive()) {
     return work(await waitForActiveOverlayHost());
   }
   if (!bootstrap) {

@@ -3,12 +3,15 @@
  * CLI `finally` can tear down without loading the native renderer.
  */
 
+import { setOverlayTuiActive } from '../overlay/bridge.js';
+
 export type TuiDisposer = {
   unmount: () => void;
   cleanup: () => void;
 };
 
 let activeInstance: TuiDisposer | undefined;
+setOverlayTuiActive(() => Boolean(activeInstance));
 
 export function setActiveTui(instance: TuiDisposer | undefined): void {
   activeInstance = instance;

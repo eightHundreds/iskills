@@ -294,7 +294,7 @@ function waitForOverlayHost(timeoutMs = 5000): Promise<OverlayHostHandle> {
 
 /**
  * Temporary AppShell + OverlayHost when no UI is mounted (CLI Modal/Layer).
- * Registered for `ui/overlay` withOverlayHost — overlay never imports this module.
+ * Registered for `ui/overlay` withOverlayHost (which may load this module lazily).
  */
 setOverlayBootstrap(async () => {
   const { AppShell, createElement } = await loadOpenTui();
