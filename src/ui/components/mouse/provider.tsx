@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -87,6 +88,10 @@ export function MouseProvider({
 /**
  * Marks an exclusive interaction surface (modal / filter). While mounted,
  * {@link Clickable} under the base tabs/list will not fire.
+ *
+ * Push during render (not useEffect): child Clickables must see this surface as
+ * top on first paint. Effect-only push left them inactive until an incidental
+ * re-render, so modal actions like「复制给 Agent」looked clickable but ignored clicks.
  */
 export function PointerSurface({
   id,
@@ -96,12 +101,25 @@ export function PointerSurface({
   children: ReactNode;
 }): ReactNode {
   const registry = useContext(MouseRegistryContext);
+  const registeredIdRef = useRef<string | null>(null);
+
+  if (registry && id !== POINTER_SURFACE_BASE) {
+    if (registeredIdRef.current !== id) {
+      if (registeredIdRef.current !== null) {
+        registry.popSurface(registeredIdRef.current);
+      }
+      registry.pushSurface(id);
+      registeredIdRef.current = id;
+    }
+  }
 
   useEffect(() => {
-    if (!registry || id === POINTER_SURFACE_BASE) return;
-    registry.pushSurface(id);
-    return () => registry.popSurface(id);
-  }, [id, registry]);
+    return () => {
+      if (!registry || registeredIdRef.current === null) return;
+      registry.popSurface(registeredIdRef.current);
+      registeredIdRef.current = null;
+    };
+  }, [registry]);
 
   return (
     <PointerSurfaceIdContext.Provider value={id}>
