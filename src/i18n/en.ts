@@ -200,8 +200,6 @@ Options:
   'domain.symlinkEscapesTree': 'Skill contains a symlink that escapes its tree: {path}',
   'domain.skillExistsInCollection': 'Skill already exists in collection: {name}',
   'domain.gitCommitFailed': 'Warning: collection Git commit failed: {error}',
-  'domain.originNotCollectionLink':
-    'Origin is no longer a symlink into the collection; aborted: {path}',
   'domain.importFailedRollback': 'Import failed: {error}; rollback failed: {rollback}',
   'domain.warnConflictCleanup': 'Warning: failed to clean old conflict directory: {error}',
   'domain.warnReplaceBackupCleanup': 'Warning: failed to clean replace backup: {error}',

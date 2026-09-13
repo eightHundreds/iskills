@@ -380,8 +380,9 @@ export async function finalizeResolvedConflicts(): Promise<void> {
     finalized = true;
   }
   if (remaining.length !== state.conflicts.length) {
-    state.conflicts = remaining;
-    await writeState(state);
+    const latest = await readState();
+    latest.conflicts = remaining;
+    await writeState(latest);
   }
   if (finalized) await commitCollection('apply resolved source updates');
 }

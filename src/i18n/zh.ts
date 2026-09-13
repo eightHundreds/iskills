@@ -195,7 +195,6 @@ import / add 选项：
   'domain.symlinkEscapesTree': '技能包含逃出目录的软链：{path}',
   'domain.skillExistsInCollection': '收藏夹已存在同名技能：{name}',
   'domain.gitCommitFailed': '警告：收藏夹 Git 提交失败：{error}',
-  'domain.originNotCollectionLink': '原始位置已不是指向收藏夹的软链，已中止：{path}',
   'domain.importFailedRollback': '导入失败：{error}；回滚失败：{rollback}',
   'domain.warnConflictCleanup': '警告：旧冲突目录清理失败：{error}',
   'domain.warnReplaceBackupCleanup': '警告：替换备份清理失败：{error}',

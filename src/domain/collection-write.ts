@@ -370,14 +370,10 @@ export async function replaceCollectionSkill(
   const state = await readState();
   const links = state.links.filter((link) => link.skill === input.name);
   const origin = links.find((link) => link.kind === 'origin');
+  const originRestorable = Boolean(origin && (await isExactSymlink(origin.path, target)));
   const hadMetadata = await pathPresent(metadata);
   const hadBaseline = await pathPresent(baseline);
   let sourceMoved = false;
-
-  if (origin && !(await isExactSymlink(origin.path, target))) {
-    await rm(transaction, { recursive: true, force: true });
-    throw new DomainError('domain.originNotCollectionLink', { path: origin.path });
-  }
 
   try {
     await cp(target, oldTree, { recursive: true, errorOnExist: true });
@@ -393,7 +389,7 @@ export async function replaceCollectionSkill(
       await moveDirectory(input.local.source, newSource);
       sourceMoved = true;
     }
-    if (origin) {
+    if (originRestorable && origin) {
       await rm(origin.path);
       await cp(oldTree, origin.path, { recursive: true, errorOnExist: true });
     }
@@ -438,6 +434,9 @@ export async function replaceCollectionSkill(
     await rm(transaction, { recursive: true, force: true }).catch((error) => {
       domainNotify('domain.warnReplaceBackupCleanup', { error: errorMessage(error) });
     });
+    if (origin && !originRestorable) {
+      domainNotify('domain.warnOriginNotRestored', { path: origin.path });
+    }
     return commitResult;
   } catch (error) {
     try {
@@ -452,7 +451,7 @@ export async function replaceCollectionSkill(
       await rm(baseline, { recursive: true, force: true });
       if (hadBaseline) await cp(oldBaseline, baseline, { recursive: true });
       await writeState(state);
-      if (origin) {
+      if (originRestorable && origin) {
         await rm(origin.path, { recursive: true, force: true });
         await mkdir(resolve(origin.path, '..'), { recursive: true });
         await symlink(target, origin.path, 'dir');
