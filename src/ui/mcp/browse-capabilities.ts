@@ -19,6 +19,7 @@ export function computeMcpBrowseCapabilities(input: {
   canToggle: boolean;
   canUpdate: boolean;
   canTag: boolean;
+  canRenameTag?: boolean;
   hasTagGroups: boolean;
   detailField?: DetailFieldId;
 }): McpFooterSnapshot {
@@ -38,6 +39,7 @@ export function computeMcpBrowseCapabilities(input: {
       canDelete: input.focus === 'list' && input.canDelete,
       enterAction,
       canTag: input.tab === 'collection' && input.canTag,
+      canRenameTag: input.tab === 'collection' && input.canRenameTag === true,
       canImport: input.canImport,
       canMaterialize: false,
       canMore: input.focus === 'list',

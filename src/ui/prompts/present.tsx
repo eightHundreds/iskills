@@ -109,6 +109,20 @@ export function promptText(
   });
 }
 
+export async function promptTagRename(
+  tags: string[],
+  oldTag?: string
+): Promise<{ oldTag: string; newTag: string } | undefined> {
+  const source = oldTag ?? await promptChoice(
+    tags.map((tag) => ({ label: tag, value: tag })),
+    t('cmd.selectTagToRename')
+  );
+  if (!source) return undefined;
+  const newTag = await promptText(t('cmd.renameTagPrompt'), source, t('common.renameTag'));
+  if (newTag === undefined) return undefined;
+  return { oldTag: source, newTag };
+}
+
 /** Tag editor — absolute modal over the current screen (browser stays visible). */
 export function promptTags(
   tags: string[],

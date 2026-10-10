@@ -81,6 +81,7 @@ function browseItems(
       { key: '↑↓', label: t('common.move') },
       { key: '→', label: t('common.list') },
       { key: 'Space', label: t('common.select') },
+      ...(browse.canRenameTag ? [{ key: 'r', label: t('common.rename') }] : []),
       ...filterHelp(),
       ...helpQuit(),
     ];
@@ -120,6 +121,7 @@ function browseItems(
     items.push({ key: 'm', label: t('common.more') });
   }
   if (browse.canTag) items.push({ key: 't', label: t('common.tags') });
+  if (browse.canRenameTag) items.push({ key: 'r', label: t('common.renameTag') });
   // `g` jump-to-tags stays as a hidden shortcut (still in ? help); not listed in footer.
   if (browse.canSync) items.push({ key: 's', label: t('common.sync') });
   if (browse.updateCount > 0) {

@@ -27,7 +27,12 @@ export {
   recipesSameEndpoint,
 } from './identity.js';
 
-export { listCollectedMcps, readCollectedMcp, ensureMcpCollection } from './collection.js';
+export {
+  ensureMcpCollection,
+  listCollectedMcps,
+  readCollectedMcp,
+  renameCollectedMcpTag,
+} from './collection.js';
 
 export {
   deleteMcpSecrets,

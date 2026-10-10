@@ -4,6 +4,13 @@ import { collectionPaths, commitCollection, ensureCollection, exists } from '../
 import { DomainError } from '../errors.js';
 import { assertMcpName } from './identity.js';
 import { readJsonObject, writeJsonObject } from './io.js';
+import {
+  normalizeNewTagName,
+  renameTagInList,
+  writeTagRenameBatch,
+  type TagRenameChange,
+  type TagRenameResult,
+} from '../tags.js';
 import type { CollectedMcp, CreateMcpInput, McpRecipe, McpSource } from './types.js';
 
 export function mcpCollectionDir(): string {
@@ -80,8 +87,7 @@ export async function readCollectedMcp(name: string): Promise<CollectedMcp | und
   return collectedFromRecord(await readJsonObject(path), name);
 }
 
-export async function writeCollectedMcp(mcp: CollectedMcp, commitMessage?: string): Promise<boolean> {
-  await ensureMcpCollection();
+async function writeCollectedMcpRecord(mcp: CollectedMcp): Promise<void> {
   const name = assertMcpName(mcp.name);
   await writeJsonObject(mcpCollectionPath(name), {
     name,
@@ -91,7 +97,32 @@ export async function writeCollectedMcp(mcp: CollectedMcp, commitMessage?: strin
     source: mcp.source,
     recipe: mcp.recipe,
   });
-  return commitCollection(commitMessage ?? `mcp: save ${name}`);
+}
+
+export async function writeCollectedMcp(mcp: CollectedMcp, commitMessage?: string): Promise<boolean> {
+  await ensureMcpCollection();
+  await writeCollectedMcpRecord(mcp);
+  return commitCollection(commitMessage ?? `mcp: save ${mcp.name}`);
+}
+
+export async function renameCollectedMcpTag(
+  oldTag: string,
+  nextTag: string
+): Promise<TagRenameResult> {
+  const newTag = normalizeNewTagName(nextTag);
+  if (!oldTag || oldTag === newTag) return { updated: 0, committed: true };
+
+  const changes: TagRenameChange<CollectedMcp>[] = [];
+  for (const before of await listCollectedMcps()) {
+    const tags = renameTagInList(before.tags, oldTag, newTag);
+    if (!tags) continue;
+    changes.push({ before, after: { ...before, tags } });
+  }
+  if (!changes.length) return { updated: 0, committed: true };
+
+  await writeTagRenameBatch(changes, writeCollectedMcpRecord);
+  const committed = await commitCollection(`rename mcp tag ${oldTag} to ${newTag}`);
+  return { updated: changes.length, committed };
 }
 
 export async function deleteCollectedMcpFile(name: string): Promise<void> {

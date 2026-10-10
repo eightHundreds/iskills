@@ -52,6 +52,7 @@ import {
   selectableSkills,
   skillsForTagFilter,
   tagFilterOptions,
+  untaggedLabel,
   type SkillRow,
   visibleAgentGroups,
 } from './format.js';
@@ -244,6 +245,12 @@ export function Browser({
     () => tagFilterOptions(tabSkills, groups),
     [groups, tabSkills]
   );
+  const collectionTags = useMemo(
+    () => new Set(collection.flatMap((skill) => skill.tags)),
+    [collection]
+  );
+  const hasRenameableCollectionTags = [...collectionTags]
+    .some((tag) => tag !== untaggedLabel());
   const [tagFilter, setTagFilterState] = useAtom(browserTagFilterAtom);
   const setTagFilter = (value: string): void => {
     setTagFilterState((current) => (current === value ? current : value));
@@ -296,6 +303,8 @@ export function Browser({
     focus,
     cursor,
     listLength: listRows.length,
+    tagFilter,
+    tagOptions,
     hasAgents: hasAgentTabs,
     masterDetail: useMasterDetail,
     currentIsItem: currentRow?.type === 'skill',
@@ -476,6 +485,18 @@ export function Browser({
         cursor: cursorRef.current,
         query,
       };
+      if (input === 'r' && liveTab === 'collection') {
+        if (useMasterDetail && liveFocus === 'tags') {
+          const tag = tagOptions[tagCursorRef.current]?.key;
+          if (tag && tag !== untaggedLabel() && collectionTags.has(tag)) {
+            return finish({ type: 'renameTag', tag });
+          }
+          return;
+        }
+        if (!useMasterDetail && liveFocus === 'list' && hasRenameableCollectionTags) {
+          return finish({ type: 'renameTag' });
+        }
+      }
       const liveRow = listRows[liveNav.cursor];
       const session = reduceBrowseSessionKey(
         {

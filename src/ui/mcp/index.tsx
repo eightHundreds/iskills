@@ -10,6 +10,7 @@ import {
   removeCollectedMcp,
   removeMcpLocation,
   renameCollectedMcp,
+  renameCollectedMcpTag,
   scanContext,
   storeCollectedLoginSecret,
   storeCollectedOverlaySecret,
@@ -26,7 +27,7 @@ import { Modal } from '../overlay/static.js';
 import { presentMcpJsonImport } from './json-import.js';
 import { promptMcpInstallReview } from './install-review.js';
 import { promptMcpSecrets } from './secrets-form.js';
-import { promptText } from '../prompts/present.js';
+import { promptTagRename, promptText } from '../prompts/present.js';
 import { AppShell } from '../shell/app-shell.js';
 import { startApp } from '../shell/run.js';
 import { InterruptError } from '../shell/terminal.js';
@@ -265,6 +266,31 @@ function McpApp({ initial }: { initial: McpBrowserData }): ReactNode {
             flash(t('mcp.renamed', { name: next.trim() }));
           } catch (error) {
             flash(await formatErrorWithLog(error), 'error');
+          }
+        }}
+        onRenameTag={async (selectedTag) => {
+          const known = [...new Set(data.collection.flatMap((entry) => entry.tags))]
+            .filter((tag) => tag !== t('common.untagged'))
+            .sort((left, right) => left.localeCompare(right));
+          const input = await promptTagRename(known, selectedTag);
+          if (!input) return undefined;
+          const newTag = input.newTag.trim();
+          if (newTag === input.oldTag) {
+            flash(t('cmd.tagUnchanged'));
+            return undefined;
+          }
+          try {
+            const result = await renameCollectedMcpTag(input.oldTag, newTag);
+            if (!result.updated) {
+              flash(t('cmd.tagNotFound'), 'error');
+              return undefined;
+            }
+            await reload();
+            if (result.committed) flash(t('mcp.renamedTag', { count: result.updated }));
+            return newTag;
+          } catch (error) {
+            flash(await formatErrorWithLog(error), 'error');
+            return undefined;
           }
         }}
         onTags={async (item) => {

@@ -30,6 +30,7 @@ import {
   materializeSkillReferences,
   removeFromCollection,
   removeSkillLocations,
+  renameCollectionTag,
   unbindCollectedSkillSource,
 } from '../domain/collection-write.js';
 import {
@@ -45,6 +46,7 @@ import {
   promptChoice,
   promptChoicesMany,
   promptInstallReview,
+  promptTagRename,
   promptTags,
   promptText,
 } from '../ui/prompts/present.js';
@@ -171,6 +173,9 @@ export async function handleBrowserResult(
       break;
     case 'tags':
       await handleTags(host, result.skills);
+      break;
+    case 'renameTag':
+      await handleRenameTag(host, result.tag);
       break;
     case 'editTags':
     case 'editNote': {
@@ -329,6 +334,32 @@ async function handleTags(host: BrowserActionHost, skills: Skill[]): Promise<voi
   }
   // Clear multi-select like other bulk list actions (add/update/import).
   host.setNavigation({ ...host.getNavigation(), selected: [] });
+}
+
+async function handleRenameTag(
+  host: BrowserActionHost,
+  selectedTag?: string
+): Promise<void> {
+  const collection = await listCollection();
+  const tags = [...new Set(collection.flatMap((skill) => skill.tags))]
+    .filter((tag) => tag !== t('common.untagged'))
+    .sort((left, right) => left.localeCompare(right));
+  const input = await promptTagRename(tags, selectedTag);
+  if (!input) return;
+  const newTag = input.newTag.trim();
+  if (newTag === input.oldTag) {
+    host.setStatus(t('cmd.tagUnchanged'), true, 'normal');
+    return;
+  }
+  const result = await renameCollectionTag(input.oldTag, newTag);
+  if (!result.updated) {
+    host.setStatus(t('cmd.tagNotFound'), true, 'error');
+    return;
+  }
+  if (host.getTagFilter() === input.oldTag) host.setTagFilter(newTag);
+  if (result.committed) {
+    host.setStatus(t('cmd.renamedSkillTag', { count: result.updated }), true, 'normal');
+  }
 }
 
 async function handleAdd(host: BrowserActionHost, skills: CollectedSkill[]): Promise<void> {

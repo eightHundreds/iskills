@@ -8,6 +8,7 @@ import {
   flatRows,
   groupedRows,
   skillsForTagFilter,
+  untaggedLabel,
   visibleAgentGroups,
   TAG_FILTER_ALL,
 } from './format.js';
@@ -185,6 +186,15 @@ export function computeBrowseCapabilities(
   // Tag jump (`g`): only when current tab has at least one group header (non-all filter source).
   const hasTagGroups = tabSkills.some((skill) => (skill.tags?.length ?? 0) > 0);
   const canJumpTag = focus === 'list' && hasTagGroups;
+  const currentTagIsRenameable =
+    tagFilter !== TAG_FILTER_ALL && tagFilter !== untaggedLabel();
+  const hasRenameableTags = tabSkills.some((skill) =>
+    (skill.tags ?? []).some((tag) => tag !== untaggedLabel())
+  );
+  const canRenameTag =
+    tab === 'collection' &&
+    ((masterDetail && focus === 'tags' && currentTagIsRenameable) ||
+      (!masterDetail && focus === 'list' && hasRenameableTags));
   const canSync =
     focus === 'list' && tab === 'collection' && data.canSync;
 
@@ -193,6 +203,7 @@ export function computeBrowseCapabilities(
     canDelete,
     enterAction,
     canTag: tab === 'collection' && selectedCollection.length > 0 && focus === 'list',
+    canRenameTag,
     canImport:
       focus === 'list' &&
       ((tab === 'project' && selectedProjectLocal.length > 0) ||

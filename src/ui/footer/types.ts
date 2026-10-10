@@ -37,6 +37,7 @@ export interface FooterBrowseCapabilities {
   canDelete: boolean;
   enterAction: FooterEnterAction;
   canTag: boolean;
+  canRenameTag?: boolean;
   canImport: boolean;
   canMaterialize: boolean;
   /** Project/global: install selected location skills to other agent roots via m. */

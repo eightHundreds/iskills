@@ -382,6 +382,8 @@ export function useBrowseSessionEffects(input: {
   focus: BrowserFocus;
   cursor: number;
   listLength: number;
+  tagFilter: string;
+  tagOptions: BrowseTagOption[];
   hasAgents: boolean;
   masterDetail: boolean;
   currentIsItem: boolean;
@@ -413,6 +415,10 @@ export function useBrowseSessionEffects(input: {
     io.setTagFilter(TAG_FILTER_ALL);
     io.setTagCursor(0);
   }, [input.agent]);
+  useEffect(() => {
+    const index = input.tagOptions.findIndex((option) => option.key === input.tagFilter);
+    setters.current.setTagCursor(index >= 0 ? index : 0);
+  }, [input.tagFilter, input.tagOptions]);
   useEffect(() => {
     const next = correctBrowseFocus(input.focus, {
       hasAgents: input.hasAgents,

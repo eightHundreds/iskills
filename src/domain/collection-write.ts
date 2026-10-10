@@ -23,6 +23,7 @@ import {
   exists,
   isBoundGitSource,
   isExactSymlink,
+  listCollection,
   metadataPath,
   moveDirectory,
   pathPresent,
@@ -43,6 +44,34 @@ import type {
   SourceConflict,
 } from './types.js';
 import { DomainError, domainNotify } from './errors.js';
+import {
+  normalizeNewTagName,
+  renameTagInList,
+  writeTagRenameBatch,
+  type TagRenameChange,
+  type TagRenameResult,
+} from './tags.js';
+
+export async function renameCollectionTag(
+  oldTag: string,
+  nextTag: string
+): Promise<TagRenameResult> {
+  const newTag = normalizeNewTagName(nextTag);
+  if (!oldTag || oldTag === newTag) return { updated: 0, committed: true };
+
+  const changes: TagRenameChange<SkillMetadata>[] = [];
+  for (const skill of await listCollection()) {
+    const before = await readMetadata(skill.name);
+    const tags = renameTagInList(before.tags, oldTag, newTag);
+    if (!tags) continue;
+    changes.push({ before, after: { ...before, tags } });
+  }
+  if (!changes.length) return { updated: 0, committed: true };
+
+  await writeTagRenameBatch(changes, writeMetadata);
+  const committed = await commitCollection(`rename skill tag ${oldTag} to ${newTag}`);
+  return { updated: changes.length, committed };
+}
 
 export interface ReplacementInput {
   name: string;

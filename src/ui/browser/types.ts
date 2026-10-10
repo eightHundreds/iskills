@@ -46,6 +46,7 @@ export type BrowserResult =
   | { type: 'quit' }
   | { type: 'sync' }
   | { type: 'tags'; skills: Skill[] }
+  | { type: 'renameTag'; tag?: string }
   | { type: 'editTags'; skill: Skill }
   | { type: 'editNote'; skill: Skill }
   | { type: 'update'; skills: CollectedSkill[] }
@@ -151,6 +152,8 @@ export interface BrowserActionHost {
   reloadData: () => Promise<BrowserDataSnapshot>;
   getNavigation: () => BrowserNavigationSnapshot;
   setNavigation: (navigation: BrowserNavigationSnapshot) => void;
+  getTagFilter: () => string;
+  setTagFilter: (tag: string) => void;
   setAbortController: (controller: AbortController | null) => void;
   discardStaleUpdateCheck: () => void;
   markSkillsCurrent: (names: readonly string[]) => void;

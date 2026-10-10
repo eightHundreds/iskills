@@ -9,6 +9,7 @@ export {
   promptInstallReview,
   promptSkillGroups,
   promptSkills,
+  promptTagRename,
   promptTags,
   promptText,
 } from './present.js';

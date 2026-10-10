@@ -16,7 +16,11 @@ import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { ShortcutHelpPanel } from '../browser/shortcut-help.js';
 import { AgentTabs, BrowseHomePane, BrowseListPane } from '../browser/panes.js';
 import type { BrowserFocus, BrowserTab } from '../browser/types.js';
-import { TAG_FILTER_ALL, browseListColumnLines } from '../browser/format.js';
+import {
+  TAG_FILTER_ALL,
+  browseListColumnLines,
+  untaggedLabel,
+} from '../browser/format.js';
 import {
   applyBrowseSessionPatch,
   browseSessionClickDetail,
@@ -55,6 +59,8 @@ import {
 } from './format.js';
 import type { McpBrowserData } from './index.js';
 
+const EMPTY_LOCATIONS: McpLocationEntry[] = [];
+
 export function McpBrowser({
   data,
   onCapabilities,
@@ -65,6 +71,7 @@ export function McpBrowser({
   onToggle,
   onUpdate,
   onRename,
+  onRenameTag,
   onTags,
   onNote,
   onLogin,
@@ -86,6 +93,7 @@ export function McpBrowser({
   onToggle: (entry: McpLocationEntry) => Promise<void>;
   onUpdate: (items: CollectedMcp[]) => Promise<void>;
   onRename: (item: CollectedMcp) => Promise<void>;
+  onRenameTag: (oldTag?: string) => Promise<string | undefined>;
   onTags: (item: CollectedMcp) => Promise<void>;
   onNote: (item: CollectedMcp) => Promise<void>;
   onLogin: (item: CollectedMcp) => Promise<void>;
@@ -152,7 +160,7 @@ export function McpBrowser({
   const agentNames = currentAgentGroups.map((group) => group.agent);
   const activeAgent = agentNames.includes(agent) ? agent : agentNames[0] ?? '';
   const currentLocations =
-    currentAgentGroups.find((group) => group.agent === activeAgent)?.entries ?? [];
+    currentAgentGroups.find((group) => group.agent === activeAgent)?.entries ?? EMPTY_LOCATIONS;
   const visibleCollected = useMemo(
     () => filterCollected(data.collection, tagFilter, query),
     [data.collection, tagFilter, query]
@@ -205,8 +213,18 @@ export function McpBrowser({
   );
   const useBrowseHome = masterDetailLayout(stdout.columns, stdout.rows);
   const useCompact = compactLayout(stdout.columns, stdout.rows);
-  const tagOptions =
-    tab === 'collection' ? collectedTagOptions(data.collection) : locationTagOptions(currentLocations);
+  const collectionTags = useMemo(
+    () => new Set(data.collection.flatMap((item) => item.tags)),
+    [data.collection]
+  );
+  const hasRenameableCollectionTags = [...collectionTags]
+    .some((tag) => tag !== untaggedLabel());
+  const tagOptions = useMemo(
+    () => tab === 'collection'
+      ? collectedTagOptions(data.collection)
+      : locationTagOptions(currentLocations),
+    [currentLocations, data.collection, tab]
+  );
 
   useBrowseSessionEffects({
     tab,
@@ -214,6 +232,8 @@ export function McpBrowser({
     focus,
     cursor,
     listLength: listCount,
+    tagFilter,
+    tagOptions,
     hasAgents: agentNames.length > 0,
     masterDetail: useBrowseHome,
     currentIsItem: Boolean(listItems[cursor]),
@@ -267,7 +287,13 @@ export function McpBrowser({
     canToggle: Boolean(currentLocation),
     canUpdate: tab === 'collection' && selectedCollected.length > 0,
     canTag: tab === 'collection' && Boolean(currentCollected),
-    hasTagGroups: false,
+    canRenameTag:
+      tab === 'collection' &&
+      ((useBrowseHome && focus === 'tags' &&
+        tagOptions[tagCursor]?.key !== untaggedLabel() &&
+        collectionTags.has(tagOptions[tagCursor]?.key ?? '')) ||
+        (!useBrowseHome && focus === 'list' && hasRenameableCollectionTags)),
+    hasTagGroups: collectionTags.size > 0,
     ...(activeDetailField ? { detailField: activeDetailField } : {}),
   });
   const browseKey = JSON.stringify(footerSnapshot);
@@ -340,6 +366,20 @@ export function McpBrowser({
         return;
       }
       const currentId = listItems[live.cursor]?.id;
+      if (input === 'r' && tab === 'collection') {
+        const oldTag = useBrowseHome && live.focus === 'tags'
+          ? tagOptions[tagCursorRef.current]?.key
+          : undefined;
+        const canRename = oldTag
+          ? oldTag !== untaggedLabel() && collectionTags.has(oldTag)
+          : !useBrowseHome && live.focus === 'list' && hasRenameableCollectionTags;
+        if (canRename) {
+          void onRenameTag(oldTag).then((newTag) => {
+            if (newTag && oldTag && tagFilter === oldTag) setTagFilter(newTag);
+          });
+        }
+        return;
+      }
       const session = reduceBrowseSessionKey(
         {
           nav: live,
