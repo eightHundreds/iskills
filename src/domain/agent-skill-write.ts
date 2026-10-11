@@ -259,23 +259,25 @@ async function requireSkills(
   all = false,
 ): Promise<SkillMetadata[]> {
   const collection = await readSkills();
-  if (collection.issues.length)
-    throw new OperationFailure(
-      'execution.readFailed',
-      'The collection has unreadable entries.',
-      { issues: collection.issues },
-      1,
-    );
   const selected = all
     ? collection.items
     : names.map((name) => {
         const skill = collection.items.find((item) => item.name === name);
-        if (!skill)
+        if (!skill) {
+          const issue = collection.issues.find((entry) => entry.path.endsWith(`/${name}`));
+          if (issue)
+            throw new OperationFailure(
+              'execution.readFailed',
+              'The selected skill in collection is unreadable.',
+              { name, issue },
+              1,
+            );
           throw new OperationFailure(
             'usage.selectionNotFound',
             'The skill does not exist.',
             { name },
           );
+        }
         return skill;
       });
   return selected.map(({ name, description, tags, note, source }) => ({

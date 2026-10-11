@@ -487,8 +487,8 @@ Run \`iskills help config <action>\` for details.
   git: 'Git repository specifier (owner/repo, https://... or git@...).',
   local: 'Absolute or relative path to a local directory.',
   limit: 'Maximum number of items to return (positive integer).',
-  path: 'Relative path within the Git repository to the skill directory (e.g. skills/my-skill).',
-  all: 'Target all discovered or eligible skills/locations instead of specifying individual names.',
+  path: 'Relative path within the source repository/directory to the skill directory (e.g. skills/my-skill, or "." if root is the skill itself). Required unless --all is specified.',
+  all: 'Target all discovered or eligible skills/locations instead of specifying individual names (or specify --all to import all skills from source).',
   'expect-commit': 'Expected Git commit hash; rejects import if repository HEAD differs without pinning the ref.',
   replace: 'Explicitly authorize replacing existing content or configuration.',
   yes: 'Explicitly authorize destructive operations (delete, remove, uninstall, clear).',
@@ -533,7 +533,8 @@ const COMMAND_EXAMPLES: Record<string, string[]> = {
   'skill.import': [
     'iskills skill import --git anthropics/skills --path skills/review',
     'iskills skill import --git anthropics/skills --all --expect-commit a1b2c3d --dry-run',
-    'iskills skill import --local ./custom-skill --replace',
+    'iskills skill import --local ./my-skill-dir --path . --dry-run',
+    'iskills skill import --local ./skills-monorepo --all',
   ],
   'skill.create': [
     'iskills skill create my-new-skill',
