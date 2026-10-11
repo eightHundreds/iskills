@@ -342,6 +342,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   let error: ReturnType<typeof operationError> | null = null;
   let warnings: ReturnType<typeof operationError>[] = [];
   try {
+    if (!command && help && invocation.length === 0) {
+      process.stdout.write('iskills Agent CLI\n\nCommands: agents, status, skill <action>, mcp <action>, collection <action>, config get|set\n\nRun `iskills help <command path>` for a command description, arguments, options, output format, and exit codes.\nAgent commands never prompt and emit one JSON document. Use --dry-run to inspect writes before applying them.\n');
+      return;
+    }
     if (!command)
       throw new OperationFailure('usage.unknownCommand', 'Unknown command.', {
         command: parsed.command,
@@ -380,8 +384,55 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         'config.get': '[key]',
         'config.set': '<key> <value>',
       };
+      const descriptions: Record<string, string> = {
+        root: 'Agent CLI for Skills, MCP servers, and the collection. Use `iskills agents` to inspect capabilities, `iskills status` to inspect state, and `iskills <command> --help` for command details. Query commands do not mutate state. Write commands support --dry-run; inspect the JSON result before retrying failed or unknown-state operations.',
+        agents: 'List supported Agents and their configured capabilities.',
+        status: 'Inspect collection initialization, Git state, conflicts, and read issues without changing state.',
+        'skill.list': 'List collected Skills; filter by name/description substring and all requested tags.',
+        'skill.show': 'Show one exact collected Skill. --body includes SKILL.md content.',
+        'skill.search': 'Search the remote Skill catalog; this does not collect or install results.',
+        'skill.discover': 'Inspect a local directory or Git repository and return candidate Skills without collecting them.',
+        'skill.import': 'Validate and collect selected Skills from a local directory or Git source. Local import moves the source; inspect --dry-run first.',
+        'skill.create': 'Create a minimal new collected Skill.',
+        'skill.adopt': 'Adopt valid Skill directories that lack collection metadata; does not infer their source.',
+        'skill.install': 'Install collected Skills as references or copies. Choose explicit --agent/--scope or a custom --to root.',
+        'skill.locations': 'List absolute installation paths and their relationship to the collection.',
+        'skill.uninstall': 'Remove selected installation paths and their registration, preserving collected Skills. Requires --yes.',
+        'skill.materialize': 'Replace eligible collection references in the current project with physical copies.',
+        'skill.remove': 'Remove collected Skills and report origin restoration and removed usage paths. Requires --yes.',
+        'skill.update': 'Update Skills from their recorded source. Upstream deletion requires both --allow-delete and --yes.',
+        'skill.edit': 'Update tags and/or private note for a collected Skill.',
+        'skill.tag.rename': 'Rename a Skill tag throughout the collection.',
+        'skill.source.bind': 'Bind a collected Skill to a Git source and establish its current tree as the baseline.',
+        'skill.source.unbind': 'Remove a recorded Git source binding. Requires --yes.',
+        'mcp.list': 'List collected MCP recipes and secret key/configuration status; never returns secret values.',
+        'mcp.show': 'Show a collected MCP recipe and secret key/configuration status; never returns secret values.',
+        'mcp.locations': 'List MCP locations and their opaque selectors. Pass selectors back unchanged for location actions.',
+        'mcp.create': 'Create a collected MCP from the strict recipe JSON input shape.',
+        'mcp.import': 'Collect MCPs from native JSON snippets or selected MCP locations without changing their source configuration.',
+        'mcp.add': 'Write collected MCPs to explicitly selected Agent and scope targets.',
+        'mcp.update': 'Update only the selected owned MCP locations from a collected recipe.',
+        'mcp.enable': 'Enable selected MCP locations; this sets state and is safe to repeat.',
+        'mcp.disable': 'Disable selected MCP locations; this sets state and is safe to repeat.',
+        'mcp.uninstall': 'Remove selected owned MCP locations while preserving the collected recipe. Requires --yes.',
+        'mcp.remove': 'Remove collected MCP recipes and secrets without changing installed locations. Requires --yes.',
+        'mcp.edit': 'Replace recipe and/or edit metadata for a collected MCP; changing endpoint clears prior endpoint secrets.',
+        'mcp.rename': 'Rename a collected MCP and its secret-overlay key; does not change Agent native keys.',
+        'mcp.tag.rename': 'Rename an MCP tag throughout the collection.',
+        'mcp.probe': 'Explicitly probe a collected HTTP/SSE endpoint; does not start stdio servers.',
+        'mcp.secret.set': 'Set one MCP secret from stdin or a file; the secret value is never accepted as an argv string.',
+        'mcp.secret.unset': 'Delete a secret value. Requires --yes.',
+        'mcp.secret.status': 'List declared/configured secret keys without returning their values.',
+        'collection.init': 'Initialize collection Git and optionally configure its remote.',
+        'collection.sync': 'Explicitly synchronize the collection with its configured remote in the foreground.',
+        'collection.remote.get': 'Read the collection Git origin without initializing or changing anything.',
+        'collection.remote.set': 'Set the collection Git origin; does not synchronize.',
+        'collection.remote.clear': 'Remove the collection Git origin. Requires --yes.',
+        'config.get': 'Read all supported configuration or one key.',
+        'config.set': 'Set locale or MCP-secret Git tracking preference.',
+      };
       process.stdout.write(
-        `Usage: iskills ${command.replaceAll('.', ' ')} ${argumentsByCommand[command] ?? ''} [options]\n\nOptions:\n  --project <directory>\n  -h, --help\n${Object.entries(
+        `Usage: iskills ${command.replaceAll('.', ' ')} ${argumentsByCommand[command] ?? ''} [options]\n\n${descriptions[command] ?? 'Run this command.'}\n\nOptions:\n  --project <directory>\n  -h, --help\n${Object.entries(
           COMMAND_OPTIONS[command]!,
         )
           .map(
@@ -390,7 +441,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           )
           .join(
             '\n',
-          )}\n\nReturns one JSON document. --replace authorizes replacement; --yes authorizes deletion.\nWrites support --dry-run. Exit codes: 0 success, 2 usage, 3 preflight conflict, 1 execution, 130 interrupted.\nSee AGENT-CLI.md for input shapes and examples.\n`,
+          )}\n\nOutput: one JSON document (except help/version). --replace authorizes replacement; --yes authorizes deletion; they do not imply each other. Writes support --dry-run. Exit codes: 0 success, 2 usage/selection/authorization, 3 preflight conflict, 1 runtime failure, 130 interrupted.\nSee AGENT-CLI.md for input shapes, workflows, and retry guidance; the full contract is docs/agent-cli.md.\n`,
       );
       return;
     }

@@ -1,6 +1,6 @@
 # Agent CLI
 
-Run `iskills help <command path>` for options, for example `iskills help skill import`. Agent commands run under Node, never prompt, and return one JSON document. Human entries are `iskills`, `iskills mcp`, `iskills config`, `iskills search` and `iskills import`.
+Run `iskills help` for the command tree and `iskills help <command path>` for that command's purpose, positional arguments, options, output format, and exit codes (for example, `iskills help skill import`). Agent commands run under Node, never prompt, and return one JSON document. Human entries are `iskills`, `iskills mcp`, `iskills config`, `iskills search` and `iskills import`.
 
 ## Skills
 
