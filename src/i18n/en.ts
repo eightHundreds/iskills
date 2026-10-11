@@ -146,25 +146,15 @@ Options:
 `,
   'help.mcp': `Usage:
   iskills mcp
-  iskills mcp create [name]
-  iskills mcp import [options]
-  iskills mcp add [names...] [options]
+  iskills mcp <action> [arguments] [options]
 
 Manage the MCP config collection. With no subcommand, opens the project / global / collection browser.
 
-create options:
-  --transport <stdio|http|sse>  Transport
-  --command <cmd>               stdio command
-  --url <URL>                   http/sse URL
-  --args <arg>                  Repeatable
-
-import / add options:
-  -g, --global       Global location (default: current project)
-  --agent <name>     Limit to agent(s); repeatable
-  --all              Import every discovered entry
-  --replace          Replace same-name collection entry
-  -y, --yes          Skip confirmation
-  -h, --help         Show help
+Actions are always non-interactive and return JSON:
+  list / show / locations / create / import / add
+  edit / rename / remove / update / enable / disable / uninstall
+  probe / secret status|set|unset / tag rename
+Use iskills help mcp <action> for arguments.
 `,
   'help.root': `Skill collection
 
@@ -173,12 +163,14 @@ Usage:
 
 Commands:
   search [query]     Search skills and save into the collection
-  add [skills...]    Add from collection to the current project
-  create [name]      Create a new skill in the collection and open it
   import [source]    Import a local path or Git source
-  init               Initialize collection Git
   config             Open config UI (UI language, Git remote, MCP secrets)
   mcp                MCP config collection
+  skill <action>     Non-interactive skill management (JSON)
+  mcp <action>       Non-interactive MCP management (JSON)
+  collection <action> Non-interactive collection Git management (JSON)
+  config get|set     Non-interactive configuration (JSON)
+  agents / status    Inspect capabilities and collection status (JSON)
 
 Options:
   -h, --help         Show help (or: iskills help <command>)

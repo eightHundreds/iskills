@@ -16,7 +16,7 @@ export async function readJsonObject(path: string): Promise<Record<string, unkno
   const text = await readText(path);
   if (text === undefined || !text.trim()) return {};
   const parsed = JSON5.parse(text);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP configuration must be an object');
   return parsed as Record<string, unknown>;
 }
 

@@ -10,6 +10,7 @@ import {
   classifyCollectionMatch,
   collectionPaths,
   commitCollection,
+  startBackgroundSync,
   discoverSkills,
   exists,
   isExactSymlink,
@@ -23,6 +24,8 @@ import {
   sanitizeTerminal,
 } from '../domain/core.js';
 import { installCollectionSkill } from '../domain/collection-write.js';
+import { executePreparedSkillImports, planSkillTargets, type SkillTargetInput } from '../domain/agent-skill-write.js';
+import { executeWrites, type PlannedWrite } from '../domain/agent-write.js';
 import {
   canonicalizePath,
   isPhysicalSelfInstall,
@@ -30,7 +33,7 @@ import {
   type CrossAgentInstallPlan,
 } from '../domain/cross-agent-install.js';
 import { installSkillTarget } from '../domain/install-target.js';
-import { DomainError } from '../domain/errors.js';
+import { DomainError, domainNotify } from '../domain/errors.js';
 import { recordRunLog } from '../domain/run-log.js';
 import { matchesSkill } from '../domain/skill-query.js';
 import {
@@ -46,7 +49,7 @@ import type {
   Skill,
   SkillMetadata,
 } from '../domain/types.js';
-import { t } from '../i18n/index.js';
+import { formatAppError, t } from '../i18n/index.js';
 
 export function formatSkillIdentity(meta: SkillMetadata): string {
   const source = meta.source;
@@ -408,19 +411,12 @@ export async function importSkillsToCollection(
   assertUniqueSkillNames(skills);
   const { selected, replaceNames } = await resolveImportSelection(skills, options);
   if (!selected.length) return { count: 0 };
-  const installed: string[] = [];
+  const inputs = [];
   for (const skill of selected) {
-    if (await importLocalSkill(skill, replaceNames.has(skill.name), options.tags ?? [])) {
-      installed.push(skill.name);
-    }
+    const originPath = await realpath(skill.path);
+    inputs.push({ name: skill.name, sourceTree: originPath, allowReplace: replaceNames.has(skill.name), metadata: { name: skill.name, description: skill.description, tags: options.tags ?? [], note: skill.note ?? '', source: await resolveIncomingProvenance(skill) }, local: { originPath, selectedPath: skill.path, selectedWasSymlink: (await lstat(skill.path)).isSymbolicLink() } });
   }
-  if (!installed.length) return { count: 0 };
-  // One commit point. Soft-fail: warn via domainNotify; no 已导入 line.
-  if (!(await commitCollection(`import ${installed.join(', ')}`))) {
-    return { count: installed.length, commitFailed: true };
-  }
-  if (!options.quiet) console.log(t('cmd.importedCount', { count: installed.length }));
-  return { count: installed.length };
+  return presentImportResult(await executePreparedSkillImports(inputs), options.quiet === true);
 }
 
 /**
@@ -473,18 +469,22 @@ export async function importGitSkillsToCollection(
   assertUniqueSkillNames(skills);
   const { selected, replaceNames } = await resolveImportSelection(skills, options, gitContext);
   if (!selected.length) return { count: 0 };
-  const installed: string[] = [];
-  for (const skill of selected) {
-    if (await importRemoteSkill(skill, gitContext, replaceNames.has(skill.name), options.tags ?? [])) {
-      installed.push(skill.name);
-    }
+  const inputs = [];
+  for (const skill of selected) inputs.push({ name: skill.name, sourceTree: skill.path, allowReplace: replaceNames.has(skill.name), metadata: await gitSkillMetadata(skill, gitContext, options.tags ?? []) });
+  return presentImportResult(await executePreparedSkillImports(inputs), options.quiet === true);
+}
+
+function presentImportResult(response: import('../domain/operation.js').OperationResult, quiet: boolean): ImportToCollectionResult {
+  const items = response.result.items as Array<{ name: string; status: string }>;
+  const count = items.filter((item) => item.status === 'committed').length;
+  if (response.error) throw new DomainError('cmd.installBatchFailed', { completed: items.filter((item) => item.status === 'committed').map((item) => item.name).join(', '), failed: items.filter((item) => item.status === 'failed').map((item) => item.name).join(', '), notRun: items.filter((item) => item.status === 'not-run').map((item) => item.name).join(', ') });
+  if (response.warnings?.length) {
+    console.error(formatAppError(new DomainError('domain.gitCommitFailed', { error: 'commit failed' })));
+    return { count, commitFailed: true };
   }
-  if (!installed.length) return { count: 0 };
-  if (!(await commitCollection(`import ${installed.join(', ')}`))) {
-    return { count: installed.length, commitFailed: true };
-  }
-  if (!options.quiet) console.log(t('cmd.importedCount', { count: installed.length }));
-  return { count: installed.length };
+  if ((response.result.git as { status?: string })?.status === 'committed') startBackgroundSync();
+  if (count && !quiet) console.log(t('cmd.importedCount', { count }));
+  return { count };
 }
 
 export async function commandImport(argv: string[]): Promise<void> {
@@ -676,65 +676,47 @@ export async function addSkillsToProject(
   if (!skills.length) return { count: 0, targetCount: 0 };
   const targetRoots = await resolveTargets(values);
   if (!targetRoots.length) return { count: 0, targetCount: 0 };
-  const addedSkills = new Set<string>();
-  const addedTargets = new Set<string>();
-  const completed: string[] = [];
-  const skipped: string[] = [];
-  const pending = targetRoots.flatMap((root) => skills.map((skill) => ({
-    skill, target: join(root, skill.name), root,
-  })));
-
-  for (const [index, { skill, target, root: targetRoot }] of pending.entries()) {
-    try {
-      if (target === resolve(skill.path) || target.startsWith(`${resolve(skill.path)}${sep}`)) {
-        throw new DomainError('cmd.targetPointsSelf', { target });
-      }
-      if (await pathPresent(target)) {
-        if (await isExactSymlink(target, skill.path)) {
-          skipped.push(target);
-          continue;
-        }
-        let replace = values.replace ?? false;
-        if (!replace && process.stdin.isTTY && !values.yes) {
-          replace = values.confirmReplace
-            ? await values.confirmReplace(target)
-            : await (await import('../ui/overlay/static.js')).Modal.confirm({
-              title: t('common.confirm'),
-              message: t('cmd.replaceTargetConfirm', { target }),
-            });
-        }
-        if (!replace) {
-          if (process.stdin.isTTY && !values.yes) {
-            skipped.push(target);
-            continue;
-          }
-          throw new DomainError('cmd.targetExistsReplace', { target });
-        }
-      }
-      await installSkillTarget(skill.name, skill.path, target, values.copy ?? false);
-      completed.push(target);
-      addedSkills.add(skill.name);
-      addedTargets.add(targetRoot);
-    } catch (error) {
-      if (error instanceof Error && error.name === 'InterruptError') throw error;
-      throw new DomainError('cmd.installBatchFailed', {
-        completed: completed.join(', ') || '—',
-        failed: target,
-        pending: pending.slice(index + 1).map((item) => item.target).join(', ') || '—',
-        skipped: skipped.join(', ') || '—',
-      }, { cause: error });
-    }
+  const inputs: SkillTargetInput[] = skills.flatMap((skill) => targetRoots.map((root) => ({ name: skill.name, source: skill.path, target: join(root, skill.name), copy: values.copy ?? false, registerUsage: !values.copy, replace: values.replace ?? false })));
+  const reviewed: SkillTargetInput[] = [];
+  for (const plan of await planSkillTargets(inputs)) {
+    const input = inputs.find((item) => item.target === plan.item.target)!;
+    if (plan.item.status === 'conflict') {
+      if (!process.stdin.isTTY || values.yes) throw new DomainError('cmd.targetExistsReplace', { target: input.target });
+      const replace = values.confirmReplace ? await values.confirmReplace(input.target) : await (await import('../ui/overlay/static.js')).Modal.confirm({ title: t('common.confirm'), message: t('cmd.replaceTargetConfirm', { target: input.target }) });
+      if (!replace) continue;
+      reviewed.push({ ...input, replace: true });
+    } else reviewed.push(input);
   }
+  const result = await runReviewedTargets(await planSkillTargets(reviewed));
   if (!values.quiet) {
     console.log(
       t('cmd.addedSkillsToDirs', {
-        skills: addedSkills.size,
-        dirs: addedTargets.size,
+        skills: result.count,
+        dirs: result.targetCount,
         copy: values.copy ? t('cmd.addedCopySuffix') : '',
       })
     );
   }
-  return { count: addedSkills.size, targetCount: addedTargets.size };
+  return result;
+}
+
+async function runReviewedTargets(plans: PlannedWrite[]): Promise<{ count: number; targetCount: number }> {
+  let cause: unknown;
+  for (const plan of plans) {
+    const execute = plan.execute;
+    plan.execute = async () => { try { await execute(); } catch (error) { cause = error; throw error; } };
+  }
+  const response = await executeWrites(plans, false, false, 'skill.install', new AbortController().signal);
+  const items = response.result.items as Array<{ status: string; target: string; name: string }>;
+  if (response.error) throw new DomainError('cmd.installBatchFailed', {
+    completed: items.filter((item) => item.status === 'committed').map((item) => item.target).join(', ') || '—',
+    failed: items.filter((item) => item.status === 'failed').map((item) => item.target).join(', ') || '—',
+    pending: items.filter((item) => item.status === 'not-run').map((item) => item.target).join(', ') || '—',
+    skipped: items.filter((item) => item.status === 'unchanged').map((item) => item.target).join(', ') || '—',
+  }, { cause });
+  for (const warning of response.warnings ?? []) domainNotify(warning.code);
+  const completed = items.filter((item) => item.status === 'committed');
+  return { count: new Set(completed.map((item) => item.name)).size, targetCount: new Set(completed.map((item) => dirname(item.target))).size };
 }
 
 export interface InstallAcrossAgentsOptions {
@@ -769,7 +751,6 @@ export async function installSkillsAcrossAgents(
   const rootsByCanon = new Map<string, string>();
   for (const root of targetRoots) {
     const absolute = resolve(root);
-    await mkdir(absolute, { recursive: true });
     const canon = await canonicalizePath(absolute);
     if (!rootsByCanon.has(canon)) rootsByCanon.set(canon, absolute);
   }
@@ -836,40 +817,8 @@ export async function installSkillsAcrossAgents(
     }
   }
 
-  const conflictSet = new Set(conflicts);
-  const addedSkills = new Set<string>();
-  const addedTargets = new Set<string>();
-  const writtenPaths: string[] = [];
-
-  for (const [index, { plan, target }] of work.entries()) {
-    try {
-      const isConflict = conflictSet.has(target);
-      if (isConflict && !replaceAll) {
-        skipped.push(target);
-        continue;
-      }
-      if (await pathPresent(target)) {
-        if (await isExactSymlink(target, plan.linkTarget) || (!isConflict && !replaceAll)) {
-          skipped.push(target);
-          continue;
-        }
-      }
-      await installSkillTarget(plan.skill.name, plan.linkTarget, target, false, plan.registerUsage);
-      writtenPaths.push(target);
-      addedSkills.add(plan.skill.name);
-      addedTargets.add(dirname(target));
-    } catch (error) {
-      if (error instanceof Error && error.name === 'InterruptError') throw error;
-      throw new DomainError('cmd.installBatchFailed', {
-        completed: writtenPaths.join(', ') || '—',
-        failed: target,
-        pending: work.slice(index + 1).map((item) => item.target).join(', ') || '—',
-        skipped: skipped.join(', ') || '—',
-      }, { cause: error });
-    }
-  }
-
-  return { count: addedSkills.size, targetCount: addedTargets.size };
+  const reviewed = work.filter(({ target }) => replaceAll || !conflicts.includes(target)).map(({ plan, target }) => ({ name: plan.skill.name, source: plan.linkTarget, target, copy: false, registerUsage: plan.registerUsage, replace: replaceAll }));
+  return runReviewedTargets(await planSkillTargets(reviewed));
 }
 
 export async function commandAdd(argv: string[]): Promise<void> {

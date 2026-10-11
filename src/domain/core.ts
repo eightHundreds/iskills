@@ -30,6 +30,8 @@ import type {
   SkillSource,
 } from './types.js';
 import { DomainError, domainNotify } from './errors.js';
+import { runGit } from './process.js';
+import { operationError, type OperationError } from './operation.js';
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
 
@@ -790,7 +792,7 @@ export async function isExactSymlink(path: string, target: string): Promise<bool
 }
 
 /** Detached child: push/pull collection after commit without blocking the CLI. */
-function startBackgroundSync(): void {
+export function startBackgroundSync(): void {
   if (process.env.SK_NO_BACKGROUND_SYNC === '1' || process.env.SK_SYNC_CHILD === '1') return;
   // Spawn Node once with domain/git — no dedicated entry wrapper file.
   const gitHref = new URL('./git.js', import.meta.url).href;
@@ -822,6 +824,12 @@ export async function commitCollection(
   strict = false,
   backgroundSync = true
 ): Promise<boolean> {
+  if (deferredCollectionCommits) return true;
+  if (process.env.ISKILLS_AGENT_CLI === '1') {
+    const result = await commitCollectionResult(message);
+    if (strict && result.status === 'failed') throw new Error('git.commitFailed');
+    return result.status !== 'failed';
+  }
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return true;
   try {
@@ -844,6 +852,35 @@ export async function commitCollection(
     if (strict) throw error;
     domainNotify('domain.gitCommitFailed', { error: errorMessage(error) });
     return false;
+  }
+}
+
+let deferredCollectionCommits = 0;
+
+/** Multi-step domain execution owns one final Git commit, including partial success. */
+export async function withDeferredCollectionCommit<T>(execute: () => Promise<T>): Promise<T> {
+  deferredCollectionCommits++;
+  try { return await execute(); } finally { deferredCollectionCommits--; }
+}
+
+export interface CollectionCommitResult {
+  status: 'no-repo' | 'unchanged' | 'committed' | 'failed';
+  commit?: string;
+  error?: OperationError;
+}
+
+export async function commitCollectionResult(message: string): Promise<CollectionCommitResult> {
+  const { root } = collectionPaths();
+  if (!(await exists(join(root, '.git')))) return { status: 'no-repo' };
+  try {
+    const tracked = (await runGit(['-C', root, 'ls-files', '--', ...collectionGitStatusPaths()])).split('\n').filter(Boolean);
+    const paths = [...new Set([...await collectionGitAddPaths(root), ...tracked])];
+    await runGit(['-C', root, 'add', '-A', '--', ...paths]);
+    if (!(await runGit(['-C', root, 'diff', '--cached', '--name-only']))) return { status: 'unchanged' };
+    await runGit(['-C', root, 'commit', '--quiet', '-m', message]);
+    return { status: 'committed', commit: await runGit(['-C', root, 'rev-parse', 'HEAD']) };
+  } catch (error) {
+    return { status: 'failed', error: { ...operationError(error, 'write'), code: 'git.commitFailed', message: 'The collection change could not be committed.' } };
   }
 }
 
@@ -900,4 +937,3 @@ export async function listGlobalGroups(
   }
   return groups.sort((a, b) => a.agent.localeCompare(b.agent));
 }
-

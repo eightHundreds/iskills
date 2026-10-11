@@ -39,6 +39,8 @@ export interface CollectedMcp {
   note: string;
   source: McpSource;
   recipe: McpRecipe;
+  /** Recipe committed; old endpoint credentials must not be reused until reset completes. */
+  secretsResetPending?: boolean;
 }
 
 export interface McpLocationEntry {

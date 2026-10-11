@@ -62,9 +62,12 @@ export async function writeUserConfig(config: UserConfig): Promise<void> {
     mcpSecretsInGit: config.mcpSecretsInGit === true,
   };
   const path = userConfigPath();
+  let existing: Record<string, unknown> = {};
+  try { existing = JSON5.parse(await readFile(path, 'utf8')) as Record<string, unknown>; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.tmp`;
   // Strict JSON is valid JSON5; keeps hand-edits simple and tools happy.
-  await writeFile(temporary, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  await writeFile(temporary, `${JSON.stringify({ ...existing, ...normalized }, null, 2)}\n`, 'utf8');
   await rename(temporary, path);
 }

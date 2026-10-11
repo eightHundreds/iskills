@@ -8,7 +8,7 @@
 
 **面向 AI coding agent 的个人 Skill 收藏夹** — 发现、收藏、安装并维护可通过 `SKILL.md` 被 Agent 加载的技能。
 
-`iskills` 以终端为中心：日常使用全屏 TUI，并保留少量 CLI 入口用于搜索、导入、安装与 Git 初始化。每个收藏夹由单个开发者维护；无云账号、无团队权限面。
+`iskills` 同时提供供人使用的全屏 TUI，以及供 Agent 和脚本调用的非交互 JSON CLI。两者共同管理个人收藏夹中的技能和 MCP 配置。
 
 ## 为什么用 iskills
 
@@ -26,7 +26,7 @@
 ## 环境要求
 
 - **Node.js** 20.6+
-- **Bun** 推荐用于完整全屏 TUI（OpenTUI 原生 FFI）。当前 Node 缺少 `node:ffi` 时，`iskills` 会 re-exec 到 Bun。纯 CLI 路径（帮助、非 TTY 参数）可仅用 Node。
+- **Bun** 推荐用于全屏 TUI（OpenTUI 原生 FFI）。Node 缺少 `node:ffi` 时，人用入口会 re-exec 到 Bun。Agent 命令直接运行于 Node，不加载 React 或 OpenTUI。
 - **macOS** 或 **Linux**
 - 交互界面需要 TTY（`stdin` 与 `stdout`）
 - **Git** 可选 — 仅在需要收藏夹版本管理 / 远端同步时启用
@@ -63,19 +63,19 @@ iskills import https://github.com/org/skills-repo.git
 iskills import -g
 iskills import -g --agent pi
 
-# 在收藏夹新建技能并打开目录
-iskills create my-skill
+# 在收藏夹新建技能
+iskills skill create my-skill
 
 # 从收藏夹安装到当前项目（软链）
-iskills add my-skill
+iskills skill install my-skill --agent codex --scope project
 
 # 安装到 Agent 全局目录，或以副本脱离收藏夹
-iskills add my-skill -g --agent claude
-iskills add my-skill --copy
+iskills skill install my-skill --agent claude --scope global
+iskills skill install my-skill --to ./copies --copy
 
 # 可选：将收藏夹初始化为 Git 仓库（并配置 origin）
-iskills init
-iskills init --remote git@github.com:you/my-skills.git
+iskills collection init
+iskills collection init --remote git@github.com:you/my-skills.git
 
 # 配置 UI 语言（跟随系统 / 中文 / English）
 iskills config
@@ -92,20 +92,24 @@ iskills mcp
 | --- | --- |
 | `iskills` | 主 TUI — 当前项目 / 全局 / 收藏夹浏览 |
 | `iskills search [关键词]` | 独立搜索 TUI（skills.sh），选择后写入收藏夹 |
-| `iskills create [名称]` | 在收藏夹新建技能并打开目录 |
 | `iskills import [来源]` | 导入本地路径或 Git URL |
-| `iskills add [技能…]` | 从收藏夹安装到项目或 Agent 全局目录 |
-| `iskills init` | 初始化收藏夹 Git（可选远程） |
 | `iskills config` | 配置界面偏好（UI 语言、收藏夹远程 Git） |
 | `iskills mcp` | MCP 配置收藏夹 TUI — 项目 / 全局 / 收藏夹 |
+| `iskills skill <动作>` | 发现、导入、新建、安装、更新与维护技能；JSON |
+| `iskills mcp <动作>` | 收藏、写入、更新、开关及维护 MCP 与密钥；JSON |
+| `iskills collection <动作>` | Git 初始化、查看/修改 origin、显式同步；JSON |
+| `iskills config get\|set` | 读取/修改语言与密钥跟踪偏好；JSON |
+| `iskills agents` / `iskills status` | 查看支持能力与收藏夹状态；JSON |
 
 常用参数（完整列表见 `iskills help <命令>`）：
 
 - **`import`：** `-g` / `--global`、`--agent <名称>`、`--all`、`--replace`、`-y`
-- **`add`：** `-g` / `--global`、`--agent <名称>`、`--to <目录>`、`--copy`、`--replace`、`-y`
-- **`init`：** `--remote <git-url>`
+- **`skill install`：** 显式 `--agent <id> --scope project|global` 或 `--to <目录>`，可加 `--copy`、`--replace`
+- **写命令：** `--dry-run` 查看计划；`--replace` 授权替换，`--yes` 授权删除，两者互不蕴含
 - **`search`：** `--replace`
-- **`mcp import` / `mcp add`：** `-g` / `--global`、`--agent <名称>`、`-y`
+- **`mcp create`：** `--input <UTF-8文件|->`；**`mcp add`：** 显式 `--agent <id> --scope project|global`
+
+Agent 命令始终输出一个 JSON 文档，错误同样走 JSON。退出码：`0` 完成/无需变更、`2` 参数或授权、`3` 预检冲突、`1` 执行失败、`130` 中断。分别检查逐项状态与 warnings：业务成功后，本地 Git 提交仍可能失败。查询不初始化或修复收藏夹；Agent 写入不启动后台远端同步，需显式运行 `iskills collection sync`。调用示例见[随包 Agent 指南](./AGENT-CLI.md)。
 
 `--agent` 可选：`agents`、`codex`、`claude`、`cursor`、`opencode`、`pi`、`zcode`、`trae`、`qoder`、`grok`。
 
@@ -114,7 +118,7 @@ iskills mcp
 | 项 | 位置 |
 | --- | --- |
 | 收藏根目录 | `$XDG_CONFIG_HOME/iskills`；未设置时为 `~/.config/iskills` |
-| Git | 可选。收藏夹本身是 Git 仓库时，变更会自动提交，并可异步同步 |
+| Git | 可选。写入保留本地提交；交互流程可后台同步，Agent 命令只显式同步 |
 | 来源冲突 | 收藏夹下 `.local/conflicts` — 用编辑器 + Git 手动解决，或在告警里「复制给 Agent」交给其他 Agent |
 
 提交合并结果后，下次启动主 TUI（或运行保留的收藏操作）会自动应用。冲突内容不会写入正在使用的技能。
@@ -137,7 +141,6 @@ pnpm pack --dry-run
 
 - 技能市场、托管、账号体系或云同步产品
 - 桌面 / Web GUI
-- 以 CI/CD 或无人脚本 / 机器 API 为主界面
 - 多用户 / 组织级权限
 
 ## 贡献

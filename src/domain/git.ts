@@ -38,9 +38,10 @@ import type {
 } from './types.js';
 import { DomainError, domainNotify } from './errors.js';
 import { recordRunLog } from './run-log.js';
+import { runGit } from './process.js';
 
 export function git(args: string[]): string {
-  return execFileSync('git', args, { encoding: 'utf8' }).trim();
+  return execFileSync('git', args, { encoding: 'utf8', timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } }).trim();
 }
 
 const remoteHeadCache = new Map<string, Promise<string | undefined>>();
@@ -238,24 +239,24 @@ export async function cloneGitSource(input: string): Promise<GitImportContext> {
   }
 }
 
-function gitObjectExists(repository: string, object: string): boolean {
+async function gitObjectExists(repository: string, object: string): Promise<boolean> {
   try {
-    execFileSync('git', ['-C', repository, 'cat-file', '-e', object], { stdio: 'ignore' });
+    await runGit(['-C', repository, 'cat-file', '-e', object]);
     return true;
   } catch {
     return false;
   }
 }
 
-function detectRenamedSkillPath(
+export async function detectRenamedSkillPath(
   repository: string,
   fromCommit: string,
   toCommit: string,
   sourcePath: string
-): string {
+): Promise<string> {
   let output = '';
   try {
-    output = git(['-C', repository, 'diff', '--name-status', '-M', fromCommit, toCommit]);
+    output = await runGit(['-C', repository, 'diff', '--name-status', '-M', fromCommit, toCommit]);
   } catch {
     return sourcePath;
   }
@@ -280,31 +281,29 @@ async function prepareDirectoryMerge(
   await Promise.all([mkdir(workspace, { recursive: true }), mkdir(paths.local, { recursive: true })]);
   await Promise.all([validateSkillTree(baseSkill), validateSkillTree(remoteSkill)]);
   await copyDirectoryContents(baseSkill, workspace);
-  git(['-C', workspace, 'init', '--quiet', '-b', 'base']);
-  git(['-C', workspace, 'config', 'user.name', 'Skill Collection']);
-  git(['-C', workspace, 'config', 'user.email', 'iskills@localhost']);
-  git(['-C', workspace, 'add', '-A']);
-  git(['-C', workspace, 'commit', '--quiet', '-m', 'base']);
-  const base = git(['-C', workspace, 'rev-parse', 'HEAD']);
+  await runGit(['-C', workspace, 'init', '--quiet', '-b', 'base']);
+  await runGit(['-C', workspace, 'config', 'user.name', 'Skill Collection']);
+  await runGit(['-C', workspace, 'config', 'user.email', 'iskills@localhost']);
+  await runGit(['-C', workspace, 'add', '-A']);
+  await runGit(['-C', workspace, 'commit', '--quiet', '-m', 'base']);
+  const base = await runGit(['-C', workspace, 'rev-parse', 'HEAD']);
 
-  git(['-C', workspace, 'checkout', '--quiet', '-b', 'remote', base]);
+  await runGit(['-C', workspace, 'checkout', '--quiet', '-b', 'remote', base]);
   await clearDirectory(workspace, true);
   await copyDirectoryContents(remoteSkill, workspace);
-  git(['-C', workspace, 'add', '-A']);
-  git(['-C', workspace, 'commit', '--quiet', '--allow-empty', '-m', 'remote']);
-  const remote = git(['-C', workspace, 'rev-parse', 'HEAD']);
+  await runGit(['-C', workspace, 'add', '-A']);
+  await runGit(['-C', workspace, 'commit', '--quiet', '--allow-empty', '-m', 'remote']);
+  const remote = await runGit(['-C', workspace, 'rev-parse', 'HEAD']);
 
-  git(['-C', workspace, 'checkout', '--quiet', '-b', 'local', base]);
+  await runGit(['-C', workspace, 'checkout', '--quiet', '-b', 'local', base]);
   await clearDirectory(workspace, true);
   await copyDirectoryContents(join(paths.skills, name), workspace);
-  git(['-C', workspace, 'add', '-A']);
-  git(['-C', workspace, 'commit', '--quiet', '--allow-empty', '-m', 'local']);
+  await runGit(['-C', workspace, 'add', '-A']);
+  await runGit(['-C', workspace, 'commit', '--quiet', '--allow-empty', '-m', 'local']);
 
   let conflicted = false;
   try {
-    execFileSync('git', ['-C', workspace, 'merge', '--quiet', '--no-edit', remote], {
-      stdio: 'ignore',
-    });
+    await runGit(['-C', workspace, 'merge', '--quiet', '--no-edit', remote]);
   } catch {
     conflicted = true;
   }
@@ -316,7 +315,7 @@ let updateWorktreeSeq = 0;
 async function removeUpdateWorktrees(repository: string, trees: string[]): Promise<void> {
   for (const tree of trees) {
     try {
-      git(['-C', repository, 'worktree', 'remove', '--force', tree]);
+      await runGit(['-C', repository, 'worktree', 'remove', '--force', tree]);
     } catch {}
     await rm(tree, { recursive: true, force: true });
   }
@@ -336,9 +335,9 @@ async function prepareSourceMerge(
   const remoteTree = join(root, `remote-${token}`);
   const added: string[] = [];
   try {
-    git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', baseTree, baseCommit]);
+    await runGit(['-C', repository, 'worktree', 'add', '--quiet', '--detach', baseTree, baseCommit]);
     added.push(baseTree);
-    git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
+    await runGit(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
     added.push(remoteTree);
     return await prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
   } finally {
@@ -406,7 +405,7 @@ export async function backgroundCollectionSync(): Promise<void> {
     const localHead = git(['-C', paths.root, 'rev-parse', 'HEAD']);
     git(['-C', paths.root, 'fetch', '--quiet', 'origin']);
     const upstream = `refs/remotes/origin/${branch}`;
-    if (!gitObjectExists(paths.root, upstream)) {
+    if (!(await gitObjectExists(paths.root, upstream))) {
       git(['-C', paths.root, 'push', '--quiet', '-u', 'origin', branch]);
       return;
     }
@@ -459,6 +458,8 @@ interface SkillUpdateClone {
 }
 
 export interface UpdateGitSkillOptions {
+  /** The source snapshot validated during batch preflight. */
+  clone?: SkillUpdateClone;
   confirmDelete?: (links: SkillLink[], skill: Skill) => Promise<boolean>;
   quietDelete?: boolean;
 }
@@ -476,7 +477,7 @@ async function cloneForSkillUpdate(url: string): Promise<SkillUpdateClone> {
   const temporary = await mkdtemp(join(tmpdir(), 'iskills-update-'));
   const repository = join(temporary, 'repository');
   try {
-    git(['clone', '--quiet', '--no-checkout', url, repository]);
+    await runGit(['clone', '--quiet', '--no-checkout', '--', url, repository]);
     return { temporary, repository };
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
@@ -536,36 +537,36 @@ async function applyGitSkillUpdate(
     return 'conflict';
   }
 
-  const { clone, owned } = await acquireUpdateClone(gitSource.url, clones);
+  const { clone, owned } = options.clone ? { clone: options.clone, owned: false } : await acquireUpdateClone(gitSource.url, clones);
   const repository = clone.repository;
   try {
     const latestRef = gitSource.ref
       ? `refs/remotes/origin/${gitSource.ref}`
       : 'refs/remotes/origin/HEAD';
-    if (!gitObjectExists(repository, latestRef) && gitSource.ref) {
-      if (gitObjectExists(repository, `refs/tags/${gitSource.ref}`)) {
+    if (!(await gitObjectExists(repository, latestRef)) && gitSource.ref) {
+      if (await gitObjectExists(repository, `refs/tags/${gitSource.ref}`)) {
         metadata.source.refType = 'tag';
         await writeMetadata(metadata);
         return 'pinned';
       }
       throw new DomainError('git.branchMissing', { ref: gitSource.ref });
     }
-    const latestCommit = git(['-C', repository, 'rev-parse', latestRef]);
+    const latestCommit = await runGit(['-C', repository, 'rev-parse', latestRef]);
     if (gitSource.ref) rememberRemoteBranchHead(gitSource.url, gitSource.ref, latestCommit);
     if (latestCommit === gitSource.commit) return 'unchanged';
-    if (gitSource.commit && !gitObjectExists(repository, gitSource.commit)) {
+    if (gitSource.commit && !(await gitObjectExists(repository, gitSource.commit))) {
       throw new DomainError('git.commitMissing', { commit: gitSource.commit });
     }
 
     const newPath = gitSource.commit
-      ? detectRenamedSkillPath(
+      ? await detectRenamedSkillPath(
           repository,
           gitSource.commit,
           latestCommit,
           gitSource.path ?? '.'
         )
       : gitSource.path;
-    if (!gitObjectExists(repository, `${latestCommit}:${sourceSkillFile(newPath ?? '.')}`)) {
+    if (!(await gitObjectExists(repository, `${latestCommit}:${sourceSkillFile(newPath ?? '.')}`))) {
       if (!allowDelete) {
         const links = (await readState()).links.filter((link) => link.skill === skill.name);
         if (!options.confirmDelete) {
@@ -598,7 +599,7 @@ async function applyGitSkillUpdate(
         dirname(repository),
         `remote-${assertSkillName(skill.name)}-${process.pid}`
       );
-      git(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
+      await runGit(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
       try {
         merge = await prepareDirectoryMerge(skill.name, baseline, join(remoteTree, newPath));
       } finally {
@@ -609,7 +610,7 @@ async function applyGitSkillUpdate(
       ...gitSource,
       ref:
         gitSource.ref ||
-        git(['-C', repository, 'symbolic-ref', '--short', latestRef]).replace('origin/', ''),
+        (await runGit(['-C', repository, 'symbolic-ref', '--short', latestRef])).replace('origin/', ''),
       path: newPath,
       commit: latestCommit,
     };
@@ -627,8 +628,8 @@ async function applyGitSkillUpdate(
     }
 
     await installMergedCollectionSkill(skill.name, merge.workspace, nextSource);
-    await rm(merge.workspace, { recursive: true, force: true });
-    if (baseline) await rm(baseline, { recursive: true, force: true });
+    await rm(merge.workspace, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
+    if (baseline) await rm(baseline, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
     await commitCollection(`update ${skill.name}`);
     return 'updated';
   } finally {
@@ -670,12 +671,9 @@ export async function updateGitSkills(
 }
 
 /** Foreground git with captured stderr so DomainError can surface the real failure. */
-function gitForeground(args: string[]): void {
+async function gitForeground(args: string[]): Promise<void> {
   try {
-    execFileSync('git', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    await runGit(args);
   } catch (error) {
     throw new Error(errorMessage(error));
   }
@@ -689,7 +687,7 @@ async function abortLeftoverCollectionRebase(root: string): Promise<void> {
     (await exists(join(gitDir, 'rebase-apply')));
   if (!inProgress) return;
   try {
-    gitForeground(['-C', root, 'rebase', '--abort']);
+    await gitForeground(['-C', root, 'rebase', '--abort']);
   } catch (error) {
     throw new Error(
       `collection git rebase in progress and could not abort: ${errorMessage(error)}`
@@ -703,7 +701,12 @@ async function abortLeftoverCollectionRebase(root: string): Promise<void> {
  * background sync). Never runs `pull --rebase` on the main collection, so a conflict
  * cannot leave skills/metadata mid-rebase.
  */
-async function foregroundCollectionSync(): Promise<void> {
+export interface CollectionSyncProgress {
+  stages: Record<string, 'committed' | 'unchanged' | 'failed' | 'not-run'>;
+  conflicts: string[];
+}
+
+async function foregroundCollectionSync(progress?: CollectionSyncProgress): Promise<void> {
   const paths = collectionPaths();
   const root = paths.root;
   const lock = join(paths.local, 'git-sync.lock');
@@ -721,42 +724,54 @@ async function foregroundCollectionSync(): Promise<void> {
   try {
     // Flush local WIP first so dirty skills/metadata never block sync.
     // Skip background child — this call is the sync.
-    await commitCollection('sync pending collection changes', true, false);
+    try {
+      const before = await runGit(['-C', root, 'rev-parse', 'HEAD']);
+      await commitCollection('sync pending collection changes', true, false);
+      if (progress) progress.stages.commit = before === await runGit(['-C', root, 'rev-parse', 'HEAD']) ? 'unchanged' : 'committed';
+    } catch (error) { if (progress) progress.stages.commit = 'failed'; throw error; }
     await abortLeftoverCollectionRebase(root);
 
-    const remotes = git(['-C', root, 'remote']).split(/\r?\n/).filter(Boolean);
+    const remotes = (await runGit(['-C', root, 'remote'])).split(/\r?\n/).filter(Boolean);
     if (!remotes.includes('origin')) {
       throw new DomainError('git.syncFailed', { error: 'no origin remote' });
     }
 
-    const branch = git(['-C', root, 'symbolic-ref', '--short', 'HEAD']);
-    const localHead = git(['-C', root, 'rev-parse', 'HEAD']);
-    gitForeground(['-C', root, 'fetch', 'origin']);
+    const branch = await runGit(['-C', root, 'symbolic-ref', '--short', 'HEAD']);
+    const localHead = await runGit(['-C', root, 'rev-parse', 'HEAD']);
+    try { await gitForeground(['-C', root, 'fetch', 'origin']); if (progress) progress.stages.fetch = 'committed'; }
+    catch (error) { if (progress) progress.stages.fetch = 'failed'; throw error; }
     const upstream = `refs/remotes/origin/${branch}`;
-    if (!gitObjectExists(root, upstream)) {
-      gitForeground(['-C', root, 'push', '-u', 'origin', branch]);
+    if (!(await gitObjectExists(root, upstream))) {
+      try { await gitForeground(['-C', root, 'push', '-u', 'origin', branch]); if (progress) progress.stages.push = 'committed'; }
+      catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
+      if (progress) progress.stages.merge = 'unchanged';
       return;
     }
 
-    const remoteHead = git(['-C', root, 'rev-parse', upstream]);
+    const remoteHead = await runGit(['-C', root, 'rev-parse', upstream]);
     if (remoteHead === localHead) {
+      if (progress) { progress.stages.merge = 'unchanged'; progress.stages.push = 'unchanged'; }
       return;
     }
 
     worktreeRoot = await mkdtemp(join(tmpdir(), 'iskills-collection-sync-'));
     worktree = join(worktreeRoot, 'worktree');
-    git(['-C', root, 'worktree', 'add', '--quiet', '--detach', worktree, localHead]);
-    git(['-C', worktree, 'config', 'user.name', 'Skill Collection']);
-    git(['-C', worktree, 'config', 'user.email', 'iskills@localhost']);
+    await runGit(['-C', root, 'worktree', 'add', '--quiet', '--detach', worktree, localHead]);
+    await runGit(['-C', worktree, 'config', 'user.name', 'Skill Collection']);
+    await runGit(['-C', worktree, 'config', 'user.email', 'iskills@localhost']);
     try {
-      gitForeground(['-C', worktree, 'merge', '--no-edit', remoteHead]);
+      await gitForeground(['-C', worktree, 'merge', '--no-edit', remoteHead]);
     } catch {
+      if (progress) {
+        progress.stages.merge = 'failed';
+        progress.conflicts = (await runGit(['-C', worktree, 'diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean);
+      }
       throw new DomainError('git.conflictWithOrigin');
     }
 
-    const mergedHead = git(['-C', worktree, 'rev-parse', 'HEAD']);
-    const currentHead = git(['-C', root, 'rev-parse', 'HEAD']);
-    const dirty = git([
+    const mergedHead = await runGit(['-C', worktree, 'rev-parse', 'HEAD']);
+    const currentHead = await runGit(['-C', root, 'rev-parse', 'HEAD']);
+    const dirty = await runGit([
       '-C',
       root,
       'status',
@@ -769,15 +784,17 @@ async function foregroundCollectionSync(): Promise<void> {
         error: 'collection changed during sync',
       });
     }
-    git(['-C', root, 'merge', '--quiet', '--ff-only', mergedHead]);
-    gitForeground(['-C', root, 'push', 'origin', branch]);
+    await runGit(['-C', root, 'merge', '--quiet', '--ff-only', mergedHead]);
+    if (progress) progress.stages.merge = 'committed';
+    try { await gitForeground(['-C', root, 'push', 'origin', branch]); if (progress) progress.stages.push = 'committed'; }
+    catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
   } catch (error) {
     if (error instanceof DomainError) throw error;
     throw new DomainError('git.syncFailed', { error: errorMessage(error) });
   } finally {
     if (worktree && worktreeRoot) {
       try {
-        git(['-C', root, 'worktree', 'remove', '--force', worktree]);
+        await runGit(['-C', root, 'worktree', 'remove', '--force', worktree], new AbortController().signal);
       } catch {}
       await rm(worktreeRoot, { recursive: true, force: true });
     }
@@ -785,9 +802,9 @@ async function foregroundCollectionSync(): Promise<void> {
   }
 }
 
-export async function syncCollection(background: boolean): Promise<void> {
+export async function syncCollection(background: boolean, progress?: CollectionSyncProgress): Promise<void> {
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) throw new DomainError('git.notARepo');
   if (background) return backgroundCollectionSync();
-  return foregroundCollectionSync();
+  return foregroundCollectionSync(progress);
 }

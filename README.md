@@ -8,7 +8,7 @@
 
 **Personal skill collection for AI coding agents** — discover, collect, install, and maintain skills that agents load via `SKILL.md`.
 
-`iskills` is a terminal-first app: a full-screen TUI for day-to-day work, plus a small set of CLI commands for search, import, install, and Git setup. One collection per developer; no cloud account, no team admin surface.
+`iskills` provides a full-screen TUI for people and a non-interactive JSON CLI for agents and scripts. Both manage skills and MCP configurations in one personal collection.
 
 ## Why iskills
 
@@ -26,7 +26,7 @@ Data integrity comes first: writes are transactional where it matters; conflicts
 ## Requirements
 
 - **Node.js** 20.6+
-- **Bun** recommended for the full-screen TUI (OpenTUI native FFI). `iskills` re-execs under Bun when the current Node lacks `node:ffi`. Pure CLI paths (help, non-TTY flags) work on Node alone.
+- **Bun** recommended for the full-screen TUI (OpenTUI native FFI). Interactive entries re-exec under Bun when Node lacks `node:ffi`. Agent commands run on Node alone, without loading React or OpenTUI.
 - **macOS** or **Linux**
 - A TTY for the interactive UI (`stdin` and `stdout`)
 - **Git** optional — enable only if you want collection versioning / remote sync
@@ -63,19 +63,19 @@ iskills import https://github.com/org/skills-repo.git
 iskills import -g
 iskills import -g --agent pi
 
-# Create a new skill in the collection and open its directory
-iskills create my-skill
+# Create a new skill in the collection
+iskills skill create my-skill
 
 # Install from your collection into this project (symlink)
-iskills add my-skill
+iskills skill install my-skill --agent codex --scope project
 
 # Install into agent global dirs, or as a detached copy
-iskills add my-skill -g --agent claude
-iskills add my-skill --copy
+iskills skill install my-skill --agent claude --scope global
+iskills skill install my-skill --to ./copies --copy
 
 # Optional: turn the collection into a Git repo (and set origin)
-iskills init
-iskills init --remote git@github.com:you/my-skills.git
+iskills collection init
+iskills collection init --remote git@github.com:you/my-skills.git
 
 # Configure UI language (follow system / Chinese / English)
 iskills config
@@ -92,20 +92,24 @@ In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) liv
 | --- | --- |
 | `iskills` | Main TUI — project / global / collection browser |
 | `iskills search [query]` | Search TUI against skills.sh; save selections to the collection |
-| `iskills create [name]` | Create a new skill in the collection and open its directory |
 | `iskills import [source]` | Import a local path or Git URL |
-| `iskills add [skill…]` | Install from the collection into a project or global agent dir |
-| `iskills init` | Initialize Git for the collection (optional remote) |
 | `iskills config` | Configure UI preferences (language, collection Git remote) |
 | `iskills mcp` | MCP collection TUI — project / global / collection |
+| `iskills skill <action>` | Discover, import, create, install, update and maintain skills; JSON |
+| `iskills mcp <action>` | Collect, write, update, enable/disable and maintain MCP entries and secrets; JSON |
+| `iskills collection <action>` | Initialize Git, inspect/change origin, explicitly sync; JSON |
+| `iskills config get\|set` | Read/change locale and secret tracking preferences; JSON |
+| `iskills agents` / `iskills status` | Inspect supported targets and collection health; JSON |
 
 Common flags (see `iskills help <command>` for the full set):
 
 - **`import`:** `-g` / `--global`, `--agent <name>`, `--all`, `--replace`, `-y`
-- **`add`:** `-g` / `--global`, `--agent <name>`, `--to <dir>`, `--copy`, `--replace`, `-y`
-- **`init`:** `--remote <git-url>`
+- **`skill install`:** explicit `--agent <id> --scope project|global` or `--to <dir>`, `--copy`, `--replace`
+- **Writes:** `--dry-run` plans without changing persistent state; `--replace` authorizes replacement and `--yes` authorizes deletion
 - **`search`:** `--replace`
-- **`mcp import` / `mcp add`:** `-g` / `--global`, `--agent <name>`, `-y`
+- **`mcp create`:** `--input <UTF-8-file|->`; **`mcp add`:** explicit `--agent <id> --scope project|global`
+
+Agent commands always emit one JSON document, including errors. Exit codes: `0` completed/unchanged, `2` usage or authorization, `3` preflight conflict, `1` execution failure, `130` interrupted. Check item statuses and `warnings` separately: a local Git commit can fail after the business write succeeds. Read commands never initialize or repair the collection. Agent writes do not start background remote sync; use `iskills collection sync` explicitly. See [the shipped agent guide](./AGENT-CLI.md) for examples.
 
 Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `pi`, `zcode`, `trae`, `qoder`, `grok`.
 
@@ -114,7 +118,7 @@ Supported `--agent` values: `agents`, `codex`, `claude`, `cursor`, `opencode`, `
 | Item | Location |
 | --- | --- |
 | Collection root | `$XDG_CONFIG_HOME/iskills`, or `~/.config/iskills` if unset |
-| Git | Optional. When the collection is a Git repo, changes are auto-committed and can sync asynchronously |
+| Git | Optional. Writes commit locally; interactive flows may sync in the background, agent commands sync only explicitly |
 | Source conflicts | `.local/conflicts` under the collection — resolve with an editor + Git, or copy a handoff from Alerts via **Copy for Agent** |
 
 After you commit a merge resolution, the next main TUI start (or a retained collection command) applies the result. Active in-use skills are never overwritten by conflict material.
@@ -137,7 +141,6 @@ Stack: TypeScript (strict), OpenTUI, React. The published package ships compiled
 
 - Skill marketplace, hosting, accounts, or cloud sync as a product
 - Desktop or web GUI
-- CI/CD or headless machine API as the primary interface
 - Multi-user / org permissions
 
 ## Contributing

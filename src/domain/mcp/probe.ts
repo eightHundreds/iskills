@@ -3,6 +3,8 @@ import type { HttpProbeStatus, McpRecipe, McpSecretValues } from './types.js';
 export interface HttpProbeInit {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  onResponse?: (status: number) => void;
 }
 
 export async function probeHttp(
@@ -23,8 +25,9 @@ export async function probeHttp(
       method: 'GET',
       headers,
       redirect: 'manual',
-      signal: controller.signal,
+      signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
     });
+    init.onResponse?.(response.status);
     if (response.status === 401 || response.status === 403) return 'needs-auth';
     if (response.status >= 200 && response.status < 400) return 'reachable';
     return 'failed';

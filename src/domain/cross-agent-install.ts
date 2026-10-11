@@ -30,11 +30,9 @@ export async function canonicalizePath(path: string): Promise<string> {
   try {
     return await realpath(absolute);
   } catch {
-    try {
-      return join(await realpath(dirname(absolute)), basename(absolute));
-    } catch {
-      return absolute;
-    }
+    const parent = dirname(absolute);
+    if (parent === absolute) return absolute;
+    return join(await canonicalizePath(parent), basename(absolute));
   }
 }
 

@@ -34,6 +34,10 @@ export function setDomainNotify(fn: DomainNotify): void {
   domainNotifyImpl = fn;
 }
 
+export function getDomainNotify(): DomainNotify {
+  return domainNotifyImpl;
+}
+
 export function domainNotify(code: string, params: DomainParams = {}): void {
   domainNotifyImpl(code, params);
 }

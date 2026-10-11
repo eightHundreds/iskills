@@ -541,26 +541,43 @@ export async function removeFromCollection(
   const origin = links.find((link) => link.kind === 'origin');
   const originRestorable = Boolean(origin && (await isExactSymlink(origin.path, skillPath)));
 
-  for (const link of links.filter((item) => item.kind === 'usage')) {
-    if (await isExactSymlink(link.path, skillPath)) await rm(link.path);
-  }
-
-  if (origin && originRestorable) {
-    await rm(origin.path);
-    await moveDirectory(skillPath, origin.path);
-  } else {
-    if (!confirmed) throw new DomainError('domain.removeNeedsConfirm');
-    await rm(skillPath, { recursive: true });
-  }
-  await rm(metadataPath(name), { force: true });
-  await rm(baselinePath(name), { recursive: true, force: true });
+  if (!originRestorable && !confirmed) throw new DomainError('domain.removeNeedsConfirm');
+  await mkdir(paths.local, { recursive: true });
+  const transaction = await mkdtemp(join(paths.local, '.remove-'));
+  const staged: Array<{ path: string; backup: string }> = [];
+  let restoredOrigin = false;
   const { state: withoutSourceConflicts, dropped } = dropSourceConflicts(state, name);
-  for (const conflict of dropped) {
-    await rm(conflict.path, { recursive: true, force: true });
+  try {
+    const removals = [skillPath, metadataPath(name), baselinePath(name)];
+    for (const link of links) {
+      if ((link.kind === 'usage' || link.kind === 'origin' && originRestorable) && await isExactSymlink(link.path, skillPath)) removals.push(link.path);
+    }
+    // Revalidate before moving the tree; the symlinks become dangling afterwards.
+    for (const path of removals) {
+      if (!(await pathPresent(path))) continue;
+      const backup = join(dirname(path), `.iskills-remove-${process.pid}-${staged.length}`);
+      if (await pathPresent(backup)) throw new DomainError('domain.locationChanged', { path: backup });
+      await rename(path, backup);
+      staged.push({ path, backup });
+    }
+    if (origin && originRestorable) {
+      await moveDirectory(staged[0]!.backup, origin.path);
+      restoredOrigin = true;
+    }
+    await writeState({ ...state, links: state.links.filter((link) => link.skill !== name), conflicts: withoutSourceConflicts.conflicts });
+  } catch (error) {
+    try {
+      if (restoredOrigin && origin) await moveDirectory(origin.path, staged[0]!.backup);
+      for (const item of [...staged].reverse()) await rename(item.backup, item.path);
+    } catch (rollbackError) {
+      throw new DomainError('domain.removeFailedRollback', { error: errorMessage(error), rollback: errorMessage(rollbackError) });
+    }
+    await rm(transaction, { recursive: true, force: true });
+    throw error;
   }
-  state.links = state.links.filter((link) => link.skill !== name);
-  state.conflicts = withoutSourceConflicts.conflicts;
-  await writeState(state);
+  for (const path of [...staged.map((item) => item.backup), ...dropped.map((conflict) => conflict.path), transaction]) {
+    await rm(path, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
+  }
   const commitOk = await commitCollection(`remove ${name}`);
   // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
   if (origin && !originRestorable) {
@@ -608,7 +625,7 @@ export async function unbindCollectedSkillSource(name: string): Promise<void> {
     }
     throw error;
   }
-  await rm(baselinePath(skillName), { recursive: true, force: true });
+  await rm(baselinePath(skillName), { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
   for (const conflict of dropped) {
     await rm(conflict.path, { recursive: true, force: true }).catch((cleanupError) => {
       domainNotify('domain.warnConflictCleanup', { error: errorMessage(cleanupError) });
@@ -856,7 +873,7 @@ export async function materializeSkillReferences(
   return prepared.length;
 }
 
-export async function removeSkillLocations(skills: Skill[]): Promise<number> {
+export async function removeSkillLocations(skills: Skill[], brokenPaths: string[] = []): Promise<number> {
   const paths = collectionPaths();
   const unique = await validateSkillLocations(skills, 'delete');
 
@@ -869,13 +886,32 @@ export async function removeSkillLocations(skills: Skill[]): Promise<number> {
     }
   }
 
-  for (const path of unique.keys()) await rm(path, { recursive: true });
-
   const removed = new Set(unique.keys());
+  if (!removed.size && !brokenPaths.length) return 0;
+  for (const path of brokenPaths) {
+    if (!(await lstat(path)).isSymbolicLink() || await exists(path)) throw new DomainError('domain.locationChanged', { path });
+    removed.add(resolve(path));
+  }
   const state = await readState();
-  state.links = state.links.filter((link) => !removed.has(resolve(link.path)));
-  await writeState(state);
-  return unique.size;
+  const staged: Array<{ path: string; backup: string }> = [];
+  try {
+    for (const path of removed) {
+      const workspace = await mkdtemp(join(dirname(path), '.iskills-uninstall-'));
+      const backup = join(workspace, 'old');
+      try { await rename(path, backup); }
+      catch (error) { await rm(workspace, { recursive: true, force: true }); throw error; }
+      staged.push({ path, backup });
+    }
+    if (state.links.some((link) => removed.has(resolve(link.path)))) await writeState({ ...state, links: state.links.filter((link) => !removed.has(resolve(link.path))) });
+  } catch (error) {
+    try {
+      for (const item of [...staged].reverse()) await rename(item.backup, item.path);
+    } catch (rollbackError) { throw new DomainError('domain.uninstallFailedRollback', { error: errorMessage(error), rollback: errorMessage(rollbackError) }); }
+    for (const item of staged) await rm(dirname(item.backup), { recursive: true, force: true });
+    throw error;
+  }
+  for (const item of staged) await rm(dirname(item.backup), { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
+  return removed.size;
 }
 
 export async function installMergedCollectionSkill(

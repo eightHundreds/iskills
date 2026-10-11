@@ -1,10 +1,7 @@
 import { createRequire } from 'node:module';
 import {
-  commandAdd,
   commandConfig,
-  commandCreate,
   commandImport,
-  commandInit,
   commandSearch,
   printHelp,
 } from './commands/index.js';
@@ -32,10 +29,7 @@ const packageVersion = (
 
 const PUBLIC_COMMANDS = new Set([
   'search',
-  'add',
-  'create',
   'import',
-  'init',
   'config',
   'mcp',
 ]);
@@ -59,9 +53,10 @@ export async function printProcessFailure(error: unknown): Promise<void> {
     process.exitCode = 130;
     return;
   }
-  console.error(t('cli.errorPrefix', { message: formatAppError(error) }));
+  const plain = (value: string): string => !process.stdin.isTTY || !process.stdout.isTTY ? value.replace(/\u001b\[[0-9;]*m/g, '') : value;
+  process.stderr.write(`${plain(t('cli.errorPrefix', { message: formatAppError(error) }))}\n`);
   const path = await persistFailureLog(error);
-  if (path) console.error(t('cli.logWritten', { path }));
+  if (path) process.stderr.write(`${plain(t('cli.logWritten', { path }))}\n`);
   process.exitCode = 1;
 }
 
@@ -88,7 +83,6 @@ async function run(argv: string[]): Promise<void> {
   }
 
   await ensureCollection();
-  if (command === 'init') return commandInit(rest);
   await finalizeResolvedConflicts();
   await commitCollection('capture external skill edits');
   // Collection / source health is shown live in the browser footer (⚠), not via stderr cache.
@@ -97,8 +91,6 @@ async function run(argv: string[]): Promise<void> {
     const { runBrowserApp } = await import('./ui/browser/index.js');
     return runBrowserApp('', 'collection');
   }
-  if (command === 'add') return commandAdd(rest);
-  if (command === 'create') return commandCreate(rest);
   if (command === 'import') return commandImport(rest);
   throw new DomainError('cli.unknownCommand', { command });
 }

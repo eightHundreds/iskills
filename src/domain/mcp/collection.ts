@@ -64,11 +64,11 @@ export function collectedFromRecord(raw: Record<string, unknown>, fallbackName: 
     note: typeof raw.note === 'string' ? raw.note : '',
     source: normalizeSource(raw.source),
     recipe: normalizeRecipe(raw.recipe),
+    ...(raw.secretsResetPending === true ? { secretsResetPending: true } : {}),
   };
 }
 
 export async function listCollectedMcps(): Promise<CollectedMcp[]> {
-  await ensureMcpCollection();
   const dir = mcpCollectionDir();
   if (!(await exists(dir))) return [];
   const entries = await readdir(dir);
@@ -87,7 +87,7 @@ export async function readCollectedMcp(name: string): Promise<CollectedMcp | und
   return collectedFromRecord(await readJsonObject(path), name);
 }
 
-async function writeCollectedMcpRecord(mcp: CollectedMcp): Promise<void> {
+export async function writeCollectedMcpRecord(mcp: CollectedMcp): Promise<void> {
   const name = assertMcpName(mcp.name);
   await writeJsonObject(mcpCollectionPath(name), {
     name,
@@ -96,6 +96,7 @@ async function writeCollectedMcpRecord(mcp: CollectedMcp): Promise<void> {
     note: mcp.note,
     source: mcp.source,
     recipe: mcp.recipe,
+    ...(mcp.secretsResetPending ? { secretsResetPending: true } : {}),
   });
 }
 

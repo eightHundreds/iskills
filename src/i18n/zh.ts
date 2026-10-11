@@ -141,25 +141,15 @@ export const zh = {
 `,
   'help.mcp': `用法：
   iskills mcp
-  iskills mcp create [名称]
-  iskills mcp import [选项]
-  iskills mcp add [名称...] [选项]
+  iskills mcp <动作> [参数] [选项]
 
 管理 MCP 配置收藏夹。无子命令时打开项目 / 全局 / 收藏夹浏览器。
 
-create 选项：
-  --transport <stdio|http|sse>  传输
-  --command <命令>              stdio 启动命令
-  --url <URL>                   http/sse 地址
-  --args <参数>                 可重复
-
-import / add 选项：
-  -g, --global       全局位置（默认当前项目）
-  --agent <名称>     限定 Agent，可重复
-  --all              导入全部发现项
-  --replace          替换同名收藏
-  -y, --yes          跳过确认
-  -h, --help         显示帮助
+动作始终非交互并输出 JSON：
+  list / show / locations / create / import / add
+  edit / rename / remove / update / enable / disable / uninstall
+  probe / secret status|set|unset / tag rename
+用 iskills help mcp <动作> 查看参数。
 `,
   'help.root': `Skill 收藏夹
 
@@ -168,12 +158,14 @@ import / add 选项：
 
 命令：
   search [关键词]    搜索技能并保存到收藏夹
-  add [技能...]      从收藏夹添加到当前项目
-  create [名称]      在收藏夹新建技能并打开目录
   import [来源]      导入本地路径或 Git 来源
-  init               初始化收藏夹 Git
   config             打开配置界面（UI 语言、远程 Git、MCP 密钥）
   mcp                MCP 配置收藏夹
+  skill <动作>       非交互技能管理（JSON）
+  mcp <动作>         非交互 MCP 管理（JSON）
+  collection <动作>  非交互收藏夹 Git 管理（JSON）
+  config get|set     非交互配置（JSON）
+  agents / status    查看支持能力与收藏夹状态（JSON）
 
 选项：
   -h, --help         显示帮助（可用 iskills help <命令>）

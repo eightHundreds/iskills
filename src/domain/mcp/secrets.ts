@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -7,6 +6,8 @@ import { readUserConfig, writeUserConfig } from '../user-config.js';
 import { assertMcpName } from './identity.js';
 import { readJsonObject, writeJsonObject } from './io.js';
 import type { HttpProbeStatus, McpRecipe, McpSecretValues } from './types.js';
+import { runGit } from '../process.js';
+import { registerSecrets } from '../operation.js';
 
 /**
  * Overlay fill for recipe secret keys (static token / env).
@@ -55,7 +56,7 @@ export async function setMcpSecretsInGit(enabled: boolean): Promise<void> {
   const current = await readUserConfig();
   await writeUserConfig({ ...current, mcpSecretsInGit: enabled });
   await syncSecretsGitignore(enabled);
-  if (enabled && (await exists(mcpSecretsPath()))) forceAddSecretsFile();
+  if (enabled && (await exists(mcpSecretsPath()))) await forceAddSecretsFile();
 }
 
 export async function readAllMcpSecrets(): Promise<Record<string, McpSecretValues>> {
@@ -64,6 +65,7 @@ export async function readAllMcpSecrets(): Promise<Record<string, McpSecretValue
   for (const [name, value] of Object.entries(raw)) {
     if (!value || typeof value !== 'object') continue;
     out[name] = normalizeSecrets(value as Record<string, unknown>);
+    registerSecrets(out[name]!);
   }
   return out;
 }
@@ -78,12 +80,13 @@ export function emptySecrets(): McpSecretValues {
 }
 
 export async function writeMcpSecrets(name: string, secrets: McpSecretValues): Promise<void> {
+  registerSecrets(secrets);
   const key = assertMcpName(name);
   const all = await readAllMcpSecrets();
   if (isEmptySecrets(secrets)) delete all[key];
   else all[key] = secrets;
   await writeJsonObject(mcpSecretsPath(), all);
-  if (await readMcpSecretsInGit()) forceAddSecretsFile();
+  if (await readMcpSecretsInGit()) await forceAddSecretsFile();
 }
 
 export async function deleteMcpSecrets(name: string): Promise<void> {
@@ -92,7 +95,7 @@ export async function deleteMcpSecrets(name: string): Promise<void> {
   if (!(key in all)) return;
   delete all[key];
   await writeJsonObject(mcpSecretsPath(), all);
-  if (await readMcpSecretsInGit()) forceAddSecretsFile();
+  if (await readMcpSecretsInGit()) await forceAddSecretsFile();
 }
 
 export async function moveMcpSecrets(from: string, to: string): Promise<void> {
@@ -144,26 +147,24 @@ async function syncSecretsGitignore(enabled: boolean): Promise<void> {
   }
   while (lines.length && lines[lines.length - 1] === '') lines.pop();
   await writeFile(gitignore, `${lines.join('\n')}\n`, 'utf8');
-  if (!enabled) untrackSecretsFile();
+  if (!enabled) await untrackSecretsFile();
 }
 
-function forceAddSecretsFile(): void {
+async function forceAddSecretsFile(): Promise<void> {
   const root = collectionPaths().root;
   if (!existsSync(join(root, '.git'))) return;
   try {
-    execFileSync('git', ['-C', root, 'add', '-f', '--', SECRETS_REL], { stdio: 'ignore' });
+    await runGit(['-C', root, 'add', '-f', '--', SECRETS_REL]);
   } catch {
     /* not a git repo or add failed */
   }
 }
 
-function untrackSecretsFile(): void {
+async function untrackSecretsFile(): Promise<void> {
   const root = collectionPaths().root;
   if (!existsSync(join(root, '.git'))) return;
   try {
-    execFileSync('git', ['-C', root, 'rm', '--cached', '-f', '--', SECRETS_REL], {
-      stdio: 'ignore',
-    });
+    await runGit(['-C', root, 'rm', '--cached', '-f', '--', SECRETS_REL]);
   } catch {
     /* not tracked */
   }

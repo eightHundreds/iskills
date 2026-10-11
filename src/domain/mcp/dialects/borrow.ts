@@ -15,11 +15,7 @@ export async function asBorrowed(
 ): Promise<McpLocationEntry[]> {
   const source = getDialect(sourceAgent);
   const rows = await source.readOwned(sourceScope, ctx);
-  const path = source.ownedPath(sourceScope, ctx) ?? rows[0]?.filePath ?? '';
-  return toLocationEntries(viewer, viewerScope, rows, 'borrowed', false, borrowedFrom).map((entry) => ({
-    ...entry,
-    filePath: path || entry.filePath,
-  }));
+  return toLocationEntries(viewer, viewerScope, rows, 'borrowed', false, borrowedFrom);
 }
 
 export async function sharedJsonBorrowed(

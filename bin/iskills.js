@@ -14,6 +14,9 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { isNonInteractiveCommand } from './command-route.mjs';
+
+const nonInteractive = isNonInteractiveCommand(process.argv.slice(2));
 
 const FORCE_NODE = process.env.ISKILLS_FORCE_NODE === '1';
 const ALREADY_REEXEC = process.env.ISKILLS_RUNTIME === '1';
@@ -47,6 +50,7 @@ function findBun() {
 }
 
 function shouldReexecToBun() {
+  if (nonInteractive) return false;
   if (FORCE_NODE || ALREADY_REEXEC || isBunRuntime()) return false;
   if (nodeHasFfi()) return false;
   return Boolean(findBun());
@@ -77,10 +81,13 @@ if (shouldReexecToBun()) {
 
 // OpenTUI + react-reconciler need an ESM resolve hook under Node (extensionless subpaths).
 // Bun resolves those without the hook; registering is harmless.
-await import('./opentui-register.mjs');
-
-const { main, printProcessFailure } = await import('../dist/src/cli.js');
-
-main().catch((error) => {
-  void printProcessFailure(error);
-});
+if (nonInteractive) {
+  const { main } = await import('../dist/src/commands/agent/index.js');
+  await main();
+} else {
+  await import('./opentui-register.mjs');
+  const { main, printProcessFailure } = await import('../dist/src/cli.js');
+  main().catch((error) => {
+    void printProcessFailure(error);
+  });
+}

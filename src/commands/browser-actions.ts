@@ -68,6 +68,7 @@ import {
 } from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
 import { persistFailureLog } from '../util/run-log-session.js';
+import { bindSource } from '../domain/agent-skill-write.js';
 
 async function bindMetadataSource(
   skillName: string,
@@ -87,10 +88,10 @@ async function bindMetadataSource(
     path: assertRelativePath(sourcePath),
     ...(resolvedRef ? { ref: resolvedRef } : {}),
   };
+  const current = metadata.source;
+  if (current.type === 'git' && current.url === source.url && current.path === source.path && current.ref === source.ref && current.refType === source.refType) return;
+  await bindSource(metadata, source);
   metadata.source = source;
-  const baseline = baselinePath(skillName);
-  await rm(baseline, { recursive: true, force: true });
-  await cp(join(collectionPaths().skills, skillName), baseline, { recursive: true });
 }
 
 export async function loadBrowserData(): Promise<BrowserDataSnapshot> {

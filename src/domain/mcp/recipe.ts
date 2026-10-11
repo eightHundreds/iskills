@@ -78,7 +78,7 @@ export function projectServerObject(
   style: 'json' | 'opencode'
 ): Record<string, unknown> {
   const env = projectMap(recipe.envKeys, secrets.env);
-  const headers = projectMap(recipe.headerKeys, secrets.headers);
+  const headers = projectMap(recipe.headerKeys, secrets.headers, true);
   const url = secrets.url ?? recipe.url;
 
   if (style === 'opencode') {
@@ -123,7 +123,7 @@ export function projectTomlServer(
   secrets: McpSecretValues
 ): Record<string, unknown> {
   const env = projectMap(recipe.envKeys, secrets.env);
-  const headers = projectMap(recipe.headerKeys, secrets.headers);
+  const headers = projectMap(recipe.headerKeys, secrets.headers, true);
   const url = secrets.url ?? recipe.url;
   const out: Record<string, unknown> = {};
   if (recipe.transport === 'stdio') {
@@ -139,10 +139,11 @@ export function projectTomlServer(
   return out;
 }
 
-export function projectMap(keys: string[], values: Record<string, string>): Record<string, string> {
+export function projectMap(keys: string[], values: Record<string, string>, caseInsensitive = false): Record<string, string> {
   const out: Record<string, string> = {};
   for (const key of keys) {
-    if (values[key]) out[key] = values[key];
+    const stored = caseInsensitive ? Object.keys(values).find((name) => name.toLowerCase() === key.toLowerCase()) : key;
+    if (stored && values[stored]) out[key] = values[stored]!;
     else out[key] = `\${${key}}`;
   }
   return out;

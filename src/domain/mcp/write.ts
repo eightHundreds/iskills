@@ -1,12 +1,13 @@
 import { homedir } from 'node:os';
 import { commitCollection, exists } from '../core.js';
-import { DomainError } from '../errors.js';
+import { DomainError, domainNotify } from '../errors.js';
 import {
   createCollectedRecord,
   deleteCollectedMcpFile,
   listCollectedMcps,
   readCollectedMcp,
   writeCollectedMcp,
+  writeCollectedMcpRecord,
 } from './collection.js';
 import {
   agentMcpWritable,
@@ -121,7 +122,19 @@ async function commitImportedMcp(
   const existing = findCollectedByName(collection, incoming.name);
   if (existing) {
     const match = classifyMcpMatch(existing, incoming);
-    if (match === 'same-source') return { result: 'unchanged', name: existing.name };
+    if (match === 'same-source' && !existing.secretsResetPending) {
+      if (options.keepSecrets !== false) {
+        const { fillMissing } = await import('../agent-mcp-write.js');
+        const before = await readMcpSecrets(existing.name);
+        const next = fillMissing(before, secrets);
+        if (JSON.stringify(before) !== JSON.stringify(next)) {
+          await writeMcpSecrets(existing.name, next);
+          await commitCollection(`mcp: complete secrets ${existing.name}`);
+          return { result: 'imported', name: existing.name };
+        }
+      }
+      return { result: 'unchanged', name: existing.name };
+    }
     if (match === 'collected-as') return { result: 'collected-as', name: existing.name };
     if (!options.allowReplace) {
       if (!options.confirmReplace) {
@@ -136,11 +149,10 @@ async function commitImportedMcp(
       if (!allowed) return { result: 'cancelled', name: incoming.name };
     }
   }
-  const committed = await writeCollectedMcp(incoming, `mcp: import ${incoming.name}`);
-  if (!committed) throw new DomainError('domain.gitCommitFailed', { error: incoming.name });
-  if (options.keepSecrets !== false && !isEmptySecrets(secrets)) {
-    await writeMcpSecrets(incoming.name, secrets);
-  }
+  const { collectMcpRecords } = await import('../agent-mcp-write.js');
+  const result = await collectMcpRecords([{ mcp: incoming, secrets: options.keepSecrets === false ? { env: {}, headers: {} } : secrets }], { replace: true }, 'mcp.import', new AbortController().signal);
+  if (result.error) throw new DomainError('mcp.writeFailed', { name: incoming.name }, { cause: new Error(result.error.code) });
+  for (const warning of result.warnings ?? []) domainNotify('domain.gitCommitFailed', { error: warning.code });
   return { result: 'imported', name: incoming.name };
 }
 
@@ -201,35 +213,18 @@ export async function addCollectedMcp(
   targets: AddMcpTarget[],
   ctx: McpScanContext = scanContext()
 ): Promise<{ added: number; skipped: number }> {
-  const collected = await readCollectedMcp(name);
-  if (!collected) throw new DomainError('mcp.missingInCollection', { name });
-  const secrets = await readMcpSecrets(collected.name);
-  let added = 0;
-  let skipped = 0;
-  for (const target of targets) {
-    if (!isMcpAgentId(target.agent)) throw new DomainError('mcp.unknownAgent', { name: target.agent });
-    const locations = (await listMcpLocations(target.scope, ctx)).filter(
-      (entry) => entry.agent === target.agent
-    );
-    const already = locations.find((entry) => recipesSameEndpoint(entry.recipe, collected.recipe));
-    if (already) {
-      skipped += 1;
-      continue;
-    }
-    if (!(await agentMcpWritable(target.agent, target.scope, ctx))) {
-      throw new DomainError('mcp.notWritable', { name: target.agent });
-    }
-    await writeOwnedServer(
-      target.agent,
-      target.scope,
-      ctx,
-      collected.name,
-      collected.recipe,
-      secrets
-    );
-    added += 1;
+  const { planMcpAdds } = await import('../agent-mcp-write.js');
+  const { executeWrites } = await import('../agent-write.js');
+  try {
+    const result = await executeWrites(await planMcpAdds([name], targets, ctx), false, false, 'mcp.add', new AbortController().signal);
+    if (result.error) throw new DomainError('mcp.sameNameExistsReplace', { name });
+    const items = result.result.items as Array<{ status: string }>;
+    return { added: items.filter((item) => item.status === 'committed').length, skipped: items.filter((item) => item.status === 'unchanged').length };
+  } catch (error) {
+    const failure = error as { code?: string; details?: Record<string, unknown> };
+    if (failure.code === 'mcp.notWritable') throw new DomainError('mcp.notWritable', { name: String(failure.details?.agent) });
+    throw error;
   }
-  return { added, skipped };
 }
 
 export async function toggleMcpLocation(
@@ -249,6 +244,7 @@ export async function updateLocationsFromCollection(
   const collected = await readCollectedMcp(name);
   if (!collected) throw new DomainError('mcp.missingInCollection', { name });
   const overlay = await readMcpSecrets(collected.name);
+  if (collected.secretsResetPending) throw new DomainError('mcp.missingSecrets', { name });
   let updated = 0;
   let skipped = 0;
   let cancelled = 0;
@@ -275,7 +271,8 @@ export async function updateLocationsFromCollection(
         continue;
       }
       const secrets = fillMissingSecrets(entry.secrets, overlay);
-      await writeOwnedServer(entry.agent, entry.scope, ctx, entry.nativeKey, collected.recipe, secrets);
+      const { writeMcpLocation } = await import('./location-write.js');
+      await writeMcpLocation(entry, ctx, collected.recipe, secrets);
       updated += 1;
     }
   }
@@ -298,7 +295,8 @@ export async function removeMcpLocation(
     throw new DomainError('mcp.borrowedNotMutable', { name: entry.nativeKey });
   }
   if (!isMcpAgentId(entry.agent)) throw new DomainError('mcp.unknownAgent', { name: entry.agent });
-  await removeOwnedServer(entry.agent, entry.scope, ctx, entry.nativeKey);
+  const { writeMcpLocation } = await import('./location-write.js');
+  await writeMcpLocation(entry, ctx);
 }
 
 export async function renameCollectedMcp(from: string, to: string): Promise<CollectedMcp> {
@@ -327,7 +325,13 @@ export async function updateCollectedRecipe(
   const current = await readCollectedMcp(name);
   if (!current) throw new DomainError('mcp.missingInCollection', { name });
   const next = { ...current, recipe };
-  const committed = await writeCollectedMcp(next, `mcp: edit ${name}`);
+  const clear = Boolean(current.secretsResetPending || !recipesSameEndpoint(current.recipe, recipe));
+  await writeCollectedMcpRecord({ ...next, secretsResetPending: clear });
+  if (clear) {
+    await deleteMcpSecrets(name);
+    await writeCollectedMcpRecord({ ...next, secretsResetPending: false });
+  }
+  const committed = await commitCollection(`mcp: edit ${name}`);
   if (!committed) throw new DomainError('domain.gitCommitFailed', { error: name });
   return next;
 }
