@@ -112,6 +112,7 @@ export const zh = {
   'help.import': `用法：
   iskills import [路径或 Git URL] [选项]
 
+（交互式人手导入入口。Agent 脚本请使用非交互命令：iskills skill import）
 导入本地路径或 Git 来源到收藏夹。
 
 选项：
@@ -140,37 +141,56 @@ export const zh = {
   -h, --help         显示帮助
 `,
   'help.mcp': `用法：
-  iskills mcp
-  iskills mcp <动作> [参数] [选项]
+  iskills mcp                       （有 TTY 时打开 MCP 配置收藏夹 TUI 浏览器）
+  iskills mcp <动作> [参数] [选项]  （非交互；输出单个 JSON 文档）
 
-管理 MCP 配置收藏夹。无子命令时打开项目 / 全局 / 收藏夹浏览器。
+动作列表：
+  list                 列出收藏的 MCP 配方与密钥状态
+  show <名称>          查看指定收藏 MCP 的配方与密钥状态
+  locations            列出各 Agent 的 MCP 生效位置及不透明 selector
+  create <名称>        按标准配方 JSON 创建新 MCP（--input <文件|->）
+  import               从原生 JSON 片段或已有位置导入（--input, --location）
+  add <名称...>        将收藏的 MCP 写入指定 Agent（--agent, --scope）
+  update <名称>        将收藏配方更新到指定的自有位置（--location）
+  enable <selector..>  启用指定的 MCP 位置
+  disable <selector..> 停用指定的 MCP 位置
+  uninstall <selector> 从目标 Agent 配置中移除 MCP（需要 --yes）
+  remove <名称...>     从收藏夹移除 MCP 配方及密钥（需要 --yes）
+  edit <名称>          修改配方、描述、标签或备注（--recipe-input, --tags）
+  rename <旧名> <新名> 重命名收藏的 MCP 配方
+  tag rename <旧> <新> 全局重命名 MCP 标签
+  probe <名称>         试探远端 HTTP/SSE MCP 端点的可达性与鉴权
+  secret status <名称> 查看声明与已配置的密钥键名（不输出值）
+  secret set <名称>    设置环境变量、Header 或 URL 凭据（--env, --header, --url）
+  secret unset <名称>  删除密钥（--env, --header, --url，需要 --yes）
 
-动作始终非交互并输出 JSON：
-  list / show / locations / create / import / add
-  edit / rename / remove / update / enable / disable / uninstall
-  probe / secret status|set|unset / tag rename
-用 iskills help mcp <动作> 查看参数。
+运行 \`iskills help mcp <动作>\` 查看详细参数、选项与 JSON 示例。
 `,
   'help.root': `Skill 收藏夹
 
 用法：
   iskills [命令] [选项]
 
-命令：
-  search [关键词]    搜索技能并保存到收藏夹
-  import [来源]      导入本地路径或 Git 来源
-  config             打开配置界面（UI 语言、远程 Git、MCP 密钥）
-  mcp                MCP 配置收藏夹
-  skill <动作>       非交互技能管理（JSON）
-  mcp <动作>         非交互 MCP 管理（JSON）
-  collection <动作>  非交互收藏夹 Git 管理（JSON）
-  config get|set     非交互配置（JSON）
-  agents / status    查看支持能力与收藏夹状态（JSON）
+交互式人手命令（有 TTY 时启动终端界面）：
+  iskills            打开技能浏览器（需 TTY）
+  search [关键词]    搜索技能并保存到收藏夹（需 TTY）
+  import [来源]      交互式导入本地或 Git 来源到收藏夹（需 TTY）
+  config             打开配置界面（需 TTY）
+  mcp                打开 MCP 配置浏览器（需 TTY）
 
-选项：
-  -h, --help         显示帮助（可用 iskills help <命令>）
+非交互式 Agent 命令（纯 Node 运行，免 TTY，始终输出单一 JSON）：
+  skill <动作>       技能发现、导入、安装、位置查看与维护
+  mcp <动作>         MCP 配方创建、导入、安装到 Agent、密钥与启停
+  collection <动作>  收藏夹 Git 仓库初始化与显式同步
+  config get|set     读取或修改全局配置项（locale, mcpSecretsInGit）
+  agents             查看本机支持的 Agent 列表及路径配置
+  status             离线检查收藏夹状态、Git 分支与读取异常
+
+帮助与选项：
+  -h, --help         显示帮助（可用 iskills help <命令路径> 查看具体子命令）
   -v, --version      显示版本
 
+提示：运行 \`iskills help skill\` 或 \`iskills help mcp\` 可列出该模块的所有可用动作。
 `,
   'config.localeTitle': 'UI 语言',
   'config.localeSystem': '跟随系统',

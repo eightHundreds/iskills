@@ -117,6 +117,7 @@ Options:
   'help.import': `Usage:
   iskills import [path or Git URL] [options]
 
+(Interactive human entry. For non-interactive scripts/Agents, use: iskills skill import)
 Import a local path or Git source into your collection.
 
 Options:
@@ -145,37 +146,56 @@ Options:
   -h, --help         Show help
 `,
   'help.mcp': `Usage:
-  iskills mcp
-  iskills mcp <action> [arguments] [options]
+  iskills mcp                       (opens interactive TUI browser when TTY is attached)
+  iskills mcp <action> [arguments] [options]  (non-interactive; returns one JSON document)
 
-Manage the MCP config collection. With no subcommand, opens the project / global / collection browser.
+Actions:
+  list                 List collected MCP recipes and secret status
+  show <name>          Show a collected MCP recipe and secret status
+  locations            List MCP locations, ownership, and opaque selectors
+  create <name>        Create collected MCP from recipe input (--input <file|->)
+  import               Import from native JSON snippet or existing location (--input, --location)
+  add <name...>        Install collected MCPs to agents (--agent, --scope)
+  update <name>        Update existing owned MCP location from collected recipe (--location)
+  enable <selector..>  Enable MCP location
+  disable <selector..> Disable MCP location
+  uninstall <selector> Remove MCP from target agent config (--yes)
+  remove <name...>     Remove MCP recipe and overlay secrets from collection (--yes)
+  edit <name>          Edit recipe, description, tags, note (--recipe-input, --tags)
+  rename <old> <new>   Rename collected MCP recipe
+  tag rename <old> <new> Rename an MCP tag throughout the collection
+  probe <name>         Probe remote HTTP/SSE MCP endpoint for connectivity and auth
+  secret status <name> List declared and configured secret keys
+  secret set <name>    Set environment variable, header, or URL secret (--env, --header, --url)
+  secret unset <name>  Delete secret overlay value (--env, --header, --url, --yes)
 
-Actions are always non-interactive and return JSON:
-  list / show / locations / create / import / add
-  edit / rename / remove / update / enable / disable / uninstall
-  probe / secret status|set|unset / tag rename
-Use iskills help mcp <action> for arguments.
+Run \`iskills help mcp <action>\` for detailed arguments, options, and JSON examples.
 `,
   'help.root': `Skill collection
 
 Usage:
   iskills [command] [options]
 
-Commands:
-  search [query]     Search skills and save into the collection
-  import [source]    Import a local path or Git source
-  config             Open config UI (UI language, Git remote, MCP secrets)
-  mcp                MCP config collection
-  skill <action>     Non-interactive skill management (JSON)
-  mcp <action>       Non-interactive MCP management (JSON)
-  collection <action> Non-interactive collection Git management (JSON)
-  config get|set     Non-interactive configuration (JSON)
-  agents / status    Inspect capabilities and collection status (JSON)
+Interactive Human Commands (require a TTY):
+  iskills            Open skill browser TUI
+  search [query]     Search skills and save into collection
+  import [source]    Interactive import from local directory or Git
+  config             Open configuration TUI
+  mcp                Open MCP configuration browser TUI
+
+Non-interactive Agent Commands (pure Node, no TTY required, emits single JSON document):
+  skill <action>     Skill discovery, import, install, inspection, and maintenance
+  mcp <action>       MCP recipe creation, installation, secrets, and toggle
+  collection <action> Collection Git repository management and explicit sync
+  config get|set     Inspect or mutate configuration (locale, mcpSecretsInGit)
+  agents             Inspect supported Agents, skill paths, and writable configs
+  status             Offline status check of collection, Git state, and read issues
 
 Options:
-  -h, --help         Show help (or: iskills help <command>)
+  -h, --help         Show help (or: iskills help <command path>)
   -v, --version      Show version
 
+Tip: Run \`iskills help skill\` or \`iskills help mcp\` to list available actions.
 `,
   'config.localeTitle': 'UI language',
   'config.localeSystem': 'Follow system',
