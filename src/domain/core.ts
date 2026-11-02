@@ -849,7 +849,7 @@ export async function commitCollection(
     const addPaths = await collectionGitPresentAddPaths(root, privateExcludes);
     if (addPaths.length) execFileSync(
       'git',
-      ['-C', root, 'add', '-A', '--', ...addPaths, ...privateExcludes],
+      ['-C', root, 'add', '-A', '--', ...addPaths],
       { stdio: 'ignore' }
     );
     const changed = execFileSync(
@@ -890,7 +890,7 @@ export async function commitCollectionResult(message: string): Promise<Collectio
     const { preparePrivateSkillsForGit } = await import('./git.js');
     const privateExcludes = await preparePrivateSkillsForGit(root);
     const paths = await collectionGitPresentAddPaths(root, privateExcludes);
-    if (paths.length) await runGit(['-C', root, 'add', '-A', '--', ...paths, ...privateExcludes]);
+    if (paths.length) await runGit(['-C', root, 'add', '-A', '--', ...paths]);
     if (!(await runGit(['-C', root, 'diff', '--cached', '--name-only']))) return { status: 'unchanged' };
     await runGit(['-C', root, 'commit', '--quiet', '-m', message]);
     return { status: 'committed', commit: await runGit(['-C', root, 'rev-parse', 'HEAD']) };

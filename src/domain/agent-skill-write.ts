@@ -395,7 +395,7 @@ export async function executeSkillWrite(
       item,
       execute: async () => {
         if (await pathPresent(target)) {
-          await setSkillPrivate(collectionPaths().root, name, true);
+          if (options.private === true) await setSkillPrivate(collectionPaths().root, name, true);
         } else {
           await createCollectionSkill(name, { private: options.private === true });
         }

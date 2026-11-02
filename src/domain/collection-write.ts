@@ -152,10 +152,19 @@ export async function installCollectionSkill(
     throw new DomainError('domain.unsafeSourcePath', { path: input.sourceTree });
   }
 
+  const markPrivate = async (): Promise<InstallCollectionSkillResult> => {
+    if (!input.private) return 'unchanged';
+    const { readPrivateSkillNames } = await import('./git.js');
+    if ((await readPrivateSkillNames(paths.root)).includes(skillName)) return 'unchanged';
+    await setSkillPrivate(paths.root, skillName, true);
+    if (input.commit !== false && !(await commitCollection(commitMessage))) return 'installed-uncommitted';
+    return 'installed';
+  };
+
   if (input.local) {
     const originReal = await resolveIdentityPath(input.local.originPath);
     const targetReal = await resolveIdentityPath(target);
-    if (originReal === targetReal) return 'unchanged';
+    if (originReal === targetReal) return markPrivate();
   }
 
   await validateSkillTree(input.sourceTree);
@@ -163,11 +172,7 @@ export async function installCollectionSkill(
   if (await pathPresent(target)) {
     const current = await readMetadata(skillName);
     if ((await classifyCollectionMatch(current, metadata)) === 'same-source') {
-      if (input.private) {
-        await setSkillPrivate(paths.root, skillName, true);
-        if (input.commit !== false && !(await commitCollection(commitMessage))) return 'installed-uncommitted';
-      }
-      return 'unchanged';
+      return markPrivate();
     }
     if (!input.allowReplace) {
       throw new DomainError('cmd.sameNameExistsReplace', { name: skillName });
@@ -605,6 +610,7 @@ export async function removeFromCollection(
   for (const path of [...staged.map((item) => item.backup), ...dropped.map((conflict) => conflict.path), transaction]) {
     await rm(path, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
   }
+  await setSkillPrivate(paths.root, name, false);
   const commitOk = await commitCollection(`remove ${name}`);
   // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
   if (origin && !originRestorable) {

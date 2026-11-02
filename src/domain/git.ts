@@ -209,7 +209,7 @@ export async function initCollectionGit(): Promise<boolean> {
     }
     const privateExcludes = await preparePrivateSkillsForGit(root);
     const addPaths = await collectionGitPresentAddPaths(root, privateExcludes);
-    if (addPaths.length) git(['-C', root, 'add', '-A', '--', ...addPaths, ...privateExcludes]);
+    if (addPaths.length) git(['-C', root, 'add', '-A', '--', ...addPaths]);
     git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
     return true;
   } catch (error) {
