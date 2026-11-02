@@ -112,6 +112,7 @@ Options:
 Create a new skill in the collection and open its directory.
 
 Options:
+  --private          Keep the skill out of collection Git
   -h, --help         Show help
 `,
   'help.import': `Usage:
@@ -126,6 +127,7 @@ Options:
   --all              Import every discovered skill
   --replace          Replace same-name skills in the collection
   -y, --yes          Skip confirmation
+  --private          Keep imported skills out of collection Git
   -h, --help         Show help
 `,
   'help.init': `Usage:
@@ -616,6 +618,7 @@ Tip: Run \`iskills help skill\` or \`iskills help mcp\` to list available action
   'comp.newTagsComma': 'New tags (comma-separated)',
 
   // ── import UI ───────────────────────────────────────────────────────────
+  'import.privateToggle': 'Private (excluded from collection Git): {value} — press P to toggle',
   'import.confirmTitle': 'Confirm import',
   'import.selectGroups': 'Select tags',
   'import.newGroupsComma': 'New tags (comma-separated)',

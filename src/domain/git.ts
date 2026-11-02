@@ -1,14 +1,14 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   assertSkillName,
   baselinePath,
   clearDirectory,
   collectionPaths,
-  collectionGitAddPaths,
+  collectionGitPresentAddPaths,
   collectionGitStatusPaths,
   commitCollection,
   copyDirectoryContents,
@@ -42,6 +42,89 @@ import { runGit } from './process.js';
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } }).trim();
+}
+
+const PRIVATE_EXCLUDE_BEGIN = '# iskills private skills begin';
+const PRIVATE_EXCLUDE_END = '# iskills private skills end';
+
+/** Read the local-only privacy manifest. Invalid data must never silently allow a push. */
+export async function readPrivateSkillNames(root = collectionPaths().root): Promise<string[]> {
+  let text: string;
+  try {
+    text = await readFile(join(root, '.local', 'private-skills.json'), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const value: unknown = JSON.parse(text);
+  if (!Array.isArray(value) || value.some((name) => typeof name !== 'string')) {
+    throw new Error('invalid private skills manifest');
+  }
+  return [...new Set((value as string[]).map(assertSkillName))];
+}
+
+function privateSkillPaths(names: string[]): string[] {
+  return names.flatMap((name) => [`skills/${name}`, `metadata/${name}.json`]);
+}
+
+/** Exclusion pathspecs for collection add/status, including previously tracked paths. */
+export function privateSkillExcludePathspecs(names: string[]): string[] {
+  const escapeGlob = (name: string) => name.replace(/[?*\[\\]/g, (char) => `[${char === '\\' ? '\\\\' : char}]`);
+  return names.map(assertSkillName).flatMap((name) => [
+    `:(top,exclude,glob)skills/${escapeGlob(name)}/**`,
+    `:(top,exclude,glob)metadata/${escapeGlob(name)}.json`,
+  ]);
+}
+
+/** Update local Git ignores and stage removal of private files without deleting them on disk.
+ * Call before every collection Git add/status, after persisting the privacy manifest.
+ */
+export async function preparePrivateSkillsForGit(root = collectionPaths().root): Promise<string[]> {
+  const names = await readPrivateSkillNames(root);
+  const excludePath = resolve(root, await runGit(['-C', root, 'rev-parse', '--git-path', 'info/exclude']));
+  let existing = '';
+  try { existing = await readFile(excludePath, 'utf8'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  const begin = existing.indexOf(PRIVATE_EXCLUDE_BEGIN);
+  const end = existing.indexOf(PRIVATE_EXCLUDE_END);
+  if ((begin === -1) !== (end === -1) || (begin !== -1 && end < begin)) {
+    throw new Error('invalid private skills Git exclude block');
+  }
+  if (begin !== -1) existing = existing.slice(0, begin) + existing.slice(end + PRIVATE_EXCLUDE_END.length).replace(/^\r?\n/, '');
+  const escapePattern = (path: string) => path.replace(/([\\*?\[\]])/g, '\\$1').replace(/ +$/, (spaces) => '\\ '.repeat(spaces.length));
+  const patterns = names.flatMap((name) => [`/${escapePattern(`skills/${name}`)}/`, `/${escapePattern(`metadata/${name}.json`)}`]);
+  const block = [PRIVATE_EXCLUDE_BEGIN, ...patterns, PRIVATE_EXCLUDE_END, ''].join('\n');
+  const next = `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${block}`;
+  if (next !== await readFile(excludePath, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  })) {
+    await mkdir(dirname(excludePath), { recursive: true });
+    await writeFile(excludePath, next);
+  }
+  const paths = [...privateSkillPaths(names), '.local/private-skills.json'];
+  if (paths.length) {
+    await runGit(['-C', root, 'rm', '-r', '--cached', '--force', '--ignore-unmatch', '--', ...paths.map((path) => `:(top,literal)${path}`)]);
+  }
+  return privateSkillExcludePathspecs(names);
+}
+
+async function assertPrivateTreeSafe(root: string, commit: string): Promise<void> {
+  const paths = privateSkillPaths(await readPrivateSkillNames(root));
+  if (!paths.length) return;
+  const found = await runGit(['-C', root, 'ls-tree', '-r', '--name-only', commit, '--', ...paths.map((path) => `:(top,literal)${path}`)]);
+  if (found) throw new Error('remote contains a private skill; refusing to overwrite local files');
+}
+
+/** Refuse to transmit any new commit whose tree contains a currently private skill. */
+async function assertPrivateHistorySafe(root: string, head: string, remoteHead?: string): Promise<void> {
+  const paths = privateSkillPaths(await readPrivateSkillNames(root));
+  if (!paths.length) return;
+  const commits = (await runGit(['-C', root, 'rev-list', head, ...(remoteHead ? [`^${remoteHead}`] : [])])).split('\n').filter(Boolean);
+  for (const commit of commits) {
+    const found = await runGit(['-C', root, 'ls-tree', '-r', '--name-only', commit, '--', ...paths.map((path) => `:(top,literal)${path}`)]);
+    if (found) throw new Error('private skill exists in commits that would be pushed; remove it from the outgoing history first');
+  }
 }
 
 const remoteHeadCache = new Map<string, Promise<string | undefined>>();
@@ -124,7 +207,9 @@ export async function initCollectionGit(): Promise<boolean> {
       } catch {}
       if (!value) git(['-C', root, 'config', key, fallback]);
     }
-    git(['-C', root, 'add', '-A', '--', ...(await collectionGitAddPaths(root))]);
+    const privateExcludes = await preparePrivateSkillsForGit(root);
+    const addPaths = await collectionGitPresentAddPaths(root, privateExcludes);
+    if (addPaths.length) git(['-C', root, 'add', '-A', '--', ...addPaths, ...privateExcludes]);
     git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
     return true;
   } catch (error) {
@@ -399,6 +484,7 @@ export async function backgroundCollectionSync(): Promise<void> {
   let worktree: string | undefined;
   let worktreeRoot: string | undefined;
   try {
+    await preparePrivateSkillsForGit(paths.root);
     const remotes = git(['-C', paths.root, 'remote']).split(/\r?\n/).filter(Boolean);
     if (!remotes.includes('origin')) return;
     const branch = git(['-C', paths.root, 'symbolic-ref', '--short', 'HEAD']);
@@ -406,7 +492,8 @@ export async function backgroundCollectionSync(): Promise<void> {
     git(['-C', paths.root, 'fetch', '--quiet', 'origin']);
     const upstream = `refs/remotes/origin/${branch}`;
     if (!(await gitObjectExists(paths.root, upstream))) {
-      git(['-C', paths.root, 'push', '--quiet', '-u', 'origin', branch]);
+      await assertPrivateHistorySafe(paths.root, localHead);
+      git(['-C', paths.root, 'push', '--quiet', '--no-follow-tags', '-u', 'origin', `${localHead}:refs/heads/${branch}`]);
       return;
     }
     const remoteHead = git(['-C', paths.root, 'rev-parse', upstream]);
@@ -437,8 +524,10 @@ export async function backgroundCollectionSync(): Promise<void> {
       ...collectionGitStatusPaths(),
     ]);
     if (currentHead !== localHead || dirty) return;
+    await assertPrivateHistorySafe(paths.root, mergedHead, remoteHead);
+    await assertPrivateTreeSafe(paths.root, mergedHead);
     git(['-C', paths.root, 'merge', '--quiet', '--ff-only', mergedHead]);
-    git(['-C', paths.root, 'push', '--quiet', 'origin', branch]);
+    git(['-C', paths.root, 'push', '--quiet', '--no-follow-tags', 'origin', `${mergedHead}:refs/heads/${branch}`]);
   } catch {
     // Soft-fail background sync; no on-disk conflict cache.
   } finally {
@@ -725,6 +814,7 @@ async function foregroundCollectionSync(progress?: CollectionSyncProgress): Prom
     // Flush local WIP first so dirty skills/metadata never block sync.
     // Skip background child — this call is the sync.
     try {
+      await preparePrivateSkillsForGit(root);
       const before = await runGit(['-C', root, 'rev-parse', 'HEAD']);
       await commitCollection('sync pending collection changes', true, false);
       if (progress) progress.stages.commit = before === await runGit(['-C', root, 'rev-parse', 'HEAD']) ? 'unchanged' : 'committed';
@@ -742,7 +832,7 @@ async function foregroundCollectionSync(progress?: CollectionSyncProgress): Prom
     catch (error) { if (progress) progress.stages.fetch = 'failed'; throw error; }
     const upstream = `refs/remotes/origin/${branch}`;
     if (!(await gitObjectExists(root, upstream))) {
-      try { await gitForeground(['-C', root, 'push', '-u', 'origin', branch]); if (progress) progress.stages.push = 'committed'; }
+      try { await assertPrivateHistorySafe(root, localHead); await gitForeground(['-C', root, 'push', '--no-follow-tags', '-u', 'origin', `${localHead}:refs/heads/${branch}`]); if (progress) progress.stages.push = 'committed'; }
       catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
       if (progress) progress.stages.merge = 'unchanged';
       return;
@@ -784,9 +874,14 @@ async function foregroundCollectionSync(progress?: CollectionSyncProgress): Prom
         error: 'collection changed during sync',
       });
     }
+    try {
+      await assertPrivateHistorySafe(root, mergedHead, remoteHead);
+      await assertPrivateTreeSafe(root, mergedHead);
+    }
+    catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
     await runGit(['-C', root, 'merge', '--quiet', '--ff-only', mergedHead]);
     if (progress) progress.stages.merge = 'committed';
-    try { await gitForeground(['-C', root, 'push', 'origin', branch]); if (progress) progress.stages.push = 'committed'; }
+    try { await gitForeground(['-C', root, 'push', '--no-follow-tags', 'origin', `${mergedHead}:refs/heads/${branch}`]); if (progress) progress.stages.push = 'committed'; }
     catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
   } catch (error) {
     if (error instanceof DomainError) throw error;

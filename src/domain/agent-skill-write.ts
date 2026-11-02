@@ -38,6 +38,7 @@ import {
 } from './core.js';
 import {
   createCollectionSkill,
+  setSkillPrivate,
   installCollectionSkill,
   removeFromCollection,
   materializeSkillReferences,
@@ -369,6 +370,7 @@ export async function executeSkillWrite(
       name,
       path: target,
       action: 'create',
+      ...(options.private ? { private: true } : {}),
       status: 'planned',
     };
     if (await pathPresent(target)) {
@@ -386,13 +388,17 @@ export async function executeSkillWrite(
         isDeepStrictEqual(metadata, expected) &&
         entries.length === 1 &&
         (await readFile(join(target, 'SKILL.md'), 'utf8')) === template
-          ? { ...item, status: 'unchanged', reason: 'same-template' }
+          ? { ...item, status: options.private ? 'planned' : 'unchanged', reason: 'same-template' }
           : conflictItem(item, 'conflict.alreadyExists', { name });
     }
     plans.push({
       item,
       execute: async () => {
-        await createCollectionSkill(name);
+        if (await pathPresent(target)) {
+          await setSkillPrivate(collectionPaths().root, name, true);
+        } else {
+          await createCollectionSkill(name, { private: options.private === true });
+        }
       },
     });
   } else if (command === 'skill.adopt') {
@@ -420,17 +426,20 @@ export async function executeSkillWrite(
         item: {
           name,
           action: 'adopt',
-          status: present ? 'unchanged' : 'planned',
+          ...(options.private ? { private: true } : {}),
+          status: present && !options.private ? 'unchanged' : 'planned',
           reason: 'metadata-present',
         },
-        execute: () =>
-          writeMetadata({
+        execute: async () => {
+          if (options.private) await setSkillPrivate(collectionPaths().root, name, true);
+          if (!present) await writeMetadata({
             name,
             description: skill.description,
             tags: [],
             note: '',
             source: { type: 'unknown' },
-          }),
+          });
+        },
       });
     }
   } else if (command === 'skill.remove') {
@@ -473,8 +482,10 @@ export async function executeSkillWrite(
     const selected = await requireSkills(names);
     for (const before of selected) {
       if (command === 'skill.edit') {
+        if (options.private && options.public)
+          throw new OperationFailure('usage.invalidArguments', '--private and --public are mutually exclusive.');
         if (
-          !['tags', 'add-tag', 'remove-tag', 'note'].some(
+          !['tags', 'add-tag', 'remove-tag', 'note', 'private', 'public'].some(
             (key) => options[key] !== undefined,
           )
         )
@@ -490,10 +501,15 @@ export async function executeSkillWrite(
           item: {
             name: before.name,
             action: 'edit',
-            status: isDeepStrictEqual(before, after) ? 'unchanged' : 'planned',
+            ...(options.private || options.public ? { private: options.private === true } : {}),
+            status: !options.private && !options.public && isDeepStrictEqual(before, after) ? 'unchanged' : 'planned',
             reason: 'same-value',
           },
-          execute: () => writeMetadata(after),
+          execute: async () => {
+            if (options.private || options.public)
+              await setSkillPrivate(collectionPaths().root, before.name, options.private === true);
+            if (!isDeepStrictEqual(before, after)) await writeMetadata(after);
+          },
         });
       } else if (command === 'skill.source.unbind') {
         if (!['git', 'unknown'].includes(before.source.type))
@@ -596,7 +612,7 @@ export async function executePreparedSkillImports(
         input.metadata,
       );
       if (match === 'same-source')
-        item = { ...item, status: 'unchanged', reason: 'same-source' };
+        item = { ...item, status: input.private ? 'planned' : 'unchanged', reason: 'same-source' };
       else if (!input.allowReplace)
         item = conflictItem(
           item,
@@ -800,6 +816,7 @@ async function importSkills(
       let item: Record<string, unknown> = {
         name: skill.name,
         action: 'import',
+        ...(options.private ? { private: true } : {}),
         status: 'planned',
         source,
         collectionPath: target,
@@ -810,14 +827,14 @@ async function importSkills(
       if (await pathPresent(target)) {
         const current = await readMetadata(skill.name);
         const match = await classifyCollectionMatch(current, metadata);
-        if (match === 'same-source')
+        if (match === 'same-source' && !options.private)
           item = {
             ...item,
             status: 'unchanged',
             reason: 'same-source',
             moved: false,
           };
-        else if (!options.replace)
+        else if (match !== 'same-source' && !options.replace)
           item = conflictItem(
             item,
             match === 'unverified-source'
@@ -829,18 +846,24 @@ async function importSkills(
               requiredFlags: ['--replace'],
             },
           );
-        else item.action = 'replace';
+        else if (match !== 'same-source') item.action = 'replace';
       }
       plans.push({
         item,
         execute: async () => {
           try {
+            if (options.private && (await pathPresent(target)) &&
+                await classifyCollectionMatch(await readMetadata(skill.name), metadata) === 'same-source') {
+              await setSkillPrivate(collectionPaths().root, skill.name, true);
+              return;
+            }
             await installCollectionSkill({
               name: skill.name,
               sourceTree: actual,
               metadata,
               allowReplace: options.replace === true,
               commit: false,
+              ...(options.private ? { private: true } : {}),
               ...(!cloned
                 ? {
                     local: {

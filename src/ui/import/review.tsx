@@ -30,6 +30,7 @@ export function ImportReview<T extends Skill>({
   const [activeTab, setActiveTab] = useState<'tags' | 'confirm'>('tags');
   const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
+  const [isPrivate, setPrivate] = useState(false);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set());
   const height = Math.max(3, (stdout.rows ?? 24) - 15);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, existingTags.length - 1)));
@@ -41,7 +42,7 @@ export function ImportReview<T extends Skill>({
   const visibleItems = items.slice(0, Math.max(3, Math.min(items.length, (stdout.rows ?? 24) - 10)));
 
   const submit = (confirmed: boolean) => {
-    onSubmit({ confirmed, tags: [...selectedTags] });
+    onSubmit({ confirmed, tags: [...selectedTags], private: isPrivate });
   };
   const addTags = (input: string) => {
     const tags = input.split(',').map((tag) => tag.trim()).filter(Boolean);
@@ -67,6 +68,10 @@ export function ImportReview<T extends Skill>({
       return;
     }
     if (activeTab === 'confirm') {
+      if (input.trim().toLowerCase() === 'p') {
+        setPrivate((value) => !value);
+        return;
+      }
       if (key.leftArrow) {
         setActiveTab('tags');
         return;
@@ -171,6 +176,7 @@ export function ImportReview<T extends Skill>({
             {t('import.willImport', { count: items.length })}
             {selectedTags.size ? [...selectedTags].join(', ') : t('common.none')}
           </Text>
+          <Text color={colors.body}>{t('import.privateToggle', { value: isPrivate ? 'ON' : 'OFF' })}</Text>
           <box flexDirection="column" marginTop={1}>
             {visibleItems.map((item) => (
               <Text key={item.skill.path} color={colors.muted} wrap="truncate-end">

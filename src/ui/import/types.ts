@@ -12,4 +12,5 @@ export interface ImportReviewItem<T extends Skill = Skill> {
 export interface ImportReviewResult {
   confirmed: boolean;
   tags: string[];
+  private?: boolean;
 }

@@ -6,11 +6,11 @@ import { t } from '../i18n/index.js';
 import { openPath } from '../util/open-path.js';
 
 export async function commandCreate(argv: string[]): Promise<void> {
-  const { positionals } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
     strict: true,
-    options: {},
+    options: { private: { type: 'boolean' } },
   });
   if (positionals.length > 1) throw new DomainError('cmd.oneSkillNameOnly');
 
@@ -24,7 +24,7 @@ export async function commandCreate(argv: string[]): Promise<void> {
     if (!name) throw new DomainError('cmd.specifySkillNames');
   }
 
-  const { path, committed } = await createCollectionSkill(name);
+  const { path, committed } = await createCollectionSkill(name, { private: values.private === true });
   // 消息真实性: soft-fail Git commit already domainNotify'd; do not claim 已创建.
   if (committed) console.log(t('cmd.createdSkill', { name }));
   console.log(path);

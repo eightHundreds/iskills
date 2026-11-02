@@ -295,6 +295,7 @@ async function loadGitImportSkills(gitContext: GitImportContext): Promise<Skill[
 }
 
 interface ImportToCollectionOptions {
+  private?: boolean;
   replace?: boolean;
   yes?: boolean;
   quiet?: boolean;
@@ -414,7 +415,7 @@ export async function importSkillsToCollection(
   const inputs = [];
   for (const skill of selected) {
     const originPath = await realpath(skill.path);
-    inputs.push({ name: skill.name, sourceTree: originPath, allowReplace: replaceNames.has(skill.name), metadata: { name: skill.name, description: skill.description, tags: options.tags ?? [], note: skill.note ?? '', source: await resolveIncomingProvenance(skill) }, local: { originPath, selectedPath: skill.path, selectedWasSymlink: (await lstat(skill.path)).isSymbolicLink() } });
+    inputs.push({ ...(options.private ? { private: true } : {}), name: skill.name, sourceTree: originPath, allowReplace: replaceNames.has(skill.name), metadata: { name: skill.name, description: skill.description, tags: options.tags ?? [], note: skill.note ?? '', source: await resolveIncomingProvenance(skill) }, local: { originPath, selectedPath: skill.path, selectedWasSymlink: (await lstat(skill.path)).isSymbolicLink() } });
   }
   return presentImportResult(await executePreparedSkillImports(inputs), options.quiet === true);
 }
@@ -454,6 +455,7 @@ export async function importGitUrlToCollection(
     return await importGitSkillsToCollection(selected, gitContext, {
       ...options,
       tags: review.tags,
+      private: review.private === true || options.private === true,
     });
   } finally {
     await rm(gitContext.temporary, { recursive: true, force: true });
@@ -470,7 +472,7 @@ export async function importGitSkillsToCollection(
   const { selected, replaceNames } = await resolveImportSelection(skills, options, gitContext);
   if (!selected.length) return { count: 0 };
   const inputs = [];
-  for (const skill of selected) inputs.push({ name: skill.name, sourceTree: skill.path, allowReplace: replaceNames.has(skill.name), metadata: await gitSkillMetadata(skill, gitContext, options.tags ?? []) });
+  for (const skill of selected) inputs.push({ ...(options.private ? { private: true } : {}), name: skill.name, sourceTree: skill.path, allowReplace: replaceNames.has(skill.name), metadata: await gitSkillMetadata(skill, gitContext, options.tags ?? []) });
   return presentImportResult(await executePreparedSkillImports(inputs), options.quiet === true);
 }
 
@@ -496,6 +498,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       all: { type: 'boolean' },
       agent: { type: 'string', multiple: true },
       replace: { type: 'boolean' },
+      private: { type: 'boolean' },
       yes: { type: 'boolean', short: 'y' },
     },
   });
@@ -550,6 +553,7 @@ export async function commandImport(argv: string[]): Promise<void> {
     if (!selected.length) return;
 
     let importTags: string[] = [];
+    let importPrivate = values.private === true;
     if (!values.yes) {
       if (!process.stdin.isTTY) throw new DomainError('cmd.useYesToConfirmImport');
       const existingTags = [...new Set((await listCollection().catch(() => []))
@@ -566,6 +570,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       );
       if (!review) return;
       importTags = review.tags;
+      importPrivate ||= review.private === true;
     }
 
     if (!gitContext) {
@@ -573,6 +578,7 @@ export async function commandImport(argv: string[]): Promise<void> {
         replace: values.replace ?? false,
         yes: values.yes ?? false,
         tags: importTags,
+        private: importPrivate,
       });
       return;
     }
@@ -580,6 +586,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       replace: values.replace ?? false,
       yes: values.yes ?? false,
       tags: importTags,
+      private: importPrivate,
     });
   } finally {
     if (gitContext) await rm(gitContext.temporary, { recursive: true, force: true });

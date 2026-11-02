@@ -18,6 +18,8 @@ iskills skill locations --scope project
 
 `--project <directory>` sets project context and the base for relative input paths. Install requires explicit Agent/scope or `--to <skill-root>`. Local import moves the source directory into the collection and leaves a symlink; inspect its dry-run first. `--expect-commit` verifies HEAD without changing branch tracking; `source#sha` pins the source.
 
+Use `skill create NAME --private`, `skill import ... --private`, or `skill adopt NAME --private` to keep skills out of collection Git. Switch existing skills with `skill edit NAME --private` and restore Git tracking with `skill edit NAME --public`. Private skills remain available locally and are not synced to other machines; previously committed Git history is not erased.
+
 Maintenance actions: `create`, `adopt`, `edit`, `tag rename`, `source bind`, `source unbind`, `update`, `remove`, `uninstall`, `materialize`. Names are exact. Uninstall/materialize take the absolute installation paths returned by `skill locations`. Remove/uninstall/source unbind require `--yes`; source replacement requires `--replace`.
 
 ## MCP

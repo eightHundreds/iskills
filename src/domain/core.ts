@@ -300,6 +300,17 @@ export async function collectionGitAddPaths(root: string): Promise<string[]> {
   return paths;
 }
 
+export async function collectionGitPresentAddPaths(root: string, excludes: string[]): Promise<string[]> {
+  const paths = [...new Set([...await collectionGitAddPaths(root), ...collectionGitStatusPaths()])];
+  const present: string[] = [];
+  for (const path of paths) {
+    const tracked = await runGit(['-C', root, 'ls-files', '--', path, ...excludes]);
+    const untracked = await runGit(['-C', root, 'ls-files', '--others', '--exclude-standard', '--', path, ...excludes]);
+    if (tracked || untracked) present.push(path);
+  }
+  return present;
+}
+
 /** `git status` pathspecs: always include optional tracked paths so deletions stay visible. */
 export function collectionGitStatusPaths(): string[] {
   return [...COLLECTION_GIT_BASE_PATHS, 'config.json', 'mcps'];
@@ -833,9 +844,12 @@ export async function commitCollection(
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return true;
   try {
-    execFileSync(
+    const { preparePrivateSkillsForGit } = await import('./git.js');
+    const privateExcludes = await preparePrivateSkillsForGit(root);
+    const addPaths = await collectionGitPresentAddPaths(root, privateExcludes);
+    if (addPaths.length) execFileSync(
       'git',
-      ['-C', root, 'add', '-A', '--', ...(await collectionGitAddPaths(root))],
+      ['-C', root, 'add', '-A', '--', ...addPaths, ...privateExcludes],
       { stdio: 'ignore' }
     );
     const changed = execFileSync(
@@ -873,9 +887,10 @@ export async function commitCollectionResult(message: string): Promise<Collectio
   const { root } = collectionPaths();
   if (!(await exists(join(root, '.git')))) return { status: 'no-repo' };
   try {
-    const tracked = (await runGit(['-C', root, 'ls-files', '--', ...collectionGitStatusPaths()])).split('\n').filter(Boolean);
-    const paths = [...new Set([...await collectionGitAddPaths(root), ...tracked])];
-    await runGit(['-C', root, 'add', '-A', '--', ...paths]);
+    const { preparePrivateSkillsForGit } = await import('./git.js');
+    const privateExcludes = await preparePrivateSkillsForGit(root);
+    const paths = await collectionGitPresentAddPaths(root, privateExcludes);
+    if (paths.length) await runGit(['-C', root, 'add', '-A', '--', ...paths, ...privateExcludes]);
     if (!(await runGit(['-C', root, 'diff', '--cached', '--name-only']))) return { status: 'unchanged' };
     await runGit(['-C', root, 'commit', '--quiet', '-m', message]);
     return { status: 'committed', commit: await runGit(['-C', root, 'rev-parse', 'HEAD']) };

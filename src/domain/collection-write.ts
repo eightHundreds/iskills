@@ -73,7 +73,25 @@ export async function renameCollectionTag(
   return { updated: changes.length, committed };
 }
 
+export async function setSkillPrivate(root: string, name: string, isPrivate: boolean): Promise<void> {
+  const { readPrivateSkillNames } = await import('./git.js');
+  const skillName = assertSkillName(name);
+  const names = new Set(await readPrivateSkillNames(root));
+  if (isPrivate) names.add(skillName);
+  else names.delete(skillName);
+  const local = join(root, '.local');
+  await mkdir(local, { recursive: true });
+  const temp = await mkdtemp(join(local, '.private-skills-'));
+  try {
+    await writeFile(join(temp, 'manifest.json'), `${JSON.stringify([...names].sort(), null, 2)}\n`, 'utf8');
+    await rename(join(temp, 'manifest.json'), join(local, 'private-skills.json'));
+  } finally {
+    await rm(temp, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export interface ReplacementInput {
+  private?: boolean;
   name: string;
   staged: string;
   metadata: SkillMetadata;
@@ -95,6 +113,7 @@ export type InstallCollectionSkillResult =
   | 'unchanged';
 
 export interface InstallCollectionSkillInput {
+  private?: boolean;
   name: string;
   /** Absolute path of the skill tree to install (copied for remote; moved for local). */
   sourceTree: string;
@@ -144,6 +163,10 @@ export async function installCollectionSkill(
   if (await pathPresent(target)) {
     const current = await readMetadata(skillName);
     if ((await classifyCollectionMatch(current, metadata)) === 'same-source') {
+      if (input.private) {
+        await setSkillPrivate(paths.root, skillName, true);
+        if (input.commit !== false && !(await commitCollection(commitMessage))) return 'installed-uncommitted';
+      }
       return 'unchanged';
     }
     if (!input.allowReplace) {
@@ -158,6 +181,7 @@ export async function installCollectionSkill(
         staged,
         metadata,
         commitMessage,
+        ...(input.private ? { private: true } : {}),
       };
       if (input.local) {
         replacement.local = {
@@ -214,6 +238,7 @@ export async function installCollectionSkill(
       await registerCollectionLinks(links);
       linksRegistered = true;
     }
+    if (input.private) await setSkillPrivate(paths.root, skillName, true);
     if (input.commit !== false) {
       if (!(await commitCollection(commitMessage))) return 'installed-uncommitted';
     }
@@ -250,7 +275,7 @@ export type CreateCollectionSkillResult = {
 };
 
 /** Creates a minimal collected Skill born in the collection (not an import). */
-export async function createCollectionSkill(name: string): Promise<CreateCollectionSkillResult> {
+export async function createCollectionSkill(name: string, options: { private?: boolean } = {}): Promise<CreateCollectionSkillResult> {
   const skillName = assertSkillName(name);
   const paths = await ensureCollection();
   const target = join(paths.skills, skillName);
@@ -282,6 +307,7 @@ export async function createCollectionSkill(name: string): Promise<CreateCollect
       note: '',
       source: { type: 'unknown' },
     });
+    if (options.private) await setSkillPrivate(paths.root, skillName, true);
   } catch (error) {
     // Only remove what this call created — never rm on pre-existing EEXIST.
     if (created) {
@@ -449,6 +475,7 @@ export async function replaceCollectionSkill(
       }
     }
     await writeState(nextState);
+    if (input.private) await setSkillPrivate(paths.root, input.name, true);
     let commitResult: ReplaceCommitResult = 'deferred';
     if (input.commit !== false) {
       commitResult = (await commitCollection(input.commitMessage ?? `import ${input.name}`))

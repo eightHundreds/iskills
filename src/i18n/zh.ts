@@ -107,6 +107,7 @@ export const zh = {
 在收藏夹新建技能，并打开技能目录。
 
 选项：
+  --private          不将技能纳入收藏夹 Git
   -h, --help         显示帮助
 `,
   'help.import': `用法：
@@ -121,6 +122,7 @@ export const zh = {
   --all              导入发现的全部技能
   --replace          替换收藏夹中的同名技能
   -y, --yes          跳过确认
+  --private          不将导入的技能纳入收藏夹 Git
   -h, --help         显示帮助
 `,
   'help.init': `用法：
@@ -579,6 +581,7 @@ export const zh = {
   'comp.newTagsComma': '新增标签（逗号分隔）',
 
   // ── import UI ───────────────────────────────────────────────────────────
+  'import.privateToggle': '私有（不纳入收藏夹 Git）：{value} — 按 P 切换',
   'import.confirmTitle': '确认导入',
   'import.selectGroups': '选择标签',
   'import.newGroupsComma': '新增标签（逗号分隔）',

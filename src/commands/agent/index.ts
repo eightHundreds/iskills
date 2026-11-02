@@ -60,8 +60,8 @@ const META_OPTIONS: Record<string, OptionKind> = {
   note: 'string',
 };
 const WRITE_OPTIONS: Record<string, Record<string, OptionKind>> = {
-  'skill.create': {},
-  'skill.adopt': { all: 'boolean' },
+  'skill.create': { private: 'boolean' },
+  'skill.adopt': { all: 'boolean', private: 'boolean' },
   'skill.import': {
     git: 'string',
     local: 'string',
@@ -70,6 +70,7 @@ const WRITE_OPTIONS: Record<string, Record<string, OptionKind>> = {
     'expect-commit': 'string',
     replace: 'boolean',
     tag: 'multiple',
+    private: 'boolean',
   },
   'skill.install': {
     'from-location': 'multiple',
@@ -83,7 +84,7 @@ const WRITE_OPTIONS: Record<string, Record<string, OptionKind>> = {
   'skill.uninstall': { yes: 'boolean' },
   'skill.materialize': {},
   'skill.update': { all: 'boolean', 'allow-delete': 'boolean', yes: 'boolean' },
-  'skill.edit': META_OPTIONS,
+  'skill.edit': { ...META_OPTIONS, private: 'boolean', public: 'boolean' },
   'skill.tag.rename': {},
   'skill.source.bind': { git: 'string', path: 'string', replace: 'boolean' },
   'skill.source.unbind': { yes: 'boolean' },
@@ -490,6 +491,8 @@ Run \`iskills help config <action>\` for details.
   path: 'Relative path within the source repository/directory to the skill directory (e.g. skills/my-skill, or "." if root is the skill itself). Required unless --all is specified.',
   all: 'Target all discovered or eligible skills/locations instead of specifying individual names (or specify --all to import all skills from source).',
   'expect-commit': 'Expected Git commit hash; rejects import if repository HEAD differs without pinning the ref.',
+  private: 'Keep the skill local: exclude its files and metadata from collection Git.',
+  public: 'Allow the skill files and metadata to be tracked by collection Git again.',
   replace: 'Explicitly authorize replacing existing content or configuration.',
   yes: 'Explicitly authorize destructive operations (delete, remove, uninstall, clear).',
   'from-location': 'Source skill installation path to replicate across other agents.',
@@ -537,7 +540,7 @@ const COMMAND_EXAMPLES: Record<string, string[]> = {
     'iskills skill import --local ./skills-monorepo --all',
   ],
   'skill.create': [
-    'iskills skill create my-new-skill',
+    'iskills skill create my-new-skill --private',
   ],
   'skill.install': [
     'iskills skill install my-skill --agent codex --scope project',
@@ -560,6 +563,8 @@ const COMMAND_EXAMPLES: Record<string, string[]> = {
     'iskills skill update my-skill --allow-delete --yes',
   ],
   'skill.edit': [
+    'iskills skill edit my-skill --private',
+    'iskills skill edit my-skill --public',
     'iskills skill edit my-skill --add-tag featured --note "Production ready"',
     'iskills skill edit my-skill --tags \'["ci", "testing"]\'',
   ],

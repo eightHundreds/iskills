@@ -84,6 +84,10 @@ iskills config
 iskills mcp
 ```
 
+使用 `iskills skill create NAME --private` 或 `iskills skill import ... --private` 创建仅保存在本机的技能；用 `iskills skill edit NAME --private` 或 `--public` 切换已有技能。交互导入确认页也可按 P 切换私有状态。私有技能仍可在本机使用，但不会随收藏夹 Git 同步；切换不会清除已有 Git 历史。
+
+私有名单保存在收藏夹的 `.local/private-skills.json`，只在本机生效。切换为私有前已提交的历史不会被改写；如果待推送的历史仍包含私有内容，同步会拒绝推送，需先安全处理相关历史。已经推送的内容需要另行处理。
+
 日常操作（浏览、删除、更新、备注、标签、同步）在主 TUI 的键盘浏览中完成。配置远程后，在收藏夹 Tab 按 **`s`** 同步。
 
 ## 命令

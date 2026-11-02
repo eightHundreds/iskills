@@ -84,6 +84,10 @@ iskills config
 iskills mcp
 ```
 
+Use `iskills skill create NAME --private` or `iskills skill import ... --private` for local-only skills. Switch an existing skill with `iskills skill edit NAME --private` or `--public`. The interactive import review also offers a private toggle (P). Private skills remain usable locally but are excluded from collection Git sync; earlier Git history is not erased.
+
+The private list is stored locally in the collection's `.local/private-skills.json`. Sync refuses to push when outgoing history still contains a private skill; safely handle that history first. Previously pushed content requires separate handling.
+
 In the main TUI, day-to-day work (browse, delete, update, notes, tags, sync) lives on the keyboard-driven browser. With a remote configured, press **`s`** on the Collection tab to sync.
 
 ## Commands
