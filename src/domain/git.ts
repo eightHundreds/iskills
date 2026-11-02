@@ -493,7 +493,8 @@ export async function backgroundCollectionSync(): Promise<void> {
     const upstream = `refs/remotes/origin/${branch}`;
     if (!(await gitObjectExists(paths.root, upstream))) {
       await assertPrivateHistorySafe(paths.root, localHead);
-      git(['-C', paths.root, 'push', '--quiet', '--no-follow-tags', '-u', 'origin', `${localHead}:refs/heads/${branch}`]);
+      // Push by branch name so `-u` binds the local branch's upstream (hash:ref does not).
+      git(['-C', paths.root, 'push', '--quiet', '--no-follow-tags', '-u', 'origin', `refs/heads/${branch}:refs/heads/${branch}`]);
       return;
     }
     const remoteHead = git(['-C', paths.root, 'rev-parse', upstream]);
@@ -832,7 +833,8 @@ async function foregroundCollectionSync(progress?: CollectionSyncProgress): Prom
     catch (error) { if (progress) progress.stages.fetch = 'failed'; throw error; }
     const upstream = `refs/remotes/origin/${branch}`;
     if (!(await gitObjectExists(root, upstream))) {
-      try { await assertPrivateHistorySafe(root, localHead); await gitForeground(['-C', root, 'push', '--no-follow-tags', '-u', 'origin', `${localHead}:refs/heads/${branch}`]); if (progress) progress.stages.push = 'committed'; }
+      // Push by branch name so `-u` binds the local branch's upstream (hash:ref does not).
+      try { await assertPrivateHistorySafe(root, localHead); await gitForeground(['-C', root, 'push', '--no-follow-tags', '-u', 'origin', `refs/heads/${branch}:refs/heads/${branch}`]); if (progress) progress.stages.push = 'committed'; }
       catch (error) { if (progress) progress.stages.push = 'failed'; throw error; }
       if (progress) progress.stages.merge = 'unchanged';
       return;

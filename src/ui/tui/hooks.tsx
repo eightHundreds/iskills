@@ -81,6 +81,7 @@ export function useThemeMode(): ThemeModeName {
     waitForThemeMode?: (timeoutMs?: number) => Promise<ThemeMode | null>;
     on: (event: string, listener: (mode: ThemeMode) => void) => void;
     off: (event: string, listener: (mode: ThemeMode) => void) => void;
+    setMaxListeners?: (n: number) => void;
   };
   const [mode, setMode] = useState<ThemeModeName>(
     () => (renderer.themeMode === 'light' ? 'light' : 'dark')
@@ -94,6 +95,10 @@ export function useThemeMode(): ThemeModeName {
     const onTheme = (next: ThemeMode): void => {
       if (next === 'light' || next === 'dark') setMode(next);
     };
+    // Many panel/footer mounts share one CliRenderer; raise the default (10)
+    // so MaxListenersExceededWarning cannot print into the PTY and break
+    // interactive wait matching under CI.
+    renderer.setMaxListeners?.(64);
     renderer.on('theme_mode', onTheme);
     void renderer.waitForThemeMode?.(800).then((detected) => {
       if (cancelled) return;
