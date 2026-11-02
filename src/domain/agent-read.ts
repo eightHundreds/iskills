@@ -279,10 +279,11 @@ export async function readMcpLocations(
   project: string,
   names: string[],
   scopes: McpScope[],
+  home = homedir(),
 ): Promise<{ entries: McpLocationEntry[]; issues: ReadIssue[] }> {
   const entries: McpLocationEntry[] = [];
   const issues: ReadIssue[] = [];
-  const ctx = { home: homedir(), cwd: project };
+  const ctx = { home, cwd: project };
   for (const name of names)
     if (!mcpAgentIds().includes(name as ReturnType<typeof mcpAgentIds>[number]))
       throw new OperationFailure(

@@ -1163,6 +1163,7 @@ export async function planMcpAdds(
     project,
     [...new Set(targets.map((target) => target.agent))],
     [...new Set(targets.map((target) => target.scope))],
+    ctx.home,
   );
   if (locations.issues.length || collection.issues.length)
     throw new OperationFailure(
@@ -1288,7 +1289,7 @@ export async function planMcpAdds(
               secrets,
             );
           const selected = (
-            await readMcpLocations(project, [agent], [scope])
+            await readMcpLocations(project, [agent], [scope], ctx.home)
           ).entries.find(
             (entry) => entry.nativeKey === name && entry.ownership === 'owned',
           );
