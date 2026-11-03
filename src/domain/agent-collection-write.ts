@@ -1,9 +1,7 @@
 import { join } from 'node:path';
 import {
   collectionPaths,
-  ensureCollection,
   exists,
-  collectionGitAddPaths,
 } from './core.js';
 import {
   readUserConfig,
@@ -23,7 +21,7 @@ import {
 } from './operation.js';
 import { optionalGit } from './agent-read.js';
 import { runGit } from './process.js';
-import { syncCollection, type CollectionSyncProgress } from './git.js';
+import { initCollectionGit, syncCollection, type CollectionSyncProgress } from './git.js';
 
 export async function executeCollectionWrite(
   command: string,
@@ -241,43 +239,7 @@ export async function executeCollectionWrite(
             await runGit(['-C', root, 'remote', 'remove', 'origin'], signal);
             return;
           }
-          if (!head) {
-            await ensureCollection();
-            if (!repo)
-              await runGit(
-                ['-C', root, 'init', '--quiet', '-b', 'main'],
-                signal,
-              );
-            for (const [key, fallback] of [
-              ['user.name', 'Skill Collection'],
-              ['user.email', 'iskills@localhost'],
-            ]) {
-              if (!(await optionalGit(root, ['config', '--get', key!], signal)))
-                await runGit(['-C', root, 'config', key!, fallback!], signal);
-            }
-            await runGit(
-              [
-                '-C',
-                root,
-                'add',
-                '-A',
-                '--',
-                ...(await collectionGitAddPaths(root)),
-              ],
-              signal,
-            );
-            await runGit(
-              [
-                '-C',
-                root,
-                'commit',
-                '--quiet',
-                '-m',
-                'initialize skill collection',
-              ],
-              signal,
-            );
-          }
+          if (!head) await initCollectionGit(signal);
           if (remote)
             await runGit(
               [

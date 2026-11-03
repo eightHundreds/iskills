@@ -12,11 +12,13 @@ export function ImportReview<T extends Skill>({
   label = t('import.confirmTitle'),
   items,
   existingTags,
+  initialPrivate = false,
   onSubmit,
 }: {
   label?: string;
   items: ImportReviewItem<T>[];
   existingTags: string[];
+  initialPrivate?: boolean;
   onSubmit: (result: ImportReviewResult) => void;
 }): ReactNode {
   const { stdout } = useStdout();
@@ -30,7 +32,7 @@ export function ImportReview<T extends Skill>({
   const [activeTab, setActiveTab] = useState<'tags' | 'confirm'>('tags');
   const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
-  const [isPrivate, setPrivate] = useState(false);
+  const [isPrivate, setPrivate] = useState(initialPrivate);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set());
   const height = Math.max(3, (stdout.rows ?? 24) - 15);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, existingTags.length - 1)));

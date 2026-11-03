@@ -73,7 +73,7 @@ import {
   writeTagRenameBatch,
   normalizeNewTagName,
 } from './tags.js';
-import { updateGitSkill, detectRenamedSkillPath } from './git.js';
+import { updateGitSkill, detectRenamedSkillPath, readPrivateSkillNames } from './git.js';
 import { runGit } from './process.js';
 import type { Skill, SkillMetadata, GitSource } from './types.js';
 import { domainNotify } from './errors.js';
@@ -255,6 +255,29 @@ function validateNames(names: string[]): string[] {
   return names;
 }
 
+async function matchesCreateTemplate(name: string, target: string): Promise<boolean> {
+  try {
+    if (!(await lstat(target)).isDirectory()) return false;
+    if (!(await pathPresent(metadataPath(name)))) return false;
+    if (!isDeepStrictEqual(await readMetadata(name), {
+      name,
+      description: '',
+      tags: [],
+      note: '',
+      source: { type: 'unknown' },
+    })) return false;
+    const entries = await readdir(target);
+    return entries.length === 1 &&
+      entries[0] === 'SKILL.md' &&
+      (await lstat(join(target, 'SKILL.md'))).isFile() &&
+      (await readFile(join(target, 'SKILL.md'), 'utf8')) ===
+        `---\nname: ${name}\ndescription: \n---\n\n# ${name}\n\n`;
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return false;
+    throw error;
+  }
+}
+
 async function requireSkills(
   names: string[],
   all = false,
@@ -362,10 +385,14 @@ export async function executeSkillWrite(
     );
   if (['skill.remove', 'skill.source.unbind'].includes(command))
     requireAuthorization(options.yes === true, dryRun, names);
+  const privateNames = options.private || options.public
+    ? new Set(await readPrivateSkillNames())
+    : new Set<string>();
   if (command === 'skill.create') {
     const name = names[0]!;
     const target = join(collectionPaths().skills, name);
-    const template = `---\nname: ${name}\ndescription: \n---\n\n# ${name}\n\n`;
+    const present = await pathPresent(target);
+    const privacyChanged = options.private === true && !privateNames.has(name);
     let item: Record<string, unknown> = {
       name,
       path: target,
@@ -373,32 +400,26 @@ export async function executeSkillWrite(
       ...(options.private ? { private: true } : {}),
       status: 'planned',
     };
-    if (await pathPresent(target)) {
-      const metadata = await readMetadata(name);
-      const expected = {
-        name,
-        description: '',
-        tags: [],
-        note: '',
-        source: { type: 'unknown' },
-      };
-      const entries = await readdir(target);
-      item =
-        (await pathPresent(metadataPath(name))) &&
-        isDeepStrictEqual(metadata, expected) &&
-        entries.length === 1 &&
-        (await readFile(join(target, 'SKILL.md'), 'utf8')) === template
-          ? { ...item, status: options.private ? 'planned' : 'unchanged', reason: 'same-template' }
-          : conflictItem(item, 'conflict.alreadyExists', { name });
+    if (present) {
+      item = await matchesCreateTemplate(name, target)
+        ? { ...item, status: privacyChanged ? 'planned' : 'unchanged', reason: 'same-template' }
+        : conflictItem(item, 'conflict.alreadyExists', { name });
     }
     plans.push({
       item,
       execute: async () => {
-        if (await pathPresent(target)) {
-          if (options.private === true) await setSkillPrivate(collectionPaths().root, name, true);
-        } else {
+        if (!present) {
           await createCollectionSkill(name, { private: options.private === true });
+          return;
         }
+        if (!(await matchesCreateTemplate(name, target)))
+          throw new OperationFailure(
+            'conflict.alreadyExists',
+            'The existing skill no longer matches the creation template.',
+            { name },
+            1,
+          );
+        if (privacyChanged) await setSkillPrivate(collectionPaths().root, name, true);
       },
     });
   } else if (command === 'skill.adopt') {
@@ -422,16 +443,17 @@ export async function executeSkillWrite(
           1,
         );
       const present = await pathPresent(metadataPath(name));
+      const privacyChanged = options.private === true && !privateNames.has(name);
       plans.push({
         item: {
           name,
           action: 'adopt',
           ...(options.private ? { private: true } : {}),
-          status: present && !options.private ? 'unchanged' : 'planned',
+          status: present && !privacyChanged ? 'unchanged' : 'planned',
           reason: 'metadata-present',
         },
         execute: async () => {
-          if (options.private) await setSkillPrivate(collectionPaths().root, name, true);
+          if (privacyChanged) await setSkillPrivate(collectionPaths().root, name, true);
           if (!present) await writeMetadata({
             name,
             description: skill.description,
@@ -497,18 +519,21 @@ export async function executeSkillWrite(
           ...before,
           ...metadataPatch(before, options),
         } as SkillMetadata;
+        const privacyChanged = (options.private === true || options.public === true) &&
+          privateNames.has(before.name) !== (options.private === true);
+        const metadataChanged = !isDeepStrictEqual(before, after);
         plans.push({
           item: {
             name: before.name,
             action: 'edit',
             ...(options.private || options.public ? { private: options.private === true } : {}),
-            status: !options.private && !options.public && isDeepStrictEqual(before, after) ? 'unchanged' : 'planned',
+            status: !privacyChanged && !metadataChanged ? 'unchanged' : 'planned',
             reason: 'same-value',
           },
           execute: async () => {
-            if (options.private || options.public)
+            if (privacyChanged)
               await setSkillPrivate(collectionPaths().root, before.name, options.private === true);
-            if (!isDeepStrictEqual(before, after)) await writeMetadata(after);
+            if (metadataChanged) await writeMetadata(after);
           },
         });
       } else if (command === 'skill.source.unbind') {
@@ -597,6 +622,9 @@ export async function executePreparedSkillImports(
       'Duplicate skill names.',
     );
   const plans: PlannedWrite[] = [];
+  const privateNames = inputs.some((input) => input.private)
+    ? new Set(await readPrivateSkillNames())
+    : new Set<string>();
   for (const input of inputs) {
     await validateSkillTree(input.sourceTree);
     const target = join(collectionPaths().skills, input.name);
@@ -612,7 +640,7 @@ export async function executePreparedSkillImports(
         input.metadata,
       );
       if (match === 'same-source')
-        item = { ...item, status: input.private ? 'planned' : 'unchanged', reason: 'same-source' };
+        item = { ...item, status: input.private && !privateNames.has(input.name) ? 'planned' : 'unchanged', reason: 'same-source' };
       else if (!input.allowReplace)
         item = conflictItem(
           item,
@@ -778,6 +806,9 @@ async function importSkills(
         'The selection contains duplicate skill names.',
       );
     const plans: PlannedWrite[] = [];
+    const privateNames = options.private
+      ? new Set(await readPrivateSkillNames())
+      : new Set<string>();
     for (const skill of selected) {
       const actual = await realpath(skill.path);
       if (!cloned) {
@@ -827,14 +858,24 @@ async function importSkills(
       if (await pathPresent(target)) {
         const current = await readMetadata(skill.name);
         const match = await classifyCollectionMatch(current, metadata);
-        if (match === 'same-source' && !options.private)
+        if (match === 'same-source')
           item = {
             ...item,
-            status: 'unchanged',
+            status: options.private && !privateNames.has(skill.name) ? 'planned' : 'unchanged',
             reason: 'same-source',
+            source: current.source,
             moved: false,
+            ...(!cloned
+              ? {
+                  originPath: current.source.path,
+                  originLink: current.source.path &&
+                    await isExactSymlink(current.source.path, target)
+                      ? current.source.path
+                      : null,
+                }
+              : {}),
           };
-        else if (match !== 'same-source' && !options.replace)
+        else if (!options.replace)
           item = conflictItem(
             item,
             match === 'unverified-source'
@@ -846,7 +887,7 @@ async function importSkills(
               requiredFlags: ['--replace'],
             },
           );
-        else if (match !== 'same-source') item.action = 'replace';
+        else item.action = 'replace';
       }
       plans.push({
         item,

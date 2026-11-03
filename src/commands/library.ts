@@ -384,7 +384,7 @@ async function resolveImportSelection(
   }
   const { sameSource, candidates } = await classifyImportReplacements(selected, gitContext);
   const sameSourceNames = new Set(sameSource);
-  selected = selected.filter((skill) => !sameSourceNames.has(skill.name));
+  selected = selected.filter((skill) => options.private || !sameSourceNames.has(skill.name));
   if (candidates.length && !options.replace) {
     if (!process.stdin.isTTY || options.yes) {
       throw new DomainError('cmd.conflictsExistReplace', {
@@ -448,14 +448,15 @@ export async function importGitUrlToCollection(
         skill,
         detail: gitSkillDisplayPath(skill, gitContext),
       })),
-      existingTags
+      existingTags,
+      options.private === true
     );
     if (!review) return { count: 0 };
 
     return await importGitSkillsToCollection(selected, gitContext, {
       ...options,
       tags: review.tags,
-      private: review.private === true || options.private === true,
+      private: review.private === true,
     });
   } finally {
     await rm(gitContext.temporary, { recursive: true, force: true });
@@ -566,11 +567,12 @@ export async function commandImport(argv: string[]): Promise<void> {
             ? gitSkillDisplayPath(skill, gitContext)
             : sanitizeTerminal(skill.path),
         })),
-        existingTags
+        existingTags,
+        values.private === true
       );
       if (!review) return;
       importTags = review.tags;
-      importPrivate ||= review.private === true;
+      importPrivate = review.private === true;
     }
 
     if (!gitContext) {

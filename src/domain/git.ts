@@ -92,7 +92,7 @@ export async function preparePrivateSkillsForGit(root = collectionPaths().root):
   }
   if (begin !== -1) existing = existing.slice(0, begin) + existing.slice(end + PRIVATE_EXCLUDE_END.length).replace(/^\r?\n/, '');
   const escapePattern = (path: string) => path.replace(/([\\*?\[\]])/g, '\\$1').replace(/ +$/, (spaces) => '\\ '.repeat(spaces.length));
-  const patterns = names.flatMap((name) => [`/${escapePattern(`skills/${name}`)}/`, `/${escapePattern(`metadata/${name}.json`)}`]);
+  const patterns = names.flatMap((name) => [`/${escapePattern(`skills/${name}`)}/**`, `/${escapePattern(`metadata/${name}.json`)}`]);
   const block = [PRIVATE_EXCLUDE_BEGIN, ...patterns, PRIVATE_EXCLUDE_END, ''].join('\n');
   const next = `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${block}`;
   if (next !== await readFile(excludePath, 'utf8').catch((error: NodeJS.ErrnoException) => {
@@ -185,15 +185,15 @@ export async function checkGitSkillUpdates(skills: Skill[]): Promise<{
   };
 }
 
-export async function initCollectionGit(): Promise<boolean> {
+export async function initCollectionGit(signal?: AbortSignal): Promise<boolean> {
   const { root } = await ensureCollection();
   const gitDir = join(root, '.git');
   const created = !(await exists(gitDir));
 
   try {
-    if (created) git(['-C', root, 'init', '--quiet', '-b', 'main']);
+    if (created) await runGit(['-C', root, 'init', '--quiet', '-b', 'main'], signal);
     try {
-      git(['-C', root, 'rev-parse', '--verify', '--quiet', 'HEAD']);
+      await runGit(['-C', root, 'rev-parse', '--verify', '--quiet', 'HEAD'], signal);
       return false;
     } catch {}
 
@@ -203,14 +203,14 @@ export async function initCollectionGit(): Promise<boolean> {
     ] as const) {
       let value = '';
       try {
-        value = git(['-C', root, 'config', '--get', key]);
+        value = await runGit(['-C', root, 'config', '--get', key], signal);
       } catch {}
-      if (!value) git(['-C', root, 'config', key, fallback]);
+      if (!value) await runGit(['-C', root, 'config', key, fallback], signal);
     }
     const privateExcludes = await preparePrivateSkillsForGit(root);
     const addPaths = await collectionGitPresentAddPaths(root, privateExcludes);
-    if (addPaths.length) git(['-C', root, 'add', '-A', '--', ...addPaths]);
-    git(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection']);
+    if (addPaths.length) await runGit(['-C', root, 'add', '-A', '--', ...addPaths, ...privateExcludes], signal);
+    await runGit(['-C', root, 'commit', '--quiet', '-m', 'initialize skill collection'], signal);
     return true;
   } catch (error) {
     if (created) await rm(gitDir, { recursive: true, force: true });

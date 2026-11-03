@@ -260,7 +260,8 @@ export function promptInstallReview(
 /** Import review — full-page layer. */
 export function promptImportReview<T extends Skill>(
   items: ImportReviewItem<T>[],
-  existingTags: string[]
+  existingTags: string[],
+  initialPrivate = false,
 ): Promise<ImportReviewResult | undefined> {
   return Layer.open<ImportReviewResult | undefined>({
     footerItems: importReviewFooterItems(),
@@ -268,6 +269,7 @@ export function promptImportReview<T extends Skill>(
       <ImportReview<T>
         items={items}
         existingTags={existingTags}
+        initialPrivate={initialPrivate}
         onSubmit={(result) => close(result.confirmed ? result : undefined)}
       />
     ),

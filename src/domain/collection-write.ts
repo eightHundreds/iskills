@@ -11,6 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 import {
   assertSkillName,
   baselinePath,
@@ -76,17 +77,36 @@ export async function renameCollectionTag(
 export async function setSkillPrivate(root: string, name: string, isPrivate: boolean): Promise<void> {
   const { readPrivateSkillNames } = await import('./git.js');
   const skillName = assertSkillName(name);
-  const names = new Set(await readPrivateSkillNames(root));
-  if (isPrivate) names.add(skillName);
-  else names.delete(skillName);
   const local = join(root, '.local');
   await mkdir(local, { recursive: true });
-  const temp = await mkdtemp(join(local, '.private-skills-'));
+  const lock = join(local, 'private-skills.lock');
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for privacy manifest lock: ${lock}`);
+      await setTimeout(20);
+    }
+  }
   try {
-    await writeFile(join(temp, 'manifest.json'), `${JSON.stringify([...names].sort(), null, 2)}\n`, 'utf8');
-    await rename(join(temp, 'manifest.json'), join(local, 'private-skills.json'));
+    const names = new Set(await readPrivateSkillNames(root));
+    if (names.has(skillName) === isPrivate) return;
+    if (isPrivate) names.add(skillName);
+    else names.delete(skillName);
+    const temp = await mkdtemp(join(local, '.private-skills-'));
+    try {
+      await writeFile(join(temp, 'manifest.json'), `${JSON.stringify([...names].sort(), null, 2)}\n`, 'utf8');
+      await rename(join(temp, 'manifest.json'), join(local, 'private-skills.json'));
+    } finally {
+      await rm(temp, { recursive: true, force: true }).catch(() => {});
+    }
   } finally {
-    await rm(temp, { recursive: true, force: true }).catch(() => {});
+    await rm(lock, { recursive: true, force: true }).catch((error) => {
+      domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) });
+    });
   }
 }
 
@@ -610,7 +630,7 @@ export async function removeFromCollection(
   for (const path of [...staged.map((item) => item.backup), ...dropped.map((conflict) => conflict.path), transaction]) {
     await rm(path, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
   }
-  await setSkillPrivate(paths.root, name, false);
+  // Keep privacy protection for any outgoing history that still contains this name.
   const commitOk = await commitCollection(`remove ${name}`);
   // Success lines only after a non-failed commit point (domain-invariants 消息真实性).
   if (origin && !originRestorable) {
