@@ -59,6 +59,8 @@ import {
 import { t } from '../../i18n/index.js';
 import { useModal, useOverlayBusy } from '../overlay/host.js';
 import { MoreActionsPanel } from '../components/more-actions-panel.js';
+import { FramedPanel } from '../components/framed-panel.js';
+import { isReturn } from '../components/text.js';
 import {
   Select,
   Tabs,
@@ -675,18 +677,33 @@ export function Browser({
       if (input === 'i' && tab !== 'collection' && selectedLocal.length) {
         const skills = selectedLocal;
         void modal
-          .confirm({
-            title: t('browser.importCollectionTitle'),
-            message:
-              skills.length === 1
-                ? t('browser.importCollectionOne', { name: skills[0]?.name ?? '' })
-                : t('browser.importCollectionMany', { count: skills.length }),
-            ...(skills.length > 1
-              ? { details: [t('browser.skillLine', { names: skills.map((skill) => skill.name).join(', ') })] }
-              : {}),
+          .open<boolean | undefined>({
+            content: (close) => (
+              <FramedPanel
+                title={` ${t('browser.importCollectionTitle')} `}
+                content={[
+                  skills.length === 1
+                    ? t('browser.importCollectionOne', { name: skills[0]?.name ?? '' })
+                    : t('browser.importCollectionMany', { count: skills.length }),
+                  ...(skills.length > 1
+                    ? [t('browser.skillLine', { names: skills.map((skill) => skill.name).join(', ') })]
+                    : []),
+                  t('browser.importCollectionChoices'),
+                ]}
+                width={76}
+                muteLastContent
+                onEscape={() => close(undefined)}
+                onKey={(input, key) => {
+                  const choice = input.trim().toLowerCase();
+                  if (choice === 'y') close(false);
+                  else if (choice === 'p') close(true);
+                  else if (choice === 'n' || isReturn(input, key.return)) close(undefined);
+                }}
+              />
+            ),
           })
-          .then((ok) => {
-            if (ok) finish({ type: 'import', skills });
+          .then((isPrivate) => {
+            if (isPrivate !== undefined) finish({ type: 'import', skills, private: isPrivate });
           });
         return;
       }

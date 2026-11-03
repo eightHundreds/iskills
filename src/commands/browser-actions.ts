@@ -204,7 +204,7 @@ export async function handleBrowserResult(
       await handleInstallToAgents(host, result.skills, result.scope);
       break;
     case 'import':
-      await handleImport(host, result.skills);
+      await handleImport(host, result.skills, result.private);
       break;
     case 'openSource':
       await handleOpenCollectedGitHubSource(host, result.skill);
@@ -556,7 +556,7 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
   }
 }
 
-function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionResult): void {
+function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionResult, isPrivate = false): void {
   if (result.commitFailed) {
     host.setStatus(
       t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''),
@@ -566,7 +566,7 @@ function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionRe
     return;
   }
   if (result.count > 0) {
-    host.setStatus(t('cmd.importedShort', { count: result.count }), true, 'normal');
+    host.setStatus(t(isPrivate ? 'cmd.importedPrivateShort' : 'cmd.importedShort', { count: result.count }), true, 'normal');
   }
 }
 
@@ -599,14 +599,16 @@ export async function handleOpenCollectedGitHubSource(
   }
 }
 
-async function handleImport(host: BrowserActionHost, skills: Skill[]): Promise<void> {
+async function handleImport(host: BrowserActionHost, skills: Skill[], isPrivate: boolean): Promise<void> {
   try {
     applyImportStatus(
       host,
       await importSkillsToCollection(skills, {
         quiet: true,
+        private: isPrivate,
         confirmReplace: confirmCollectionReplace,
-      })
+      }),
+      isPrivate
     );
   } catch (error) {
     await presentActionFailure(host, error, true);
