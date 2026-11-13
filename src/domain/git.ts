@@ -70,9 +70,10 @@ function privateSkillPaths(names: string[]): string[] {
 /** Exclusion pathspecs for collection add/status, including previously tracked paths. */
 export function privateSkillExcludePathspecs(names: string[]): string[] {
   const escapeGlob = (name: string) => name.replace(/[?*\[\\]/g, (char) => `[${char === '\\' ? '\\\\' : char}]`);
+  // The leading **/ also prevents git add from reporting ignored excluded files.
   return names.map(assertSkillName).flatMap((name) => [
-    `:(top,exclude,glob)skills/${escapeGlob(name)}/**`,
-    `:(top,exclude,glob)metadata/${escapeGlob(name)}.json`,
+    `:(top,exclude,glob)**/skills/${escapeGlob(name)}/**`,
+    `:(top,exclude,glob)**/metadata/${escapeGlob(name)}.json`,
   ]);
 }
 
