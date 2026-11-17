@@ -26,6 +26,14 @@ export interface GitSource extends SkillSource {
  */
 export type CollectionMatch = 'same-source' | 'conflicting-source' | 'unverified-source';
 
+export interface SkillNamespace {
+  name: string;
+  originalName: string;
+  sourceNames: string[];
+  /** Preserve a pre-existing ordinary tag that had the same text. */
+  preserveTag?: boolean;
+}
+
 export interface Skill {
   name: string;
   description: string;
@@ -36,6 +44,7 @@ export interface Skill {
   tags?: string[];
   note?: string;
   source?: SkillSource;
+  namespace?: SkillNamespace;
   fromCollection?: boolean;
   collectionStatus?: CollectionMatch;
 }
@@ -53,6 +62,8 @@ export interface SkillMetadata {
   tags: string[];
   note: string;
   source: SkillSource;
+  /** Present only for skills governed by a repository namespace. */
+  namespace?: SkillNamespace;
 }
 
 export interface CollectedSkill extends SkillMetadata {

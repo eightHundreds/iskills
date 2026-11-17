@@ -61,7 +61,9 @@ export async function renameCollectionTag(
   if (!oldTag || oldTag === newTag) return { updated: 0, committed: true };
 
   const changes: TagRenameChange<SkillMetadata>[] = [];
-  for (const skill of await listCollection()) {
+  const collection = await listCollection();
+  if (collection.some((skill) => skill.namespace?.name === oldTag)) throw new Error('Rename the repository namespace instead of its fixed tag.');
+  for (const skill of collection) {
     const before = await readMetadata(skill.name);
     const tags = renameTagInList(before.tags, oldTag, newTag);
     if (!tags) continue;

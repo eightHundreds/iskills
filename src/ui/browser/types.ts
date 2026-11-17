@@ -10,6 +10,7 @@ export type BrowserFocus = 'tabs' | 'agents' | 'tags' | 'list' | 'detail';
 /** Focusable fields in the collection detail (peek + fullscreen). */
 export type DetailFieldId =
   | 'source'
+  | 'namespace'
   | 'tags'
   | 'note'
   | 'name'
@@ -57,6 +58,7 @@ export type BrowserResult =
   | { type: 'installToAgents'; skills: Skill[]; scope: 'project' | 'global' }
   | { type: 'import'; skills: Skill[]; private: boolean }
   | { type: 'openSource'; skill: Skill }
+  | { type: 'editNamespace'; skill: Skill }
   | { type: 'unbindSource'; skill: Skill }
   | {
       type: 'open';

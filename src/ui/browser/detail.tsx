@@ -27,10 +27,11 @@ import { detailFrameDimensions } from './layout.js';
 import { browserDetailFieldAtom, type BrowserAppStore } from './store.js';
 import type { DetailFieldId } from './types.js';
 
-export type DetailAction = 'note' | 'tags' | 'source' | 'openSource' | 'unbindSource' | 'back';
+export type DetailAction = 'note' | 'tags' | 'source' | 'namespace' | 'openSource' | 'unbindSource' | 'back';
 
 function fieldAction(field: DetailFieldId): DetailAction | undefined {
   if (field === 'source') return 'openSource';
+  if (field === 'namespace') return 'namespace';
   if (field === 'tags') return 'tags';
   if (field === 'note') return 'note';
   return undefined;

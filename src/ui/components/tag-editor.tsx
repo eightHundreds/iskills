@@ -9,11 +9,13 @@ import { t } from '../../i18n/index.js';
 export function TagEditor({
   tags,
   initialValues,
+  lockedTags = [],
   onSubmit,
   onCancel,
 }: {
   tags: string[];
   initialValues: string[];
+  lockedTags?: string[];
   onSubmit: (tags: string[]) => void;
   onCancel?: () => void;
 }): ReactNode {
@@ -45,7 +47,7 @@ export function TagEditor({
     }
     if (input === ' ') {
       const tag = tags[cursor];
-      if (!tag) return;
+      if (!tag || lockedTags.includes(tag)) return;
       return setSelected((previous) => {
         const next = new Set(previous);
         if (next.has(tag)) next.delete(tag);
@@ -83,7 +85,7 @@ export function TagEditor({
               }
               backgroundColor={panel.surface}
             >
-              {`${active ? '›' : ' '} ${selected.has(tag) ? '●' : '○'} ${tag}`}
+              {`${active ? '›' : ' '} ${selected.has(tag) ? '●' : '○'} ${tag}${lockedTags.includes(tag) ? ' 🔒' : ''}`}
             </Text>
           );
         }) : (

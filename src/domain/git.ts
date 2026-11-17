@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import {
   collectionGitStatusPaths,
   commitCollection,
   copyDirectoryContents,
+  discoverSkills,
   errorMessage,
   ensureCollection,
   exists,
@@ -39,6 +40,18 @@ import type {
 import { DomainError, domainNotify } from './errors.js';
 import { recordRunLog } from './run-log.js';
 import { runGit } from './process.js';
+import { namespacedSkillName, transformSkillTree } from './skill-namespace.js';
+
+/** Discover skill names in a repository via a shallow clone. */
+export async function discoverRepositorySkillNames(repository: string, signal?: AbortSignal): Promise<string[]> {
+  const { inspectGitSource } = await import('./agent-read.js');
+  const clone = await inspectGitSource(repository, signal);
+  try {
+    return (await discoverSkills(clone.repository)).map((skill) => skill.name);
+  } finally {
+    await rm(clone.temporary, { recursive: true, force: true });
+  }
+}
 
 export function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', timeout: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } }).trim();
@@ -366,6 +379,27 @@ async function prepareDirectoryMerge(
   await rm(workspace, { recursive: true, force: true });
   await Promise.all([mkdir(workspace, { recursive: true }), mkdir(paths.local, { recursive: true })]);
   await Promise.all([validateSkillTree(baseSkill), validateSkillTree(remoteSkill)]);
+  const metadata = await readMetadata(name);
+  const namespace = metadata.namespace;
+  let transformed: string | undefined;
+  if (namespace) {
+    transformed = await mkdtemp(join(paths.local, '.namespace-merge-'));
+    const base = join(transformed, 'base');
+    const remote = join(transformed, 'remote');
+    try {
+      await cp(baseSkill, base, { recursive: true });
+      await cp(remoteSkill, remote, { recursive: true });
+      const mapping = new Map(namespace.sourceNames.map((original) => [original, namespacedSkillName(namespace.name, original)]));
+      await transformSkillTree(base, name, mapping);
+      await transformSkillTree(remote, name, mapping);
+    } catch (error) {
+      await rm(transformed, { recursive: true, force: true });
+      throw error;
+    }
+    baseSkill = base;
+    remoteSkill = remote;
+  }
+  try {
   await copyDirectoryContents(baseSkill, workspace);
   await runGit(['-C', workspace, 'init', '--quiet', '-b', 'base']);
   await runGit(['-C', workspace, 'config', 'user.name', 'Skill Collection']);
@@ -394,6 +428,9 @@ async function prepareDirectoryMerge(
     conflicted = true;
   }
   return { workspace, conflicted };
+  } finally {
+    if (transformed) await rm(transformed, { recursive: true, force: true });
+  }
 }
 
 let updateWorktreeSeq = 0;

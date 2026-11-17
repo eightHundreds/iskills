@@ -33,6 +33,7 @@ import {
   validateSkillTree,
   writeMetadata,
   writeState,
+  writeJson,
   ensureCollection,
   normalizeGitRepositoryIdentity,
 } from './core.js';
@@ -77,6 +78,7 @@ import { updateGitSkill, detectRenamedSkillPath, readPrivateSkillNames } from '.
 import { runGit } from './process.js';
 import type { Skill, SkillMetadata, GitSource } from './types.js';
 import { domainNotify } from './errors.js';
+import { applyRepositoryNamespace, assertNamespaceAvailable, namespacedSkillName, planRepositoryNamespace, readRepositoryNamespaceRules, repositoryNamespace, transformSkillTree } from './skill-namespace.js';
 
 export interface SkillWriteRequest {
   command: string;
@@ -91,7 +93,7 @@ function strings(options: Record<string, unknown>, key: string): string[] {
 }
 
 export function metadataPatch(
-  before: { tags: string[]; note: string; description?: string },
+  before: { tags: string[]; note: string; description?: string; namespace?: { name: string } },
   options: Record<string, unknown>,
 ): Record<string, unknown> {
   let tags = before.tags;
@@ -117,6 +119,8 @@ export function metadataPatch(
   }
   const add = strings(options, 'add-tag');
   const remove = strings(options, 'remove-tag');
+  if (before.namespace && remove.includes(before.namespace.name)) throw new OperationFailure('usage.invalidArguments', 'The namespace tag cannot be removed.');
+  if (before.namespace && !tags.includes(before.namespace.name)) tags = [...tags, before.namespace.name];
   if (add.some((tag) => remove.includes(tag)))
     throw new OperationFailure(
       'usage.invalidArguments',
@@ -304,12 +308,13 @@ async function requireSkills(
         }
         return skill;
       });
-  return selected.map(({ name, description, tags, note, source }) => ({
+  return selected.map(({ name, description, tags, note, source, namespace }) => ({
     name,
     description,
     tags,
     note,
     source,
+    ...(namespace ? { namespace } : {}),
   }));
 }
 
@@ -323,6 +328,7 @@ export async function executeSkillWrite(
       : [...new Set(request.names)];
   const dryRun = options['dry-run'] === true;
   const plans: PlannedWrite[] = [];
+  if (command.startsWith('skill.namespace.')) return executeNamespaceWrite(request);
   if (command === 'skill.import') return importSkills(request);
   if (command === 'skill.install') return installSkills(request);
   if (['skill.uninstall', 'skill.materialize'].includes(command))
@@ -336,6 +342,7 @@ export async function executeSkillWrite(
       );
     normalizeNewTagName(to!);
     const selected = await requireSkills([], true);
+    if (selected.some((skill) => skill.namespace?.name === from)) throw new OperationFailure('usage.invalidArguments', 'Rename a namespace through the namespace command.');
     const changes = selected.flatMap((before) => {
       const tags = renameTagInList(before.tags, from!, to!);
       return tags ? [{ before, after: { ...before, tags } }] : [];
@@ -722,6 +729,64 @@ export async function bindSource(
   }
 }
 
+async function executeNamespaceWrite(request: SkillWriteRequest): Promise<OperationResult> {
+  const { command, names, options, signal } = request;
+  const { items, issues } = await readSkills();
+  if (issues.length) throw new OperationFailure('execution.readFailed', 'Collection contains unreadable skills.', { issues }, 1);
+  let repository: string;
+  let nextName: string | undefined;
+  let sourceNames: string[];
+  if (command === 'skill.namespace.remove') {
+    if (names.length !== 1 || options['delete-skills'] !== true || (options.yes !== true && options['dry-run'] !== true)) throw new OperationFailure('usage.confirmationRequired', 'Namespace removal requires --delete-skills --yes; use namespace clear to keep members.', { requiredFlags: ['--delete-skills', '--yes'] }, 2);
+    const members = items.filter((item) => item.namespace?.name === names[0]);
+    const rules = await readRepositoryNamespaceRules();
+    const rule = Object.entries(rules).find(([, value]) => value === names[0]);
+    if (!members.length && !rule) throw new OperationFailure('usage.selectionNotFound', 'Namespace not found.');
+    if (!members.length && rule) {
+      const item = { action: command, namespace: names[0], status: 'planned' };
+      return executeWrites([{ item, execute: async () => { const next = { ...rules }; delete next[rule[0]]; await writeJson(join(collectionPaths().root, 'namespaces.json'), next); } }], options['dry-run'] === true, true, command, signal);
+    }
+    const plans = members.map((member) => ({ item: { name: member.name, action: 'remove', status: 'planned' }, execute: () => removeFromCollection(member.name, true) }));
+    const last = plans[plans.length - 1]!;
+    const executeLast = last.execute;
+    last.execute = async () => {
+      await executeLast();
+      const next = { ...rules };
+      if (rule) delete next[rule[0]];
+      await writeJson(join(collectionPaths().root, 'namespaces.json'), next);
+    };
+    return executeWrites(plans, options['dry-run'] === true, true, command, signal);
+  }
+  if (command === 'skill.namespace.set') {
+    if (names.length || typeof options.git !== 'string' || typeof options.namespace !== 'string') {
+      throw new OperationFailure('usage.invalidArguments', 'Use --git and --namespace.');
+    }
+    const clone = await inspectGitSource(options.git, signal);
+    try {
+      repository = clone.source.url;
+      sourceNames = (await discoverSkills(clone.repository)).map((skill) => skill.name);
+      if (!sourceNames.length) throw new OperationFailure('usage.selectionNotFound', 'No skills were found in the repository.');
+    } finally { await rm(clone.temporary, { recursive: true, force: true }); }
+    nextName = options.namespace;
+    const identity = normalizeGitRepositoryIdentity(repository);
+    const rules = await readRepositoryNamespaceRules();
+    const storedRule = rules[identity];
+    const existing = items.find((item) => item.source.url && normalizeGitRepositoryIdentity(item.source.url) === identity && item.namespace);
+    if ((existing && existing.namespace?.name !== nextName) || (storedRule && storedRule !== nextName)) throw new OperationFailure('usage.invalidArguments', 'Rename the existing namespace explicitly.');
+  } else {
+    if (names.length !== (command === 'skill.namespace.rename' ? 2 : 1)) throw new OperationFailure('usage.invalidArguments', 'Specify the namespace and, for rename, the new name.');
+    const member = items.find((item) => item.namespace?.name === names[0]);
+    if (!member?.source.url || !member.namespace) throw new OperationFailure('usage.selectionNotFound', 'Namespace not found.');
+    repository = member.source.url;
+    sourceNames = [...new Set(items.filter((item) => item.namespace?.name === names[0]).flatMap((item) => item.namespace?.sourceNames ?? []))];
+    nextName = command === 'skill.namespace.rename' ? names[1] : undefined;
+  }
+  const changes = await planRepositoryNamespace(repository, nextName, sourceNames);
+  if (!changes.length) throw new OperationFailure('usage.selectionNotFound', 'No collected skills from the selected repository.');
+  const item: Record<string, unknown> = { action: command, repository, namespace: nextName ?? null, changes: changes.map(({ before, after }) => ({ before: before.name, after: after.name })), status: 'planned' };
+  return executeWrites([{ item, execute: () => applyRepositoryNamespace(changes) }], options['dry-run'] === true, true, command, signal);
+}
+
 async function importSkills(
   request: SkillWriteRequest,
 ): Promise<OperationResult> {
@@ -773,6 +838,24 @@ async function importSkills(
         1,
       );
     const candidates = await discoverSkills(root);
+    const collected = await readSkills();
+    if (collected.issues.length) throw new OperationFailure('execution.readFailed', 'Collection contains unreadable skills.', { issues: collected.issues }, 1);
+    if (options.namespace !== undefined && !cloned) throw new OperationFailure('usage.invalidArguments', 'Namespaces require a GitHub source.');
+    const identity = cloned ? normalizeGitRepositoryIdentity(cloned.source.url) : '';
+    const rules = await readRepositoryNamespaceRules();
+    const existingNamespace = cloned ? repositoryNamespace(collected.items, cloned.source.url) ?? rules[identity] : undefined;
+    const requestedNamespace = typeof options.namespace === 'string' ? options.namespace : undefined;
+    if (existingNamespace && requestedNamespace && existingNamespace !== requestedNamespace) throw new OperationFailure('usage.invalidArguments', 'Rename the repository namespace explicitly.');
+    const namespace = requestedNamespace ?? existingNamespace;
+    if (namespace && !identity.startsWith('github.com/')) throw new OperationFailure('usage.invalidArguments', 'Namespaces require a GitHub source.');
+    if (namespace) {
+      assertNamespaceAvailable(collected.items, cloned!.source.url, namespace);
+      if (Object.entries(rules).some(([key, value]) => key !== identity && value === namespace)) throw new OperationFailure('usage.invalidArguments', 'Namespace belongs to another repository.');
+      if (collected.items.some((item) => item.source.url && normalizeGitRepositoryIdentity(item.source.url) === identity && !item.namespace)) {
+        throw new OperationFailure('usage.invalidArguments', 'Enable the namespace for existing repository skills before importing.');
+      }
+    }
+    const sourceNames = candidates.map((skill) => skill.name);
     const selected = options.all
       ? candidates.sort((a, b) => a.name.localeCompare(b.name, 'en'))
       : paths.map((path) => {
@@ -836,16 +919,24 @@ async function importSkills(
       const source = cloned
         ? { ...cloned.source, path: relative(root, skill.path) || '.' }
         : { type: 'local', path: actual };
+      const collectedName = namespace ? namespacedSkillName(namespace, skill.name) : skill.name;
       const metadata: SkillMetadata = {
-        name: skill.name,
+        name: collectedName,
         description: skill.description,
-        tags: strings(options, 'tag'),
+        tags: [...new Set([...strings(options, 'tag'), ...(namespace ? [namespace] : [])])],
         note: '',
         source,
+        ...(namespace ? { namespace: { name: namespace, originalName: skill.name, sourceNames } } : {}),
       };
-      const target = join(collectionPaths().skills, skill.name);
+      let sourceTree = actual;
+      if (namespace) {
+        sourceTree = await mkdtemp(join(cloned!.temporary, '.namespace-import-'));
+        await cp(actual, sourceTree, { recursive: true });
+        await transformSkillTree(sourceTree, collectedName, new Map(sourceNames.map((name) => [name, namespacedSkillName(namespace, name)])));
+      }
+      const target = join(collectionPaths().skills, collectedName);
       let item: Record<string, unknown> = {
-        name: skill.name,
+        name: collectedName,
         action: 'import',
         ...(options.private ? { private: true } : {}),
         status: 'planned',
@@ -856,12 +947,12 @@ async function importSkills(
           : {}),
       };
       if (await pathPresent(target)) {
-        const current = await readMetadata(skill.name);
+        const current = await readMetadata(collectedName);
         const match = await classifyCollectionMatch(current, metadata);
         if (match === 'same-source')
           item = {
             ...item,
-            status: options.private && !privateNames.has(skill.name) ? 'planned' : 'unchanged',
+            status: options.private && !privateNames.has(collectedName) ? 'planned' : 'unchanged',
             reason: 'same-source',
             source: current.source,
             moved: false,
@@ -875,7 +966,7 @@ async function importSkills(
                 }
               : {}),
           };
-        else if (!options.replace)
+        else if (!options.replace || namespace)
           item = conflictItem(
             item,
             match === 'unverified-source'
@@ -892,15 +983,21 @@ async function importSkills(
       plans.push({
         item,
         execute: async () => {
+          let oldRules: Record<string, string> | undefined;
           try {
+            if (namespace) {
+              await ensureCollection();
+              oldRules = await readRepositoryNamespaceRules();
+              await writeJson(join(collectionPaths().local, 'namespaces.json'), { ...oldRules, [identity]: namespace });
+            }
             if (options.private && (await pathPresent(target)) &&
-                await classifyCollectionMatch(await readMetadata(skill.name), metadata) === 'same-source') {
-              await setSkillPrivate(collectionPaths().root, skill.name, true);
+                await classifyCollectionMatch(await readMetadata(collectedName), metadata) === 'same-source') {
+              await setSkillPrivate(collectionPaths().root, collectedName, true);
               return;
             }
             await installCollectionSkill({
-              name: skill.name,
-              sourceTree: actual,
+              name: collectedName,
+              sourceTree,
               metadata,
               allowReplace: options.replace === true,
               commit: false,
@@ -918,6 +1015,7 @@ async function importSkills(
                 : {}),
             });
           } catch (error) {
+            if (oldRules) await writeJson(join(collectionPaths().local, 'namespaces.json'), oldRules);
             item.restored = 'unknown';
             throw error;
           }

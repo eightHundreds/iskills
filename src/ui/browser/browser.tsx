@@ -543,6 +543,7 @@ export function Browser({
         const field = fields[detailFieldIndexRef.current] ?? fields[0];
         if (skill && field && (key.return || input.includes('\r') || input.includes('\n'))) {
           if (field === 'source') return finish({ type: 'openSource', skill });
+          if (field === 'namespace') return finish({ type: 'editNamespace', skill });
           if (field === 'tags') return finish({ type: 'editTags', skill });
           if (field === 'note') return finish({ type: 'editNote', skill });
         }
@@ -831,6 +832,10 @@ export function Browser({
             const actionField = row.field;
             const index = detailFields.indexOf(actionField);
             if (index < 0) return;
+            if (actionField === 'namespace' && peekSkill) {
+              finish({ type: 'editNamespace', skill: peekSkill });
+              return;
+            }
             if (actionField === 'source' && peekSkill) {
               finish({ type: 'openSource', skill: peekSkill });
               return;

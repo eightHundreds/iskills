@@ -98,6 +98,7 @@ export async function readSkills(): Promise<{
         tags: meta.tags,
         note: meta.note,
         source: meta.source,
+        ...(meta.namespace ? { namespace: meta.namespace } : {}),
       });
     } catch (error) {
       issues.push({ path, error: operationError(error) });

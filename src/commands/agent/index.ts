@@ -32,6 +32,7 @@ import {
   type OptionKind,
 } from './arguments.js';
 import { executeSkillWrite } from '../../domain/agent-skill-write.js';
+import { readRepositoryNamespaceRules } from '../../domain/skill-namespace.js';
 import { executeMcpWrite } from '../../domain/agent-mcp-write.js';
 import { executeCollectionWrite } from '../../domain/agent-collection-write.js';
 import { probeCollectedHttp } from '../../domain/mcp/write.js';
@@ -45,6 +46,7 @@ const READ_OPTIONS: Record<string, Record<string, OptionKind>> = {
   'skill.locations': { agent: 'multiple', scope: 'string', root: 'string' },
   'skill.discover': { git: 'string', local: 'string' },
   'skill.search': { limit: 'string' },
+  'skill.namespace.list': {},
   'mcp.list': { query: 'string', tag: 'multiple' },
   'mcp.show': {},
   'mcp.locations': { agent: 'multiple', scope: 'string' },
@@ -60,6 +62,10 @@ const META_OPTIONS: Record<string, OptionKind> = {
   note: 'string',
 };
 const WRITE_OPTIONS: Record<string, Record<string, OptionKind>> = {
+  'skill.namespace.set': { git: 'string', namespace: 'string' },
+  'skill.namespace.rename': {},
+  'skill.namespace.clear': {},
+  'skill.namespace.remove': { 'delete-skills': 'boolean', yes: 'boolean' },
   'skill.create': { private: 'boolean' },
   'skill.adopt': { all: 'boolean', private: 'boolean' },
   'skill.import': {
@@ -68,6 +74,7 @@ const WRITE_OPTIONS: Record<string, Record<string, OptionKind>> = {
     path: 'multiple',
     all: 'boolean',
     'expect-commit': 'string',
+    namespace: 'string',
     replace: 'boolean',
     tag: 'multiple',
     private: 'boolean',
@@ -140,7 +147,7 @@ const COMMAND_OPTIONS: Record<string, Record<string, OptionKind>> = {
 
 function commandPath(argv: string[]): { command: string; rest: string[] } {
   const depth = ['skill', 'mcp', 'collection', 'config'].includes(argv[0] ?? '')
-    ? ['tag', 'source', 'secret', 'remote'].includes(argv[1] ?? '')
+    ? ['tag', 'source', 'secret', 'remote', 'namespace'].includes(argv[1] ?? '')
       ? 3
       : 2
     : 1;
@@ -205,6 +212,20 @@ async function executeRead(
         ),
       },
     };
+  }
+  if (command === 'skill.namespace.list') {
+    requirePositionals(args, 0);
+    const { items, issues } = await readSkills();
+    const groups = new Map<string, { namespace: string; repository: string; skills: string[] }>();
+    const rules = await readRepositoryNamespaceRules();
+    for (const [repository, namespace] of Object.entries(rules)) groups.set(namespace, { namespace, repository, skills: [] });
+    for (const skill of items) {
+      if (!skill.namespace || !skill.source.url) continue;
+      const group = groups.get(skill.namespace.name) ?? { namespace: skill.namespace.name, repository: skill.source.url, skills: [] };
+      group.skills.push(skill.name);
+      groups.set(skill.namespace.name, group);
+    }
+    return readResult({ items: [...groups.values()] }, issues);
   }
   if (command === 'skill.locations' || command === 'mcp.locations') {
     requirePositionals(args, 0);
@@ -446,6 +467,8 @@ Run \`iskills help config <action>\` for details.
       const argumentsByCommand: Record<string, string> = {
         'skill.show': '<name>',
         'skill.search': '<query>',
+        'skill.namespace.rename': '<old> <new>',
+        'skill.namespace.clear': '<namespace>',
         'skill.create': '<name>',
         'skill.adopt': '[name...]',
         'skill.install': '[name...]',

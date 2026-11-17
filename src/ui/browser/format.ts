@@ -28,7 +28,7 @@ export function detailEditableFields(
   skill?: Pick<Skill, 'source'>
 ): DetailFieldId[] {
   if (!collection) return [];
-  if (isGitHubSourceUrl(skill?.source?.url)) return ['source', 'tags', 'note'];
+  if (isGitHubSourceUrl(skill?.source?.url)) return ['source', 'tags', 'note', 'namespace'];
   return ['tags', 'note'];
 }
 
@@ -274,6 +274,8 @@ export function detailContentLines(
     width
   );
   lines.push(...(links.length ? tagged('relatedLocations', related) : related));
+  if (isGitHubSourceUrl(metadata.source.url)) lines.push(...tagged('namespace', detailFieldLines(t('import.namespace'), metadata.namespace?.name ?? t('common.none'), width)));
+  if (metadata.namespace) lines.push(...detailFieldLines(t('browser.originalSkillName'), metadata.namespace.originalName, width));
   return lines;
 }
 
@@ -846,7 +848,9 @@ export function browseDetailRows(
       ),
       ...peekFieldRows(t('common.version'), version, width, 1),
       ...peekFieldRows(t('common.tags'), triggerTags, width, 2, { field: 'tags' }),
-      ...peekFieldRows(t('common.note'), note, width, 2, { field: 'note' })
+      ...peekFieldRows(t('common.note'), note, width, 2, { field: 'note' }),
+      ...(isGitHubSourceUrl(skill.source?.url) ? peekFieldRows(t('import.namespace'), skill.namespace?.name ?? t('common.none'), width, 1, { field: 'namespace' }) : []),
+      ...(skill.namespace ? peekFieldRows(t('browser.originalSkillName'), skill.namespace.originalName, width, 1) : [])
     );
   } else {
     // Project / global: location + whether this path is already in the collection (realpath).

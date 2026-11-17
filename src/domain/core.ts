@@ -291,6 +291,7 @@ export function nextCollectionGitignore(existing: string | undefined): string {
 export async function collectionGitAddPaths(root: string): Promise<string[]> {
   const paths: string[] = [...COLLECTION_GIT_BASE_PATHS];
   if (await exists(join(root, 'config.json'))) paths.push('config.json');
+  if (await exists(join(root, 'namespaces.json'))) paths.push('namespaces.json');
   try {
     const mcpFiles = await readdir(join(root, 'mcps'));
     if (mcpFiles.length) paths.push('mcps');
@@ -313,7 +314,7 @@ export async function collectionGitPresentAddPaths(root: string, excludes: strin
 
 /** `git status` pathspecs: always include optional tracked paths so deletions stay visible. */
 export function collectionGitStatusPaths(): string[] {
-  return [...COLLECTION_GIT_BASE_PATHS, 'config.json', 'mcps'];
+  return [...COLLECTION_GIT_BASE_PATHS, 'config.json', 'mcps', 'namespaces.json'];
 }
 
 export async function ensureCollection(): Promise<CollectionPaths> {

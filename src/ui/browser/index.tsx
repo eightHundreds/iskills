@@ -9,6 +9,7 @@ import {
   adoptMissingCollectionMetadata,
   handleBrowserResult,
   handleDetailAction,
+  handleNamespace,
   handleOpenCollectedGitHubSource,
   handleUnbindSource,
   loadBrowserData,
@@ -264,6 +265,13 @@ function BrowserAppScreens({ lifecycle }: { lifecycle: BrowserAppLifecycle }): R
                 setPhase('browse');
                 setDetail(null);
               }
+              return;
+            }
+            if (action === 'namespace') {
+              await handleNamespace(actionHost, context.skill);
+              await reloadData();
+              setPhase('browse');
+              setDetail(null);
               return;
             }
             if (action === 'unbindSource') {

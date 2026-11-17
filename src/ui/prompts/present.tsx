@@ -127,7 +127,8 @@ export async function promptTagRename(
 export function promptTags(
   tags: string[],
   initialValues: string[],
-  title: string
+  title: string,
+  lockedTags: string[] = [],
 ): Promise<string[] | undefined> {
   return Modal.open<string[] | undefined>({
     footerItems: tagEditorFooterItems(),
@@ -137,6 +138,7 @@ export function promptTags(
           key={title}
           tags={tags}
           initialValues={initialValues}
+          lockedTags={lockedTags}
           onSubmit={(value) => close(value)}
           onCancel={() => close(undefined)}
         />
@@ -262,6 +264,7 @@ export function promptImportReview<T extends Skill>(
   items: ImportReviewItem<T>[],
   existingTags: string[],
   initialPrivate = false,
+  namespaceOptions?: { enabled: boolean; initialValue?: string },
 ): Promise<ImportReviewResult | undefined> {
   return Layer.open<ImportReviewResult | undefined>({
     footerItems: importReviewFooterItems(),
@@ -270,6 +273,8 @@ export function promptImportReview<T extends Skill>(
         items={items}
         existingTags={existingTags}
         initialPrivate={initialPrivate}
+        namespaceEnabled={namespaceOptions?.enabled ?? false}
+        initialNamespace={namespaceOptions?.initialValue ?? ''}
         onSubmit={(result) => close(result.confirmed ? result : undefined)}
       />
     ),

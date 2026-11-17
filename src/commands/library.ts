@@ -18,13 +18,15 @@ import {
   listCollection,
   listGlobalGroups,
   listPresentAgents,
+  normalizeGitRepositoryIdentity,
   pathPresent,
   readMetadata,
   resolveIncomingProvenance,
   sanitizeTerminal,
 } from '../domain/core.js';
 import { installCollectionSkill } from '../domain/collection-write.js';
-import { executePreparedSkillImports, planSkillTargets, type SkillTargetInput } from '../domain/agent-skill-write.js';
+import { executePreparedSkillImports, executeSkillWrite, planSkillTargets, type SkillTargetInput } from '../domain/agent-skill-write.js';
+import { readRepositoryNamespaceRules, repositoryNamespace } from '../domain/skill-namespace.js';
 import { executeWrites, type PlannedWrite } from '../domain/agent-write.js';
 import {
   canonicalizePath,
@@ -236,6 +238,12 @@ export async function importRemoteSkillToCollection(
       assertUniqueSkillNames(copies);
     }
     const skill = copies[0]!;
+    const identity = normalizeGitRepositoryIdentity(gitContext.source.url);
+    const existingNamespace = identity.startsWith('github.com/') ? repositoryNamespace(await listCollection(), gitContext.source.url) ?? (await readRepositoryNamespaceRules())[identity] : undefined;
+    if (existingNamespace) {
+      const result = await importGitSkillsToCollection([skill], gitContext, { quiet: true, tags: options.tags ?? [] });
+      return { name: `${existingNamespace}-${skill.name}`, status: result.commitFailed ? 'commit-failed' : result.count ? 'imported' : 'unchanged' };
+    }
     const incoming = await gitSkillMetadata(skill, gitContext);
     const target = join(collectionPaths().skills, skill.name);
     const replacing = await pathPresent(target);
@@ -300,6 +308,7 @@ interface ImportToCollectionOptions {
   yes?: boolean;
   quiet?: boolean;
   tags?: string[];
+  namespace?: string;
   /** Confirm only for conflicting / unverified same-name entries (not same-source). */
   confirmReplace?: (candidates: ImportReplaceCandidate[]) => Promise<boolean>;
 }
@@ -449,7 +458,8 @@ export async function importGitUrlToCollection(
         detail: gitSkillDisplayPath(skill, gitContext),
       })),
       existingTags,
-      options.private === true
+      options.private === true,
+      { enabled: normalizeGitRepositoryIdentity(gitContext.source.url).startsWith('github.com/'), initialValue: repositoryNamespace(await listCollection(), gitContext.source.url) ?? (await readRepositoryNamespaceRules())[normalizeGitRepositoryIdentity(gitContext.source.url)] ?? '' }
     );
     if (!review) return { count: 0 };
 
@@ -457,6 +467,7 @@ export async function importGitUrlToCollection(
       ...options,
       tags: review.tags,
       private: review.private === true,
+      ...(review.namespace ? { namespace: review.namespace } : {}),
     });
   } finally {
     await rm(gitContext.temporary, { recursive: true, force: true });
@@ -470,6 +481,17 @@ export async function importGitSkillsToCollection(
 ): Promise<ImportToCollectionResult> {
   if (!skills.length) return { count: 0 };
   assertUniqueSkillNames(skills);
+  const repository = gitContext.source.url;
+  const identity = normalizeGitRepositoryIdentity(repository);
+  const existingNamespace = identity.startsWith('github.com/') ? repositoryNamespace(await listCollection(), repository) ?? (await readRepositoryNamespaceRules())[identity] : undefined;
+  if (options.namespace || existingNamespace) {
+    const source = `${repository}${gitContext.source.ref ? `#${gitContext.source.ref}` : ''}`;
+    const response = await executeSkillWrite({
+      command: 'skill.import', project: process.cwd(), names: [], signal: new AbortController().signal,
+      options: { git: source, path: skills.map((skill) => relative(gitContext.repository, skill.path) || '.'), ...(gitContext.source.commit ? { 'expect-commit': gitContext.source.commit } : {}), ...(options.namespace ? { namespace: options.namespace } : {}), tag: options.tags ?? [], private: options.private === true, replace: options.replace === true },
+    });
+    return presentImportResult(response, options.quiet === true);
+  }
   const { selected, replaceNames } = await resolveImportSelection(skills, options, gitContext);
   if (!selected.length) return { count: 0 };
   const inputs = [];
@@ -555,6 +577,7 @@ export async function commandImport(argv: string[]): Promise<void> {
 
     let importTags: string[] = [];
     let importPrivate = values.private === true;
+    let importNamespace: string | undefined;
     if (!values.yes) {
       if (!process.stdin.isTTY) throw new DomainError('cmd.useYesToConfirmImport');
       const existingTags = [...new Set((await listCollection().catch(() => []))
@@ -568,11 +591,13 @@ export async function commandImport(argv: string[]): Promise<void> {
             : sanitizeTerminal(skill.path),
         })),
         existingTags,
-        values.private === true
+        values.private === true,
+        gitContext ? { enabled: normalizeGitRepositoryIdentity(gitContext.source.url).startsWith('github.com/'), initialValue: repositoryNamespace(await listCollection(), gitContext.source.url) ?? (await readRepositoryNamespaceRules())[normalizeGitRepositoryIdentity(gitContext.source.url)] ?? '' } : undefined
       );
       if (!review) return;
       importTags = review.tags;
       importPrivate = review.private === true;
+      importNamespace = review.namespace;
     }
 
     if (!gitContext) {
@@ -589,6 +614,7 @@ export async function commandImport(argv: string[]): Promise<void> {
       yes: values.yes ?? false,
       tags: importTags,
       private: importPrivate,
+      ...(importNamespace ? { namespace: importNamespace } : {}),
     });
   } finally {
     if (gitContext) await rm(gitContext.temporary, { recursive: true, force: true });

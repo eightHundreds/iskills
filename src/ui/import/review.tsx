@@ -13,12 +13,16 @@ export function ImportReview<T extends Skill>({
   items,
   existingTags,
   initialPrivate = false,
+  namespaceEnabled = false,
+  initialNamespace = '',
   onSubmit,
 }: {
   label?: string;
   items: ImportReviewItem<T>[];
   existingTags: string[];
   initialPrivate?: boolean;
+  namespaceEnabled?: boolean;
+  initialNamespace?: string;
   onSubmit: (result: ImportReviewResult) => void;
 }): ReactNode {
   const { stdout } = useStdout();
@@ -29,7 +33,8 @@ export function ImportReview<T extends Skill>({
     muted: panel.muted,
     body: panel.body,
   };
-  const [activeTab, setActiveTab] = useState<'tags' | 'confirm'>('tags');
+  const [activeTab, setActiveTab] = useState<'tags' | 'namespace' | 'confirm'>('tags');
+  const [namespace, setNamespace] = useState(initialNamespace);
   const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
   const [isPrivate, setPrivate] = useState(initialPrivate);
@@ -44,14 +49,14 @@ export function ImportReview<T extends Skill>({
   const visibleItems = items.slice(0, Math.max(3, Math.min(items.length, (stdout.rows ?? 24) - 10)));
 
   const submit = (confirmed: boolean) => {
-    onSubmit({ confirmed, tags: [...selectedTags], private: isPrivate });
+    onSubmit({ confirmed, tags: [...selectedTags], private: isPrivate, ...(namespaceEnabled && namespace.trim() ? { namespace: namespace.trim() } : {}) });
   };
   const addTags = (input: string) => {
     const tags = input.split(',').map((tag) => tag.trim()).filter(Boolean);
     if (tags.length) {
       setSelectedTags((previous) => new Set([...previous, ...tags]));
     }
-    setActiveTab('confirm');
+    setActiveTab(namespaceEnabled ? 'namespace' : 'confirm');
   };
   const toggleCurrentTag = () => {
     const tag = existingTags[clampedCursor];
@@ -75,7 +80,7 @@ export function ImportReview<T extends Skill>({
         return;
       }
       if (key.leftArrow) {
-        setActiveTab('tags');
+        setActiveTab(namespaceEnabled ? 'namespace' : 'tags');
         return;
       }
       if (input.trim().toLowerCase() === 'n') {
@@ -89,8 +94,12 @@ export function ImportReview<T extends Skill>({
       return;
     }
 
+    if (activeTab === 'namespace') {
+      if (key.leftArrow) setActiveTab('tags');
+      return;
+    }
     if (tagFocus === 'list' && key.rightArrow) {
-      setActiveTab('confirm');
+      setActiveTab(namespaceEnabled ? 'namespace' : 'confirm');
       return;
     }
     if (key.tab) {
@@ -111,7 +120,7 @@ export function ImportReview<T extends Skill>({
       return;
     }
     if (isReturn(input, key.return)) {
-      setActiveTab('confirm');
+      setActiveTab(namespaceEnabled ? 'namespace' : 'confirm');
     }
   });
 
@@ -121,16 +130,16 @@ export function ImportReview<T extends Skill>({
         {label}
       </Text>
       <box flexDirection="row" paddingLeft={1}>
-        {(['tags', 'confirm'] as const).map((tab, index) => (
+        {(namespaceEnabled ? ['tags', 'namespace', 'confirm'] as const : ['tags', 'confirm'] as const).map((tab, index) => (
           <box flexDirection="row" key={tab}>
             <Text
               color={activeTab === tab ? colors.primary : colors.muted}
               bold={activeTab === tab}
               underline={activeTab === tab}
             >
-              {tab === 'tags' ? t('import.selectGroups') : t('common.confirm')}
+              {tab === 'tags' ? t('import.selectGroups') : tab === 'namespace' ? t('import.namespace') : t('common.confirm')}
             </Text>
-            {index === 0 && <Text color={colors.border}> │ </Text>}
+            {index < (namespaceEnabled ? 2 : 1) && <Text color={colors.border}> │ </Text>}
           </box>
         ))}
       </box>
@@ -172,8 +181,13 @@ export function ImportReview<T extends Skill>({
             onSubmit={addTags}
           />
         </box>
+      ) : activeTab === 'namespace' ? (
+        <TextInput label={t('import.namespaceOptional')} initialValue={namespace} onChange={setNamespace} onSubmit={(value) => { setNamespace(value); setActiveTab('confirm'); }} />
       ) : (
         <box flexDirection="column">
+          <Text color={colors.body}>
+            {namespaceEnabled ? `${t('import.namespace')}: ${namespace || '—'}` : ''}
+          </Text>
           <Text color={colors.body}>
             {t('import.willImport', { count: items.length })}
             {selectedTags.size ? [...selectedTags].join(', ') : t('common.none')}

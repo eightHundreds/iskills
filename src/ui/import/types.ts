@@ -13,4 +13,5 @@ export interface ImportReviewResult {
   confirmed: boolean;
   tags: string[];
   private?: boolean;
+  namespace?: string;
 }

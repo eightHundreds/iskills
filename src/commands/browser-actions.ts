@@ -68,7 +68,8 @@ import {
 } from './library.js';
 import { formatAppError, t } from '../i18n/index.js';
 import { persistFailureLog } from '../util/run-log-session.js';
-import { bindSource } from '../domain/agent-skill-write.js';
+import { bindSource, executeSkillWrite } from '../domain/agent-skill-write.js';
+import { applyRepositoryNamespace, planRepositoryNamespace } from '../domain/skill-namespace.js';
 
 async function bindMetadataSource(
   skillName: string,
@@ -205,6 +206,9 @@ export async function handleBrowserResult(
       break;
     case 'import':
       await handleImport(host, result.skills, result.private);
+      break;
+    case 'editNamespace':
+      await handleNamespace(host, result.skill);
       break;
     case 'openSource':
       await handleOpenCollectedGitHubSource(host, result.skill);
@@ -616,6 +620,47 @@ async function handleImport(host: BrowserActionHost, skills: Skill[], isPrivate:
   host.setNavigation({ ...host.getNavigation(), selected: [] });
 }
 
+export async function handleNamespace(host: BrowserActionHost, skill: Skill): Promise<void> {
+  const metadata = await readMetadata(skill.name);
+  const url = metadata.source.url;
+  if (!url) return;
+  let value = await promptText(t('browser.namespacePrompt'), metadata.namespace?.name ?? '', t('import.namespace'));
+  if (value === undefined || value === (metadata.namespace?.name ?? '')) return;
+  let deleteSkills = false;
+  if (!value && metadata.namespace) {
+    const choice = await promptChoice([
+      { label: t('browser.namespaceKeepSkills'), value: 'clear' },
+      { label: t('browser.namespaceDeleteSkills'), value: 'delete' },
+      { label: t('common.cancel'), value: 'cancel' },
+    ], t('import.namespace'));
+    if (!choice || choice === 'cancel') return;
+    deleteSkills = choice === 'delete';
+  }
+  if (deleteSkills) {
+    const members = (await listCollection()).filter((item) => item.namespace?.name === metadata.namespace?.name);
+    const confirmed = await Modal.confirm({ title: t('import.namespace'), message: t('browser.namespaceDeleteConfirm'), details: members.map((item) => item.name) });
+    if (!confirmed) return;
+    const response = await executeSkillWrite({ command: 'skill.namespace.remove', project: process.cwd(), names: [metadata.namespace!.name], options: { 'delete-skills': true, yes: true }, signal: new AbortController().signal });
+    if (response.error) throw new Error(response.error.message);
+    host.setStatus(response.warnings?.length ? t('domain.gitCommitFailed', { error: 'commit failed' }) : t('browser.namespaceDone'), true, response.warnings?.length ? 'error' : 'normal');
+    return;
+  }
+  const clone = await cloneGitSource(url);
+  try {
+    const names = (await discoverSkills(clone.repository)).map((candidate) => candidate.name);
+    const changes = await planRepositoryNamespace(url, value || undefined, names);
+    const confirmed = await Modal.confirm({
+      title: t('import.namespace'),
+      message: t('browser.namespaceConfirm'),
+      details: changes.map(({ before, after }) => `${before.name} → ${after.name}`),
+    });
+    if (!confirmed) return;
+    await applyRepositoryNamespace(changes);
+    const committed = await commitCollection('change repository namespace');
+    host.setStatus(committed ? t('browser.namespaceDone') : t('domain.gitCommitFailed', { error: 'commit failed' }), true, committed ? 'normal' : 'error');
+  } finally { await rm(clone.temporary, { recursive: true, force: true }); }
+}
+
 export async function handleUnbindSource(host: BrowserActionHost, skillName: string): Promise<void> {
   await unbindCollectedSkillSource(skillName);
   host.setStatus(t('browser.unbindSourceDone'), true, 'normal');
@@ -644,9 +689,9 @@ export async function handleDetailAction(
   if (action === 'tags') {
     const existing = [...new Set((await listCollection()).flatMap((item) => item.tags))]
       .sort((left, right) => left.localeCompare(right));
-    const tags = await promptTags(existing, metadata.tags, t('cmd.editTags'));
+    const tags = await promptTags(existing, metadata.tags, t('cmd.editTags'), metadata.namespace ? [metadata.namespace.name] : []);
     if (tags === undefined) return;
-    metadata.tags = tags;
+    metadata.tags = metadata.namespace ? [...new Set([...tags, metadata.namespace.name])] : tags;
     await writeMetadata(metadata);
     await commitCollection(`tag ${skill.name}`);
     return;
