@@ -15,6 +15,7 @@ export function ImportReview<T extends Skill>({
   initialPrivate = false,
   namespaceEnabled = false,
   initialNamespace = '',
+  namespaceMembers = [],
   onSubmit,
 }: {
   label?: string;
@@ -23,6 +24,7 @@ export function ImportReview<T extends Skill>({
   initialPrivate?: boolean;
   namespaceEnabled?: boolean;
   initialNamespace?: string;
+  namespaceMembers?: Array<{ name: string; originalName: string }>;
   onSubmit: (result: ImportReviewResult) => void;
 }): ReactNode {
   const { stdout } = useStdout();
@@ -38,6 +40,7 @@ export function ImportReview<T extends Skill>({
   const [tagFocus, setTagFocus] = useState<'list' | 'input'>(existingTags.length ? 'list' : 'input');
   const [cursor, setCursor] = useState(0);
   const [isPrivate, setPrivate] = useState(initialPrivate);
+  const [changeOffset, setChangeOffset] = useState(0);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set());
   const height = Math.max(3, (stdout.rows ?? 24) - 15);
   const clampedCursor = Math.max(0, Math.min(cursor, Math.max(0, existingTags.length - 1)));
@@ -46,7 +49,11 @@ export function ImportReview<T extends Skill>({
     Math.min(clampedCursor - Math.floor(height / 2), Math.max(0, existingTags.length - height))
   );
   const visibleTags = existingTags.slice(offset, offset + height);
-  const visibleItems = items.slice(0, Math.max(3, Math.min(items.length, (stdout.rows ?? 24) - 10)));
+  const pendingChanges = namespace.trim() && namespace.trim() !== initialNamespace ? namespaceMembers : [];
+  const changeHeight = Math.max(1, Math.floor(((stdout.rows ?? 24) - 14) / 2));
+  const changeStart = Math.min(changeOffset, Math.max(0, pendingChanges.length - changeHeight));
+  const visibleChanges = pendingChanges.slice(changeStart, changeStart + changeHeight);
+  const visibleItems = items.slice(0, Math.max(1, Math.min(items.length, (stdout.rows ?? 24) - 13 - visibleChanges.length)));
 
   const submit = (confirmed: boolean) => {
     onSubmit({ confirmed, tags: [...selectedTags], private: isPrivate, ...(namespaceEnabled && namespace.trim() ? { namespace: namespace.trim() } : {}) });
@@ -75,6 +82,8 @@ export function ImportReview<T extends Skill>({
       return;
     }
     if (activeTab === 'confirm') {
+      if (key.upArrow) { setChangeOffset((value) => Math.max(0, value - 1)); return; }
+      if (key.downArrow) { setChangeOffset((value) => Math.min(Math.max(0, pendingChanges.length - changeHeight), value + 1)); return; }
       if (input.trim().toLowerCase() === 'p') {
         setPrivate((value) => !value);
         return;
@@ -193,6 +202,15 @@ export function ImportReview<T extends Skill>({
             {selectedTags.size ? [...selectedTags].join(', ') : t('common.none')}
           </Text>
           <Text color={colors.body}>{t('import.privateToggle', { value: isPrivate ? 'ON' : 'OFF' })}</Text>
+          {pendingChanges.length > 0 && (
+            <box flexDirection="column">
+              <Text color={colors.body}>{t('import.namespaceExistingChanges')}</Text>
+              {visibleChanges.map((member) => (
+                <Text key={member.name} color={colors.muted}>{`${member.name} → ${namespace.trim()}-${member.originalName}`}</Text>
+              ))}
+              {pendingChanges.length > visibleChanges.length && <Text color={colors.muted}>{t('import.namespaceScroll', { start: changeStart + 1, end: changeStart + visibleChanges.length, total: pendingChanges.length })}</Text>}
+            </box>
+          )}
           <box flexDirection="column" marginTop={1}>
             {visibleItems.map((item) => (
               <Text key={item.skill.path} color={colors.muted} wrap="truncate-end">

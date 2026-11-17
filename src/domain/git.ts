@@ -40,7 +40,7 @@ import type {
 import { DomainError, domainNotify } from './errors.js';
 import { recordRunLog } from './run-log.js';
 import { runGit } from './process.js';
-import { namespacedSkillName, transformSkillTree } from './skill-namespace.js';
+import { legacySiblingPathMapping, namespacedSkillName, rewriteMarkdownSiblingPaths, transformSkillTree, uniqueSourceSkillNames } from './skill-namespace.js';
 
 /** Discover skill names in a repository via a shallow clone. */
 export async function discoverRepositorySkillNames(repository: string, signal?: AbortSignal): Promise<string[]> {
@@ -84,10 +84,13 @@ function privateSkillPaths(names: string[]): string[] {
 export function privateSkillExcludePathspecs(names: string[]): string[] {
   const escapeGlob = (name: string) => name.replace(/[?*\[\\]/g, (char) => `[${char === '\\' ? '\\\\' : char}]`);
   // The leading **/ also prevents git add from reporting ignored excluded files.
-  return names.map(assertSkillName).flatMap((name) => [
-    `:(top,exclude,glob)**/skills/${escapeGlob(name)}/**`,
-    `:(top,exclude,glob)**/metadata/${escapeGlob(name)}.json`,
-  ]);
+  return [
+    ...names.map(assertSkillName).flatMap((name) => [
+      `:(top,exclude,glob)**/skills/${escapeGlob(name)}/**`,
+      `:(top,exclude,glob)**/metadata/${escapeGlob(name)}.json`,
+    ]),
+    ...(names.length ? [':(top,exclude,literal)namespaces.json'] : []),
+  ];
 }
 
 /** Update local Git ignores and stage removal of private files without deleting them on disk.
@@ -106,7 +109,10 @@ export async function preparePrivateSkillsForGit(root = collectionPaths().root):
   }
   if (begin !== -1) existing = existing.slice(0, begin) + existing.slice(end + PRIVATE_EXCLUDE_END.length).replace(/^\r?\n/, '');
   const escapePattern = (path: string) => path.replace(/([\\*?\[\]])/g, '\\$1').replace(/ +$/, (spaces) => '\\ '.repeat(spaces.length));
-  const patterns = names.flatMap((name) => [`/${escapePattern(`skills/${name}`)}/**`, `/${escapePattern(`metadata/${name}.json`)}`]);
+  const patterns = [
+    ...names.flatMap((name) => [`/${escapePattern(`skills/${name}`)}/**`, `/${escapePattern(`metadata/${name}.json`)}`]),
+    ...(names.length ? ['/namespaces.json'] : []),
+  ];
   const block = [PRIVATE_EXCLUDE_BEGIN, ...patterns, PRIVATE_EXCLUDE_END, ''].join('\n');
   const next = `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${block}`;
   if (next !== await readFile(excludePath, 'utf8').catch((error: NodeJS.ErrnoException) => {
@@ -116,7 +122,7 @@ export async function preparePrivateSkillsForGit(root = collectionPaths().root):
     await mkdir(dirname(excludePath), { recursive: true });
     await writeFile(excludePath, next);
   }
-  const paths = [...privateSkillPaths(names), '.local/private-skills.json'];
+  const paths = [...privateSkillPaths(names), '.local/private-skills.json', ...(names.length ? ['namespaces.json'] : [])];
   if (paths.length) {
     await runGit(['-C', root, 'rm', '-r', '--cached', '--force', '--ignore-unmatch', '--', ...paths.map((path) => `:(top,literal)${path}`)]);
   }
@@ -134,6 +140,9 @@ async function assertPrivateTreeSafe(root: string, commit: string): Promise<void
 async function assertPrivateHistorySafe(root: string, head: string, remoteHead?: string): Promise<void> {
   const paths = privateSkillPaths(await readPrivateSkillNames(root));
   if (!paths.length) return;
+  // Older versions committed the shared namespace manifest, which may disclose
+  // a private repository even when its skill tree was excluded.
+  paths.push('namespaces.json');
   const commits = (await runGit(['-C', root, 'rev-list', head, ...(remoteHead ? [`^${remoteHead}`] : [])])).split('\n').filter(Boolean);
   for (const commit of commits) {
     const found = await runGit(['-C', root, 'ls-tree', '-r', '--name-only', commit, '--', ...paths.map((path) => `:(top,literal)${path}`)]);
@@ -372,8 +381,10 @@ export async function detectRenamedSkillPath(
 async function prepareDirectoryMerge(
   name: string,
   baseSkill: string,
-  remoteSkill: string
-): Promise<{ workspace: string; conflicted: boolean }> {
+  remoteSkill: string,
+  baseNames?: string[],
+  remoteNames?: string[],
+): Promise<{ workspace: string; conflicted: boolean; sourceNames?: string[] }> {
   const paths = collectionPaths();
   const workspace = join(paths.local, 'conflicts', assertSkillName(name));
   await rm(workspace, { recursive: true, force: true });
@@ -389,9 +400,9 @@ async function prepareDirectoryMerge(
     try {
       await cp(baseSkill, base, { recursive: true });
       await cp(remoteSkill, remote, { recursive: true });
-      const mapping = new Map(namespace.sourceNames.map((original) => [original, namespacedSkillName(namespace.name, original)]));
-      await transformSkillTree(base, name, mapping);
-      await transformSkillTree(remote, name, mapping);
+      const mapNames = (names: string[]): Map<string, string> => new Map(uniqueSourceSkillNames(names).map((original) => [original, namespacedSkillName(namespace.name, original)]));
+      await transformSkillTree(base, name, mapNames(baseNames ?? namespace.sourceNames));
+      await transformSkillTree(remote, name, mapNames(remoteNames ?? namespace.sourceNames));
     } catch (error) {
       await rm(transformed, { recursive: true, force: true });
       throw error;
@@ -418,6 +429,9 @@ async function prepareDirectoryMerge(
   await runGit(['-C', workspace, 'checkout', '--quiet', '-b', 'local', base]);
   await clearDirectory(workspace, true);
   await copyDirectoryContents(join(paths.skills, name), workspace);
+  if (namespace) {
+    await rewriteMarkdownSiblingPaths(workspace, legacySiblingPathMapping(namespace.name, baseNames ?? namespace.sourceNames));
+  }
   await runGit(['-C', workspace, 'add', '-A']);
   await runGit(['-C', workspace, 'commit', '--quiet', '--allow-empty', '-m', 'local']);
 
@@ -427,7 +441,7 @@ async function prepareDirectoryMerge(
   } catch {
     conflicted = true;
   }
-  return { workspace, conflicted };
+  return { workspace, conflicted, ...(namespace && remoteNames ? { sourceNames: remoteNames } : {}) };
   } finally {
     if (transformed) await rm(transformed, { recursive: true, force: true });
   }
@@ -451,7 +465,7 @@ async function prepareSourceMerge(
   latestCommit: string,
   oldPath: string,
   newPath: string
-): Promise<{ workspace: string; conflicted: boolean }> {
+): Promise<{ workspace: string; conflicted: boolean; sourceNames?: string[] }> {
   const token = `${assertSkillName(name)}-${process.pid}-${++updateWorktreeSeq}`;
   const root = dirname(repository);
   const baseTree = join(root, `base-${token}`);
@@ -462,7 +476,10 @@ async function prepareSourceMerge(
     added.push(baseTree);
     await runGit(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
     added.push(remoteTree);
-    return await prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath));
+    const namespace = (await readMetadata(name)).namespace;
+    const baseNames = namespace ? (await discoverSkills(baseTree)).map((skill) => skill.name) : undefined;
+    const remoteNames = namespace ? (await discoverSkills(remoteTree)).map((skill) => skill.name) : undefined;
+    return await prepareDirectoryMerge(name, join(baseTree, oldPath), join(remoteTree, newPath), baseNames, remoteNames);
   } finally {
     await removeUpdateWorktrees(repository, added);
   }
@@ -495,7 +512,7 @@ export async function finalizeResolvedConflicts(): Promise<void> {
       remaining.push(conflict);
       continue;
     }
-    await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source);
+    await installMergedCollectionSkill(conflict.skill, conflict.path, conflict.source, conflict.sourceNames);
     await rm(conflict.path, { recursive: true, force: true });
     if (conflict.baseline) await rm(conflict.baseline, { recursive: true, force: true });
     domainNotify('git.appliedManualUpdate', { skill: conflict.skill });
@@ -707,7 +724,7 @@ async function applyGitSkillUpdate(
       return 'deleted';
     }
 
-    let merge: { workspace: string; conflicted: boolean };
+    let merge: { workspace: string; conflicted: boolean; sourceNames?: string[] };
     let baseline: string | undefined;
     if (gitSource.commit) {
       merge = await prepareSourceMerge(
@@ -729,7 +746,8 @@ async function applyGitSkillUpdate(
       );
       await runGit(['-C', repository, 'worktree', 'add', '--quiet', '--detach', remoteTree, latestCommit]);
       try {
-        merge = await prepareDirectoryMerge(skill.name, baseline, join(remoteTree, newPath));
+        const remoteNames = (await readMetadata(skill.name)).namespace ? (await discoverSkills(remoteTree)).map((candidate) => candidate.name) : undefined;
+        merge = await prepareDirectoryMerge(skill.name, baseline, join(remoteTree, newPath), undefined, remoteNames);
       } finally {
         await removeUpdateWorktrees(repository, [remoteTree]);
       }
@@ -749,13 +767,14 @@ async function applyGitSkillUpdate(
         path: merge.workspace,
         source: nextSource,
         ...(baseline ? { baseline } : {}),
+        ...(merge.sourceNames ? { sourceNames: merge.sourceNames } : {}),
       };
       state.conflicts.push(conflict);
       await writeState(state);
       return 'conflict';
     }
 
-    await installMergedCollectionSkill(skill.name, merge.workspace, nextSource);
+    await installMergedCollectionSkill(skill.name, merge.workspace, nextSource, merge.sourceNames);
     await rm(merge.workspace, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
     if (baseline) await rm(baseline, { recursive: true, force: true }).catch((error) => domainNotify('domain.warnConflictCleanup', { error: errorMessage(error) }));
     await commitCollection(`update ${skill.name}`);

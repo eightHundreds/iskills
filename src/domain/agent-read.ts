@@ -74,8 +74,8 @@ export async function readSkills(): Promise<{
   const { skills, metadata } = collectionPaths();
   const items: CollectedSkill[] = [];
   const issues: ReadIssue[] = [];
-  if (!(await exists(skills))) return { items, issues };
-  for (const entry of await readdir(skills, { withFileTypes: true })) {
+  const entries = await exists(skills) ? await readdir(skills, { withFileTypes: true }) : [];
+  for (const entry of entries) {
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     const path = join(skills, entry.name);
     try {

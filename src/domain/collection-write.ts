@@ -972,7 +972,8 @@ export async function removeSkillLocations(skills: Skill[], brokenPaths: string[
 export async function installMergedCollectionSkill(
   name: string,
   workspace: string,
-  source: GitSource
+  source: GitSource,
+  sourceNames?: string[],
 ): Promise<void> {
   const paths = collectionPaths();
   const skillName = assertSkillName(name);
@@ -992,6 +993,7 @@ export async function installMergedCollectionSkill(
     const metadata = await readMetadata(skillName);
     metadata.description = (await readSkill(staged)).description;
     metadata.source = source;
+    if (metadata.namespace && sourceNames) metadata.namespace = { ...metadata.namespace, sourceNames };
     await replaceCollectionSkill({
       name: skillName,
       staged,

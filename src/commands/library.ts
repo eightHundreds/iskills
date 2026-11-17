@@ -77,6 +77,17 @@ function present(): Promise<PresentModule> {
   return import('../ui/prompts/present.js');
 }
 
+async function namespaceReviewOptions(gitContext: GitImportContext): Promise<{ enabled: boolean; initialValue: string; members: Array<{ name: string; originalName: string }> }> {
+  const identity = normalizeGitRepositoryIdentity(gitContext.source.url);
+  const collection = await listCollection();
+  return {
+    enabled: identity.startsWith('github.com/'),
+    initialValue: repositoryNamespace(collection, gitContext.source.url) ?? (await readRepositoryNamespaceRules())[identity] ?? '',
+    members: collection.filter((skill) => skill.source.type === 'git' && skill.source.url && normalizeGitRepositoryIdentity(skill.source.url) === identity)
+      .map((skill) => ({ name: skill.name, originalName: skill.namespace?.originalName ?? skill.name })),
+  };
+}
+
 function gitSkillDisplayPath(skill: Skill, gitContext: GitImportContext): string {
   const sourcePath = assertRelativePath(
     relative(gitContext.repository, skill.path).split(sep).join('/')
@@ -199,6 +210,7 @@ export interface ImportToCollectionResult {
   count: number;
   /** Known same-repository invocations whose targets are not collected or are ambiguous. */
   unresolvedReferences?: string[];
+  collectionIssuePaths?: string[];
   /**
    * Post-write Git commit soft-failed after `count` skills were written.
    * Success copy must not be shown; domainNotify already warned.
@@ -461,7 +473,7 @@ export async function importGitUrlToCollection(
       })),
       existingTags,
       options.private === true,
-      { enabled: normalizeGitRepositoryIdentity(gitContext.source.url).startsWith('github.com/'), initialValue: repositoryNamespace(await listCollection(), gitContext.source.url) ?? (await readRepositoryNamespaceRules())[normalizeGitRepositoryIdentity(gitContext.source.url)] ?? '' }
+      await namespaceReviewOptions(gitContext)
     );
     if (!review) return { count: 0 };
 
@@ -506,14 +518,18 @@ function presentImportResult(response: import('../domain/operation.js').Operatio
   const imported = items.filter((item) => item.action === undefined || item.action === 'import' || item.action === 'replace');
   const unresolvedReferences = [...new Set(items.flatMap((item) => item.unresolvedReferences ?? []))];
   const count = imported.filter((item) => item.status === 'committed').length;
-  if (response.error) throw new DomainError('cmd.installBatchFailed', { completed: imported.filter((item) => item.status === 'committed').map((item) => item.name).join(', '), failed: imported.filter((item) => item.status === 'failed').map((item) => item.name).join(', '), notRun: imported.filter((item) => item.status === 'not-run').map((item) => item.name).join(', ') });
-  if (response.warnings?.length) {
+  const issueWarnings = (response.warnings ?? []).filter((warning) => warning.code === 'collection.unrelatedIssues');
+  const collectionIssuePaths = [...new Set(issueWarnings.flatMap((warning) => Array.isArray(warning.details.issues) ? warning.details.issues.flatMap((issue: { path?: unknown }) => typeof issue.path === 'string' ? [sanitizeTerminal(issue.path)] : []) : []))];
+  const gitWarning = (response.warnings ?? []).some((warning) => warning.code !== 'collection.unrelatedIssues');
+  if (response.error) throw new DomainError('cmd.installBatchFailed', { completed: imported.filter((item) => item.status === 'committed').map((item) => item.name).join(', '), failed: items.filter((item) => item.status === 'failed').map((item) => item.name ?? item.action ?? '').join(', '), notRun: imported.filter((item) => item.status === 'not-run').map((item) => item.name).join(', ') });
+  if (collectionIssuePaths.length && !quiet) console.error(t('cmd.collectionIssuesWarning', { paths: collectionIssuePaths.join(', ') }));
+  if (gitWarning) {
     console.error(formatAppError(new DomainError('domain.gitCommitFailed', { error: 'commit failed' })));
-    return { count, commitFailed: true, ...(unresolvedReferences.length ? { unresolvedReferences } : {}) };
+    return { count, commitFailed: true, ...(unresolvedReferences.length ? { unresolvedReferences } : {}), ...(collectionIssuePaths.length ? { collectionIssuePaths } : {}) };
   }
   if ((response.result.git as { status?: string })?.status === 'committed') startBackgroundSync();
   if (count && !quiet) console.log(t('cmd.importedCount', { count }));
-  return { count, ...(unresolvedReferences.length ? { unresolvedReferences } : {}) };
+  return { count, ...(unresolvedReferences.length ? { unresolvedReferences } : {}), ...(collectionIssuePaths.length ? { collectionIssuePaths } : {}) };
 }
 
 export async function commandImport(argv: string[]): Promise<void> {
@@ -596,7 +612,7 @@ export async function commandImport(argv: string[]): Promise<void> {
         })),
         existingTags,
         values.private === true,
-        gitContext ? { enabled: normalizeGitRepositoryIdentity(gitContext.source.url).startsWith('github.com/'), initialValue: repositoryNamespace(await listCollection(), gitContext.source.url) ?? (await readRepositoryNamespaceRules())[normalizeGitRepositoryIdentity(gitContext.source.url)] ?? '' } : undefined
+        gitContext ? await namespaceReviewOptions(gitContext) : undefined
       );
       if (!review) return;
       importTags = review.tags;

@@ -78,7 +78,8 @@ import { updateGitSkill, detectRenamedSkillPath, readPrivateSkillNames } from '.
 import { runGit } from './process.js';
 import type { Skill, SkillMetadata, GitSource } from './types.js';
 import { domainNotify } from './errors.js';
-import { applyRepositoryNamespace, assertNamespaceAvailable, markdownSkillInvocations, namespacedSkillName, planRepositoryNamespace, readRepositoryNamespaceRules, repositoryNamespace, transformSkillTree } from './skill-namespace.js';
+import { classifyImportCollectionIssues } from './import-collection-issues.js';
+import { applyRepositoryNamespace, assertNamespaceAvailable, markdownSkillInvocations, namespacedSkillName, planRepositoryNamespace, readRepositoryNamespaceRules, repositoryNamespace, transformSkillTree, uniqueSourceSkillNames } from './skill-namespace.js';
 
 export interface SkillWriteRequest {
   command: string;
@@ -781,7 +782,13 @@ async function executeNamespaceWrite(request: SkillWriteRequest): Promise<Operat
     const member = members[0];
     if (!member?.source.url && !rule) throw new OperationFailure('usage.selectionNotFound', 'Namespace not found.');
     repository = member?.source.url ?? rule![0]!;
-    sourceNames = [...new Set(members.flatMap((item) => item.namespace?.sourceNames ?? []))];
+    const maximumCounts = new Map<string, number>();
+    for (const item of members) {
+      const counts = new Map<string, number>();
+      for (const name of item.namespace?.sourceNames ?? []) counts.set(name, (counts.get(name) ?? 0) + 1);
+      for (const [name, count] of counts) maximumCounts.set(name, Math.max(count, maximumCounts.get(name) ?? 0));
+    }
+    sourceNames = [...maximumCounts].flatMap(([name, count]) => Array<string>(count).fill(name));
     nextName = command === 'skill.namespace.rename' ? names[1] : undefined;
     if (!members.length) {
       if (nextName && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(nextName) || nextName.length > 62)) throw new OperationFailure('usage.invalidArguments', 'Namespace must be a portable lowercase name of at most 62 characters.');
@@ -853,7 +860,6 @@ async function importSkills(
       );
     const candidates = await discoverSkills(root);
     const collected = await readSkills();
-    if (collected.issues.length) throw new OperationFailure('execution.readFailed', 'Collection contains unreadable skills.', { issues: collected.issues }, 1);
     if (options.namespace !== undefined && !cloned) throw new OperationFailure('usage.invalidArguments', 'Namespaces require a GitHub source.');
     const identity = cloned ? normalizeGitRepositoryIdentity(cloned.source.url) : '';
     const rules = await readRepositoryNamespaceRules();
@@ -899,16 +905,55 @@ async function importSkills(
         'usage.ambiguousSelection',
         'The selection contains duplicate skill names.',
       );
+    const issueAssessment = await classifyImportCollectionIssues(
+      collected.issues,
+      selected.flatMap((skill) => namespace ? [skill.name, namespacedSkillName(namespace, skill.name)] : [skill.name]),
+      cloned?.source.url,
+      namespace,
+    );
+    if (issueAssessment.blocking.length) throw new OperationFailure('execution.readFailed', 'Collection entries block this import.', { issues: issueAssessment.blocking }, 1);
     const plans: PlannedWrite[] = [];
+    let migrationPlan: PlannedWrite | undefined;
     const existingRepositoryMembers = namespace
       ? collected.items.filter((item) => item.source.url && normalizeGitRepositoryIdentity(item.source.url) === identity)
       : [];
     if (namespace && existingRepositoryMembers.length && existingRepositoryMembers.every((item) => !item.namespace)) {
       const migration = await planRepositoryNamespace(cloned!.source.url, namespace, sourceNames);
-      plans.push({
+      migrationPlan = {
         item: { action: 'namespace.set', repository: cloned!.source.url, namespace, changes: migration.map(({ before, after }) => ({ before: before.name, after: after.name })), unresolvedReferences: [...new Set(migration.flatMap((change) => change.unresolvedReferences))], status: 'planned' },
-        execute: () => applyRepositoryNamespace(migration),
-      });
+        execute: async () => {
+          const newlyImported: string[] = [];
+          const completed: PlannedWrite[] = [];
+          await applyRepositoryNamespace(migration, async () => {
+            const privacyBefore = new Set(await readPrivateSkillNames());
+            try {
+              for (const plan of plans.slice(1)) {
+                if (plan.item.status === 'unchanged') continue;
+                if (signal.aborted) throw new OperationFailure('execution.interrupted', 'The operation was interrupted.', {}, 130);
+                const name = String(plan.item.name);
+                const existed = await pathPresent(join(collectionPaths().skills, name));
+                try { await plan.execute(); }
+                catch (error) { plan.item.status = 'failed'; throw error; }
+                if (!existed) newlyImported.push(name);
+                plan.item.status = 'committed';
+                completed.push(plan);
+              }
+            } catch (error) {
+              try {
+                for (const name of newlyImported.reverse()) await removeFromCollection(name, true, true);
+                const privacyAfter = new Set(await readPrivateSkillNames());
+                const importNames = new Set(plans.slice(1).map((plan) => String(plan.item.name)));
+                for (const name of importNames) if (privacyAfter.has(name) && !privacyBefore.has(name)) await setSkillPrivate(collectionPaths().root, name, false);
+                for (const plan of completed) plan.item.status = 'rolled-back';
+              } catch (rollbackError) {
+                throw new OperationFailure('execution.rollbackFailed', 'Could not restore imported skills after namespace failure.', { cause: String(error), rollback: String(rollbackError) }, 1, 'inspect-state');
+              }
+              throw error;
+            }
+          });
+        },
+      };
+      plans.push(migrationPlan);
     }
     const privateNames = options.private
       ? new Set(await readPrivateSkillNames())
@@ -959,7 +1004,7 @@ async function importSkills(
       if (namespace) {
         sourceTree = await mkdtemp(join(cloned!.temporary, '.namespace-import-'));
         await cp(actual, sourceTree, { recursive: true });
-        await transformSkillTree(sourceTree, collectedName, new Map(sourceNames.map((name) => [name, namespacedSkillName(namespace, name)])));
+        await transformSkillTree(sourceTree, collectedName, new Map(uniqueSourceSkillNames(sourceNames).map((name) => [name, namespacedSkillName(namespace, name)])));
       }
       const target = join(collectionPaths().skills, collectedName);
       let item: Record<string, unknown> = {
@@ -1012,11 +1057,13 @@ async function importSkills(
         item,
         execute: async () => {
           let oldRules: Record<string, string> | undefined;
+          let hadRules = false;
           try {
             if (namespace) {
               await ensureCollection();
+              hadRules = await pathPresent(join(collectionPaths().root, 'namespaces.json'));
               oldRules = await readRepositoryNamespaceRules();
-              await writeJson(join(collectionPaths().local, 'namespaces.json'), { ...oldRules, [identity]: namespace });
+              await writeJson(join(collectionPaths().root, 'namespaces.json'), { ...oldRules, [identity]: namespace });
             }
             if (options.private && (await pathPresent(target)) &&
                 await classifyCollectionMatch(await readMetadata(collectedName), metadata) === 'same-source') {
@@ -1043,20 +1090,33 @@ async function importSkills(
                 : {}),
             });
           } catch (error) {
-            if (oldRules) await writeJson(join(collectionPaths().local, 'namespaces.json'), oldRules);
+            if (oldRules) {
+              const rulesPath = join(collectionPaths().root, 'namespaces.json');
+              if (hadRules) await writeJson(rulesPath, oldRules);
+              else await rm(rulesPath, { force: true });
+            }
             item.restored = 'unknown';
             throw error;
           }
         },
       });
     }
-    return await executeWrites(
+    const response = await executeWrites(
       plans,
       options['dry-run'] === true,
       true,
       command,
       signal,
     );
+    if (issueAssessment.unrelated.length) {
+      response.warnings = [...(response.warnings ?? []), {
+        code: 'collection.unrelatedIssues',
+        message: 'Unrelated incomplete collection entries were preserved.',
+        details: { issues: issueAssessment.unrelated },
+        retry: 'after-fix',
+      }];
+    }
+    return response;
   } finally {
     if (cloned) await rm(cloned.temporary, { recursive: true, force: true });
   }

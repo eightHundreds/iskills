@@ -264,7 +264,7 @@ export function promptImportReview<T extends Skill>(
   items: ImportReviewItem<T>[],
   existingTags: string[],
   initialPrivate = false,
-  namespaceOptions?: { enabled: boolean; initialValue?: string },
+  namespaceOptions?: { enabled: boolean; initialValue?: string; members?: Array<{ name: string; originalName: string }> },
 ): Promise<ImportReviewResult | undefined> {
   return Layer.open<ImportReviewResult | undefined>({
     footerItems: importReviewFooterItems(),
@@ -275,6 +275,7 @@ export function promptImportReview<T extends Skill>(
         initialPrivate={initialPrivate}
         namespaceEnabled={namespaceOptions?.enabled ?? false}
         initialNamespace={namespaceOptions?.initialValue ?? ''}
+        namespaceMembers={namespaceOptions?.members ?? []}
         onSubmit={(result) => close(result.confirmed ? result : undefined)}
       />
     ),

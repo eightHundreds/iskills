@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { baselinePath, collectionPaths, ensureCollection, isExactSymlink, listCollection, metadataPath, normalizeGitRepositoryIdentity, pathPresent, readJson, readState, writeJson, writeMetadata, writeState } from './core.js';
 import type { SkillMetadata } from './types.js';
 
@@ -40,6 +40,20 @@ export function assertNamespaceAvailable(
       throw new Error(`Namespace ${namespace} belongs to another repository.`);
     }
   }
+}
+
+/** Only an unambiguous source name can identify a skill invocation. */
+export function uniqueSourceSkillNames(names: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return [...counts].filter(([, count]) => count === 1).map(([name]) => name);
+}
+
+/** Avoid treating an already-prefixed directory as a different legacy source name. */
+export function legacySiblingPathMapping(namespace: string, names: readonly string[]): Map<string, string> {
+  const unique = uniqueSourceSkillNames(names);
+  const targets = new Set(unique.map((name) => namespacedSkillName(namespace, name)));
+  return new Map(unique.filter((name) => !targets.has(name)).map((name) => [name, namespacedSkillName(namespace, name)]));
 }
 
 /** A namespace is deliberately restricted to portable Agent Skills names. */
@@ -146,7 +160,7 @@ export async function planRepositoryNamespace(
       ...metadata,
       name,
       tags: namespace ? [...new Set([...tags, namespace])] : tags,
-      ...(namespace ? { namespace: { name: namespace, originalName, sourceNames: [...new Set(sourceNames)], ...(preserveTag ? { preserveTag: true } : {}) } } : {}),
+      ...(namespace ? { namespace: { name: namespace, originalName, sourceNames: [...sourceNames], ...(preserveTag ? { preserveTag: true } : {}) } } : {}),
     };
     const referenced = await markdownSkillInvocations(member.path);
     const unresolvedReferences = referenced.filter((reference) => unresolvedTargets.has(reference));
@@ -156,7 +170,10 @@ export async function planRepositoryNamespace(
 }
 
 /** Atomically replace the selected repository's skills and their tracked usage links. */
-export async function applyRepositoryNamespace(changes: readonly NamespaceChange[]): Promise<void> {
+export async function applyRepositoryNamespace(
+  changes: readonly NamespaceChange[],
+  afterChange?: () => Promise<void>,
+): Promise<void> {
   if (!changes.length) return;
   const paths = await ensureCollection();
   const namespace = changes[0]!.after.namespace?.name;
@@ -180,12 +197,20 @@ export async function applyRepositoryNamespace(changes: readonly NamespaceChange
   const { readPrivateSkillNames } = await import('./git.js');
   const { setSkillPrivate } = await import('./collection-write.js');
   const privateNames = new Set(await readPrivateSkillNames(paths.root));
-  const privateAdditions = changes.filter(({ before, after }) => privateNames.has(before.name) && before.name !== after.name).map(({ after }) => after.name);
+  const privateAdditions = changes.filter(({ before, after }) => privateNames.has(before.name) && !privateNames.has(after.name)).map(({ after }) => after.name);
   const mapping = new Map(changes.map(({ before, after }) => [before.name, after.name]));
   const invocations = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const { before, after } of changes) {
+    for (const names of [before.namespace?.sourceNames ?? [], after.namespace?.sourceNames ?? []]) {
+      const unique = new Set(uniqueSourceSkillNames(names));
+      for (const name of names) if (!unique.has(name)) ambiguous.add(name);
+    }
+  }
   for (const { before, after } of changes) {
     const originalNames = new Set([...(before.namespace?.sourceNames ?? []), ...(after.namespace?.sourceNames ?? []), before.namespace?.originalName ?? before.name]);
     for (const original of originalNames) {
+      if (ambiguous.has(original)) continue;
       const oldName = before.namespace ? namespacedSkillName(before.namespace.name, original) : original;
       const newName = after.namespace ? namespacedSkillName(after.namespace.name, original) : original;
       invocations.set(oldName, newName);
@@ -215,10 +240,17 @@ export async function applyRepositoryNamespace(changes: readonly NamespaceChange
   let stateWritten = false;
   let rulesWritten = false;
   let succeeded = false;
+  let rollbackFailed = false;
   try {
     for (const [index, change] of changes.entries()) {
       const dir = join(temp, `new-${index}`);
       await cp(join(paths.skills, change.before.name), dir, { recursive: true, errorOnExist: true });
+      if (change.before.namespace) {
+        const previous = change.before.namespace;
+        const originalPaths = legacySiblingPathMapping(previous.name, previous.sourceNames);
+        for (const name of ambiguous) originalPaths.delete(name);
+        await rewriteMarkdownSiblingPaths(dir, originalPaths);
+      }
       await transformSkillTree(dir, change.after.name, invocations);
     }
     for (const name of privateAdditions) {
@@ -260,6 +292,7 @@ export async function applyRepositoryNamespace(changes: readonly NamespaceChange
     stateWritten = true;
     await writeJson(rulePath, newRules);
     rulesWritten = true;
+    await afterChange?.();
     succeeded = true;
   } catch (error) {
     try {
@@ -284,11 +317,12 @@ export async function applyRepositoryNamespace(changes: readonly NamespaceChange
         await rename(join(temp, `old-${index}-${kind}`), dest);
       }
     } catch (rollbackError) {
+      rollbackFailed = true;
       throw new Error(`Namespace rollback failed; recovery data retained at ${temp}: ${String(rollbackError)}`);
     }
     throw error;
   } finally {
-    if (succeeded || !(await pathPresent(join(temp, 'old-0-tree')))) await rm(temp, { recursive: true, force: true });
+    if (succeeded || !rollbackFailed) await rm(temp, { recursive: true, force: true });
   }
 }
 
@@ -304,15 +338,40 @@ export async function transformSkillTree(
   await rewriteMarkdownInvocations(root, invocations);
 }
 
-/** Only regular Markdown files within the tree are transformed; symlinks are never followed. */
-export async function rewriteMarkdownInvocations(root: string, names: ReadonlyMap<string, string>): Promise<void> {
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) await rewriteMarkdownInvocations(path, names);
-    else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
-      const original = await readFile(path, 'utf8');
-      const updated = rewriteSkillInvocations(original, names);
-      if (updated !== original) await writeFile(path, updated);
+/** Rewrite relative paths that leave the skill tree for a named sibling skill. */
+export function rewriteSiblingSkillPaths(content: string, depth: number, names: ReadonlyMap<string, string>): string {
+  return content.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s<>()]+|(?<![\w./:])((?:\.\.\/)+)([a-z0-9]+(?:-[a-z0-9]+)*)(?=\/)/gi,
+    (match, parents: string | undefined, name: string | undefined) => {
+      if (!parents || !name || parents.length / 3 !== depth + 1) return match;
+      const replacement = names.get(name);
+      return replacement ? `${parents}${replacement}` : match;
+    });
+}
+
+async function rewriteMarkdownFiles(root: string, transform: (content: string, depth: number) => string): Promise<void> {
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+        const original = await readFile(path, 'utf8');
+        const subdirectory = relative(root, directory);
+        const depth = subdirectory ? subdirectory.split(sep).length : 0;
+        const updated = transform(original, depth);
+        if (updated !== original) await writeFile(path, updated);
+      }
     }
-  }
+  };
+  await visit(root);
+}
+
+/** Transform regular Markdown files without following symlinks. */
+export async function rewriteMarkdownInvocations(root: string, names: ReadonlyMap<string, string>): Promise<void> {
+  await rewriteMarkdownFiles(root, (content, depth) =>
+    rewriteSiblingSkillPaths(rewriteSkillInvocations(content, names), depth, names));
+}
+
+/** Bring older namespaced local trees into the same path format as the merge base. */
+export async function rewriteMarkdownSiblingPaths(root: string, names: ReadonlyMap<string, string>): Promise<void> {
+  await rewriteMarkdownFiles(root, (content, depth) => rewriteSiblingSkillPaths(content, depth, names));
 }

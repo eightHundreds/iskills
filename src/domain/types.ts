@@ -82,6 +82,7 @@ export interface SourceConflict {
   path: string;
   source: GitSource;
   baseline?: string;
+  sourceNames?: string[];
 }
 
 export interface CollectionConflict {

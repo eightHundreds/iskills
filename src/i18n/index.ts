@@ -8,6 +8,7 @@
  */
 
 import { DomainError, setDomainNotify } from '../domain/errors.js';
+import { OperationFailure, redactOutput } from '../domain/operation.js';
 import { recordRunLog } from '../domain/run-log.js';
 import type { LocalePreference } from '../domain/user-config.js';
 import { en } from './en.js';
@@ -144,6 +145,17 @@ export function t(key: MessageKey, vars?: MessageVars): string {
  * format them here so domain never imports the catalog.
  */
 export function formatAppError(error: unknown): string {
+  if (error instanceof OperationFailure && Array.isArray(error.details.issues)) {
+    const issues = redactOutput(error.details.issues) as Array<{ path?: unknown; reason?: unknown }>;
+    const reasonKeys: Record<string, MessageKey> = {
+      'target-conflict': 'cmd.collectionIssueTarget',
+      'same-repository': 'cmd.collectionIssueRepository',
+      'namespace-conflict': 'cmd.collectionIssueNamespace',
+      'unverified': 'cmd.collectionIssueUnverified',
+    };
+    const lines = issues.map((issue) => `- ${String(issue.path ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')}（${t(reasonKeys[String(issue.reason)] ?? 'cmd.collectionIssueUnverified')}）`);
+    return [t('cmd.collectionIssuesBlock'), ...lines].join('\n');
+  }
   if (error instanceof DomainError) {
     const key = error.code as MessageKey;
     if (key in zh || key in en) {

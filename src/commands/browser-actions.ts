@@ -564,17 +564,20 @@ function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionRe
   const unresolved = result.unresolvedReferences?.length
     ? t('cmd.unresolvedSkillReferences', { skills: result.unresolvedReferences.join(', ') })
     : '';
+  const collectionIssues = result.collectionIssuePaths?.length
+    ? t('cmd.collectionIssuesWarning', { paths: result.collectionIssuePaths.join(', ') })
+    : '';
   if (result.commitFailed) {
     host.setStatus(
-      [t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''), unresolved].filter(Boolean).join('\n'),
+      [t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''), unresolved, collectionIssues].filter(Boolean).join('\n'),
       false,
       'error'
     );
     return;
   }
-  if (result.count > 0 || unresolved) {
+  if (result.count > 0 || unresolved || collectionIssues) {
     const imported = result.count > 0 ? t(isPrivate ? 'cmd.importedPrivateShort' : 'cmd.importedShort', { count: result.count }) : '';
-    host.setStatus([imported, unresolved].filter(Boolean).join('\n'), true, unresolved ? 'error' : 'normal');
+    host.setStatus([imported, unresolved, collectionIssues].filter(Boolean).join('\n'), true, unresolved || collectionIssues ? 'error' : 'normal');
   }
 }
 

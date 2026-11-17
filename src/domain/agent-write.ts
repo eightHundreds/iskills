@@ -65,7 +65,7 @@ export async function executeWrites(
   try {
     await withDeferredCollectionCommit(async () => {
       for (const plan of plans) {
-        if (plan.item.status === 'unchanged') continue;
+        if (['unchanged', 'committed', 'failed', 'rolled-back'].includes(String(plan.item.status))) continue;
         if (error) {
           plan.item.status = 'not-run';
           const stages = plan.item.stages as Record<string, string> | undefined;

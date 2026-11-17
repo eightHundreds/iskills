@@ -8,6 +8,7 @@ import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectionPaths } from '../domain/core.js';
 import { DomainError } from '../domain/errors.js';
+import { OperationFailure, redactOutput } from '../domain/operation.js';
 import {
   recordRunLog,
   setRunLogRecorder,
@@ -164,6 +165,11 @@ export class RunLog {
         .map(([key, value]) => `${key}=${clip(String(value))}`)
         .join(' ');
       if (params) lines.push(`params: ${params}`);
+    }
+    if (error instanceof OperationFailure) {
+      lines.push(`code: ${error.code}`);
+      lines.push(`details: ${clip(JSON.stringify(redactOutput(error.details)))}`);
+      lines.push(`retry: ${error.retry}`);
     }
     if (error instanceof Error) {
       lines.push(`name: ${error.name}`);
