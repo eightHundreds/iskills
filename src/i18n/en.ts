@@ -629,6 +629,7 @@ Tip: Run \`iskills help skill\` or \`iskills help mcp\` to list available action
   'browser.namespaceKeepSkills': 'Clear namespace and restore skill names',
   'browser.namespaceDeleteSkills': 'Delete namespace and all collected skills',
   'browser.namespaceDeleteConfirm': 'Delete all collected namespaced skills from this repository?',
+  'cmd.unresolvedSkillReferences': 'These same-repository skill calls target skills that are not collected or have ambiguous duplicate names: {skills}',
   'browser.namespacePrompt': 'Enter a namespace; leave blank to clear it for the repository',
   'browser.namespaceConfirm': 'Change the namespace for all collected skills from this repository?',
   'import.namespaceOptional': 'Namespace (optional)',

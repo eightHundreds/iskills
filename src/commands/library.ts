@@ -197,6 +197,8 @@ export interface RemoteImportResult {
 export interface ImportToCollectionResult {
   /** Skills written this run (0 when nothing installed or selection empty). */
   count: number;
+  /** Known same-repository invocations whose targets are not collected or are ambiguous. */
+  unresolvedReferences?: string[];
   /**
    * Post-write Git commit soft-failed after `count` skills were written.
    * Success copy must not be shown; domainNotify already warned.
@@ -500,16 +502,18 @@ export async function importGitSkillsToCollection(
 }
 
 function presentImportResult(response: import('../domain/operation.js').OperationResult, quiet: boolean): ImportToCollectionResult {
-  const items = response.result.items as Array<{ name: string; status: string }>;
-  const count = items.filter((item) => item.status === 'committed').length;
-  if (response.error) throw new DomainError('cmd.installBatchFailed', { completed: items.filter((item) => item.status === 'committed').map((item) => item.name).join(', '), failed: items.filter((item) => item.status === 'failed').map((item) => item.name).join(', '), notRun: items.filter((item) => item.status === 'not-run').map((item) => item.name).join(', ') });
+  const items = response.result.items as Array<{ name: string; status: string; action?: string; unresolvedReferences?: string[] }>;
+  const imported = items.filter((item) => item.action === undefined || item.action === 'import' || item.action === 'replace');
+  const unresolvedReferences = [...new Set(items.flatMap((item) => item.unresolvedReferences ?? []))];
+  const count = imported.filter((item) => item.status === 'committed').length;
+  if (response.error) throw new DomainError('cmd.installBatchFailed', { completed: imported.filter((item) => item.status === 'committed').map((item) => item.name).join(', '), failed: imported.filter((item) => item.status === 'failed').map((item) => item.name).join(', '), notRun: imported.filter((item) => item.status === 'not-run').map((item) => item.name).join(', ') });
   if (response.warnings?.length) {
     console.error(formatAppError(new DomainError('domain.gitCommitFailed', { error: 'commit failed' })));
-    return { count, commitFailed: true };
+    return { count, commitFailed: true, ...(unresolvedReferences.length ? { unresolvedReferences } : {}) };
   }
   if ((response.result.git as { status?: string })?.status === 'committed') startBackgroundSync();
   if (count && !quiet) console.log(t('cmd.importedCount', { count }));
-  return { count };
+  return { count, ...(unresolvedReferences.length ? { unresolvedReferences } : {}) };
 }
 
 export async function commandImport(argv: string[]): Promise<void> {

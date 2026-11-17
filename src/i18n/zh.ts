@@ -592,6 +592,7 @@ export const zh = {
   'browser.namespaceKeepSkills': '取消命名空间，保留并还原技能',
   'browser.namespaceDeleteSkills': '删除命名空间及全部收藏技能',
   'browser.namespaceDeleteConfirm': '确认删除该仓库的全部命名空间技能？',
+  'cmd.unresolvedSkillReferences': '以下同仓库技能调用的目标尚未导入或存在同名候选：{skills}',
   'browser.namespacePrompt': '输入命名空间；留空取消整仓命名空间',
   'browser.namespaceConfirm': '确认对该仓库的收藏技能统一调整命名空间？',
   'import.namespaceOptional': '命名空间（可选）',

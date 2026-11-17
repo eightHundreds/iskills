@@ -64,6 +64,28 @@ export function rewriteSkillFrontmatterName(content: string, name: string): stri
   return content.slice(0, offset) + `name: ${name}` + content.slice(offset + current.length);
 }
 
+/** Extract complete explicit slash/$ skill invocations from Markdown text. */
+export function explicitSkillInvocations(content: string): string[] {
+  return [...content.matchAll(/(^|[\s`('"\\[{])([/$])([a-z0-9]+(?:-[a-z0-9]+)*)(?![a-zA-Z0-9_./-])/gm)]
+    .map((match) => match[3]!)
+    .filter((name, index, names) => names.indexOf(name) === index);
+}
+
+export async function markdownSkillInvocations(root: string): Promise<string[]> {
+  const names = new Set<string>();
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+        for (const name of explicitSkillInvocations(await readFile(path, 'utf8'))) names.add(name);
+      }
+    }
+  };
+  await visit(root);
+  return [...names];
+}
+
 /** Rewrite only complete explicit invocations present in the supplied mapping. */
 export function rewriteSkillInvocations(content: string, names: ReadonlyMap<string, string>): string {
   return content.replace(/(^|[\s`('"\[{])([/$])([a-z0-9]+(?:-[a-z0-9]+)*)(?![a-zA-Z0-9_./-])/gm,
@@ -76,6 +98,7 @@ export function rewriteSkillInvocations(content: string, names: ReadonlyMap<stri
 export interface NamespaceChange {
   before: SkillMetadata;
   after: SkillMetadata;
+  unresolvedReferences: string[];
 }
 
 /** Prepare a whole-repository change without modifying collection content. */
@@ -99,6 +122,10 @@ export async function planRepositoryNamespace(
   const members = skills.filter((skill) => skill.source.type === 'git' && skill.source.url &&
     normalizeGitRepositoryIdentity(skill.source.url) === identity);
   const previousNames = new Set(members.map((skill) => skill.name));
+  const collectedOriginalNames = new Set(members.map((skill) => skill.namespace?.originalName ?? skill.name));
+  const sourceCounts = new Map<string, number>();
+  for (const sourceName of sourceNames) sourceCounts.set(sourceName, (sourceCounts.get(sourceName) ?? 0) + 1);
+  const unresolvedTargets = new Set(sourceNames.filter((sourceName) => !collectedOriginalNames.has(sourceName) || (sourceCounts.get(sourceName) ?? 0) > 1));
   const targets = new Set<string>();
   const result: NamespaceChange[] = [];
   for (const member of members) {
@@ -121,7 +148,9 @@ export async function planRepositoryNamespace(
       tags: namespace ? [...new Set([...tags, namespace])] : tags,
       ...(namespace ? { namespace: { name: namespace, originalName, sourceNames: [...new Set(sourceNames)], ...(preserveTag ? { preserveTag: true } : {}) } } : {}),
     };
-    result.push({ before: member, after });
+    const referenced = await markdownSkillInvocations(member.path);
+    const unresolvedReferences = referenced.filter((reference) => unresolvedTargets.has(reference));
+    result.push({ before: member, after, unresolvedReferences });
   }
   return result;
 }

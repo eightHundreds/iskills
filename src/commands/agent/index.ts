@@ -386,6 +386,11 @@ Actions:
   materialize <path..> Replace collection symlink in current project with physical copy
   update [name...]     Update Skills from recorded upstream Git source
   edit <name>          Update tags (--tags, --add-tag, --remove-tag) and note (--note)
+  namespace list       List repository namespace rules
+  namespace set        Set a GitHub repository namespace (--git, --namespace)
+  namespace rename    Rename all collected skills in a namespace
+  namespace clear     Clear namespace and restore original names
+  namespace remove    Delete all namespace members (--delete-skills --yes)
   tag rename <old> <new> Rename a Skill tag throughout the collection
   source bind <name>   Bind a Skill to a Git repository (--git, --path)
   source unbind <name> Remove recorded Git source binding (--yes)
@@ -467,8 +472,10 @@ Run \`iskills help config <action>\` for details.
       const argumentsByCommand: Record<string, string> = {
         'skill.show': '<name>',
         'skill.search': '<query>',
+        'skill.namespace.set': '',
         'skill.namespace.rename': '<old> <new>',
         'skill.namespace.clear': '<namespace>',
+        'skill.namespace.remove': '<namespace>',
         'skill.create': '<name>',
         'skill.adopt': '[name...]',
         'skill.install': '[name...]',
@@ -514,6 +521,8 @@ Run \`iskills help config <action>\` for details.
   path: 'Relative path within the source repository/directory to the skill directory (e.g. skills/my-skill, or "." if root is the skill itself). Required unless --all is specified.',
   all: 'Target all discovered or eligible skills/locations instead of specifying individual names (or specify --all to import all skills from source).',
   'expect-commit': 'Expected Git commit hash; rejects import if repository HEAD differs without pinning the ref.',
+  namespace: 'Optional GitHub repository namespace; one namespace per repository.',
+  'delete-skills': 'Required with namespace remove to explicitly delete all collected members.',
   private: 'Keep the skill local: exclude its files and metadata from collection Git.',
   public: 'Allow the skill files and metadata to be tracked by collection Git again.',
   replace: 'Explicitly authorize replacing existing content or configuration.',

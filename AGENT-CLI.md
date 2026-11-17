@@ -10,6 +10,11 @@ iskills skill search review --limit 10
 iskills skill discover --git owner/repository
 iskills skill import --git owner/repository --path skills/review --expect-commit <reviewed-sha> --dry-run
 iskills skill import --git owner/repository --path skills/review --expect-commit <reviewed-sha>
+iskills skill import --git owner/repository --path skills/review --namespace team
+iskills skill namespace list
+iskills skill namespace set --git owner/repository --namespace team --dry-run
+iskills skill namespace rename team group
+iskills skill namespace clear group
 iskills skill install review --agent codex --scope project --dry-run
 iskills skill install review --agent codex --scope project
 iskills skill show review --body
@@ -20,7 +25,7 @@ iskills skill locations --scope project
 
 Use `skill create NAME --private`, `skill import ... --private`, or `skill adopt NAME --private` to keep skills out of collection Git. Switch existing skills with `skill edit NAME --private` and restore Git tracking with `skill edit NAME --public`. Private skills remain available locally and are not synced to other machines; previously committed Git history is not erased.
 
-Maintenance actions: `create`, `adopt`, `edit`, `tag rename`, `source bind`, `source unbind`, `update`, `remove`, `uninstall`, `materialize`. Names are exact. Uninstall/materialize take the absolute installation paths returned by `skill locations`. Remove/uninstall/source unbind require `--yes`; source replacement requires `--replace`.
+Maintenance actions: `create`, `adopt`, `edit`, `tag rename`, `namespace list|set|rename|clear|remove`, `source bind`, `source unbind`, `update`, `remove`, `uninstall`, `materialize`. Names are exact. Uninstall/materialize take the absolute installation paths returned by `skill locations`. Remove/uninstall/source unbind require `--yes`; source replacement requires `--replace`. A GitHub repository uses one optional namespace across its collected skills; imports may select a subset, and subsequent imports inherit its namespace. `namespace remove` requires `--delete-skills --yes`.
 
 ## MCP
 

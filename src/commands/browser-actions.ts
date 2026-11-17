@@ -561,16 +561,20 @@ async function handleMaterialize(host: BrowserActionHost, skills: Skill[]): Prom
 }
 
 function applyImportStatus(host: BrowserActionHost, result: ImportToCollectionResult, isPrivate = false): void {
+  const unresolved = result.unresolvedReferences?.length
+    ? t('cmd.unresolvedSkillReferences', { skills: result.unresolvedReferences.join(', ') })
+    : '';
   if (result.commitFailed) {
     host.setStatus(
-      t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''),
+      [t('domain.gitCommitFailed', { error: '' }).replace(/[：:]\s*$/, ''), unresolved].filter(Boolean).join('\n'),
       false,
       'error'
     );
     return;
   }
-  if (result.count > 0) {
-    host.setStatus(t(isPrivate ? 'cmd.importedPrivateShort' : 'cmd.importedShort', { count: result.count }), true, 'normal');
+  if (result.count > 0 || unresolved) {
+    const imported = result.count > 0 ? t(isPrivate ? 'cmd.importedPrivateShort' : 'cmd.importedShort', { count: result.count }) : '';
+    host.setStatus([imported, unresolved].filter(Boolean).join('\n'), true, unresolved ? 'error' : 'normal');
   }
 }
 
@@ -652,7 +656,12 @@ export async function handleNamespace(host: BrowserActionHost, skill: Skill): Pr
     const confirmed = await Modal.confirm({
       title: t('import.namespace'),
       message: t('browser.namespaceConfirm'),
-      details: changes.map(({ before, after }) => `${before.name} → ${after.name}`),
+      details: [
+        ...changes.map(({ before, after }) => `${before.name} → ${after.name}`),
+        ...([...new Set(changes.flatMap((change) => change.unresolvedReferences))].length
+          ? [t('cmd.unresolvedSkillReferences', { skills: [...new Set(changes.flatMap((change) => change.unresolvedReferences))].join(', ') })]
+          : []),
+      ],
     });
     if (!confirmed) return;
     await applyRepositoryNamespace(changes);
